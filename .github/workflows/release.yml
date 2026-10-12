@@ -48,16 +48,9 @@ jobs:
           distribution: full
           variant: CS
           version: '9.3'
-      - name: Checkout Rivet
-        uses: actions/checkout@v4
-        with:
-          repository: turinglambdaai/rivet
-          path: rivet
-      - name: Install crypto package (rivet/distribution dependency)
-        run: raco pkg install --auto --no-docs crypto
+      - name: Install Rivet (catalog) and crypto (updater dependency)
+        run: raco pkg install --auto --no-docs rivet crypto
         shell: bash
-      - name: Link Rivet
-        run: raco pkg install --auto --no-docs --link "$GITHUB_WORKSPACE/rivet/rivet" "$GITHUB_WORKSPACE/rivet/rivet-cli"
       - name: Version preflight (VERSION == rivet.rktd == updater == tag)
         run: bash scripts/check-release-version.sh "${{ github.ref_name }}"
       - name: Package
@@ -104,16 +97,9 @@ jobs:
           distribution: full
           variant: CS
           version: '9.3'
-      - name: Checkout Rivet
-        uses: actions/checkout@v4
-        with:
-          repository: turinglambdaai/rivet
-          path: rivet
-      - name: Install crypto package (rivet/distribution dependency)
-        run: raco pkg install --auto --no-docs crypto
+      - name: Install Rivet (catalog) and crypto (updater dependency)
+        run: raco pkg install --auto --no-docs rivet crypto
         shell: bash
-      - name: Link Rivet (manifest signer)
-        run: raco pkg install --auto --no-docs --link "$GITHUB_WORKSPACE/rivet/rivet" "$GITHUB_WORKSPACE/rivet/rivet-cli"
       - uses: actions/download-artifact@v4
         with:
           path: artifacts

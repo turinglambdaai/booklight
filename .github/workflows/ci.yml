@@ -23,7 +23,7 @@ jobs:
       - uses: Bogdanp/setup-racket@v1.11
         with:
           version: stable
-      - name: Install rivet (upstream main)
-        run: raco pkg install --auto --no-docs --skip-installed https://github.com/turinglambdaai/rivet.git
+      - name: Install Rivet (catalog) and crypto (updater dependency)
+        run: raco pkg install --auto --no-docs rivet crypto
       - name: Domain core tests
         run: raco test racket/
