@@ -52,6 +52,7 @@ raco test racket/          # 领域核心测试
 ## 路线图
 
 - [ ] Windows 与 Linux 宿主构建
+- [ ] 移动端 —— iOS / iPadOS 宿主（Rivet portable Swift 层）与 Android 宿主（Rivet Kotlin 平台），对齐家族全平台标准；watchOS 进度伴机尾随手机宿主
 
 ## 许可证
 

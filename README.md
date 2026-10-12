@@ -53,6 +53,9 @@ raco test racket/          # domain-core tests
 ## Roadmap
 
 - [ ] Windows & Linux host builds
+- [ ] Mobile — iOS / iPadOS host (Rivet's portable Swift layer) and Android
+      host (Rivet's Kotlin platform), matching the family's full-platform
+      scope; a watchOS progress companion trails the phone host
 
 ## License
 
