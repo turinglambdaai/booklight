@@ -1,27 +1,36 @@
 #lang racket/base
 
-;; Online update support for PDFGist, built on rivet/distribution. The
-;; backend verifies and downloads signed update artifacts; the native host
-;; owns installation (rivet docs/release-and-updates.md). A check downloads
-;; and verifies the Ed25519-signed channel manifest; the actual DMG download
-;; runs on a background thread with progress published to a state box that
-;; the UI polls through the `update-state` RPC (RVT1 events are thread-local,
-;; so a background thread cannot emit them directly).
+;; Online update support for PDFGist, built on rivet/distribution — the
+;; family pattern (taskly/brainfuel/payback/syncpilot): the backend verifies
+;; and downloads the signed update artifact; the native host owns
+;; installation (rivet docs/release-and-updates.md). A check fetches and
+;; verifies the Ed25519-signed channel manifest through rivet's
+;; fetch-update-manifest — its 10-hop redirect budget covers the GitHub
+;; release-asset 302 onto the CDN. The artifact download runs on a
+;; background thread through rivet's download-update, which owns the
+;; redirect-following fetch, the signed-size cap, the .partial cleanup on
+;; every failure, the SHA-256 + size verification, and the final atomic
+;; rename; this module only maps the byte progress onto the integer percent
+;; published to a state box that the UI polls through the `update-state`
+;; RPC (RVT1 events are thread-local, so a background thread cannot emit
+;; them directly).
 ;;
 ;; Updater bookkeeping (lastUpdateCheckAt, rolloutBucket) does NOT ride the
 ;; settings.json document: that file must stay byte-compatible with v1
 ;; installs (AGENTS.md data contract). It lives in a small sibling file,
 ;; <config-dir>/updater.json, owned entirely by this module.
+;;
+;; Note on crypto factories: rivet/distribution pins the provider set to
+;; libcrypto at module load and deliberately avoids crypto/all — factory
+;; FFIs load at import time and the gmp factory kills embedded runtimes on
+;; hosts without libgmp. This module runs inside the embedded CS runtime,
+;; so it must not require crypto/all either (tests may, they are headless).
 
 (require crypto
-         crypto/all
          json
          net/base64
-         net/url
          rivet/distribution
          racket/file
-         racket/format
-         racket/port
          racket/string
          "../racket/pdfgist/settings.rkt"
          "version.rkt")
@@ -30,9 +39,8 @@
          architecture-symbol
          installer-extension
          manifest-url
-         fetch-manifest-bytes
          destination-path
-         copy-with-progress!
+         download-with-progress!
          update-state-snapshot
          reset-update-state!
          perform-check!
@@ -62,8 +70,8 @@
 
 ;; ---------- public key ----------
 
-;; crypto/all sets the full factory set at module load; the embedded DER is
-;; the public half of the update key whose private half never ships.
+;; The embedded DER is the public half of the update key whose private half
+;; never ships.
 (define (embedded-public-key)
   (datum->pk-key (base64-string->bytes update-public-key-b64)
                  'SubjectPublicKeyInfo))
@@ -80,6 +88,18 @@
 
 (define candidate-box (box #f))
 (define worker-thread-box (box #f))
+
+;; Download watchdog bounds. rivet's copy loop waits on read-bytes-avail!
+;; with no timeout, so a connection that stalls without RST/FIN parks the
+;; worker thread forever — visibly "stuck at 100%" (all bytes had arrived;
+;; the loop was still waiting for EOF). Two finite bounds keep the phase
+;; machine honest: no byte progress for the stall limit, or wall clock past
+;; the total limit, breaks the worker (rivet's partial-file cleanup runs,
+;; and the worker reports phase=error itself) so the UI always gets a
+;; terminal state.
+(define download-stall-limit-seconds 120)
+(define download-total-limit-seconds (* 30 60))
+(define last-progress-seconds (box 0))
 
 (define (state-set! key value)
   (set-box! update-state (hash-set (unbox update-state) key value)))
@@ -135,32 +155,6 @@
 
 ;; ---------- check ----------
 
-;; GitHub release assets answer with a 302 to the CDN, so every fetch must
-;; follow redirects (rivet's fetch-update-manifest uses a bare get-pure-port
-;; and comes back empty on github.com; verify-signed-manifest below still
-;; owns the trust model). Manifests are capped at 1 MiB like rivet's own
-;; fetch.
-(define (fetch-manifest-bytes url)
-  (define in (get-pure-port (string->url url)
-                            '("User-Agent: PDFGist-Updater/1")
-                            #:redirections 10))
-  (dynamic-wind
-    void
-    (lambda ()
-      (define out (open-output-bytes))
-      (define buffer (make-bytes 65536))
-      (define limit (* 1024 1024))
-      (let loop ([total 0])
-        (define count (read-bytes-avail! buffer in))
-        (unless (eof-object? count)
-          (write-bytes buffer out 0 count)
-          (define next (+ total count))
-          (when (> next limit)
-            (error 'fetch-manifest "manifest exceeds 1 MiB"))
-          (loop next)))
-      (get-output-bytes out))
-    (lambda () (close-input-port in))))
-
 ;; Returns a wire jsexpr describing the outcome; also refreshes
 ;; lastUpdateCheckAt (epoch seconds) in updater.json on every completed check.
 (define (perform-check!)
@@ -171,10 +165,13 @@
           (state-set! 'phase "error")
           (state-set! 'message (exn-message e))
           (hasheq 'status "error" 'message (exn-message e)))])
+    ;; fetch-update-manifest follows the GitHub 302 onto the CDN (10-hop
+    ;; budget), caps the body at 1 MiB, and verifies the Ed25519 signature
+    ;; before anything else looks at the bytes.
     (define manifest
-      (verify-signed-manifest (open-input-bytes (fetch-manifest-bytes (manifest-url)))
-                              (embedded-public-key)
-                              #:key-id update-key-id))
+      (fetch-update-manifest (manifest-url)
+                             (embedded-public-key)
+                             #:key-id update-key-id))
     (define config
       (updater-config app-identifier
                       app-version
@@ -211,14 +208,17 @@
        (hasheq 'status "up-to-date" 'currentVersion app-version)])))
 
 ;; rollout bucket: stable random 0..99 assigned on first check so staged
-;; rollouts are sticky per installation
+;; rollouts are sticky per installation. crypto-random-bytes, not `random`:
+;; racket/base's PRNG has a fixed seed, which would put every fresh install
+;; in the same lockstep bucket.
 (define (rollout-bucket)
   (define prefs (load-updater-prefs))
   (define existing (hash-ref prefs 'rolloutBucket 'null))
   (cond
     [(and (exact-integer? existing) (<= 0 existing 99)) existing]
     [else
-     (define bucket (random 100))
+     (define bucket
+       (modulo (integer-bytes->integer (crypto-random-bytes 4) #t #t) 100))
      (save-updater-prefs! (pref-with prefs 'rolloutBucket bucket))
      bucket]))
 
@@ -246,49 +246,22 @@
                              (installer-extension/symbol
                               (update-artifact-installer artifact)))))
 
-;; copy with progress; same limits as rivet's download-update but publishes
-;; integer percent changes to the state box while streaming
-(define (copy-with-progress! in out total)
-  (define buffer (make-bytes 65536))
-  (let loop ([done 0] [last-percent -1])
-    (define count (read-bytes-avail! buffer in))
-    (cond
-      [(eof-object? count) done]
-      [else
-       (write-bytes buffer out 0 count)
-       (define next (+ done count))
-       (define percent
-         (if (> total 0)
-             (min 100 (quotient (* next 100) total))
-             0))
-       (when (> percent last-percent)
-         (state-set! 'percent percent))
-       (loop next percent)])))
-
+;; rivet's download-update owns the whole artifact path — redirect-following
+;; fetch, signed-size cap, .partial cleanup on any failure, SHA-256 + size
+;; verification against the signed manifest, atomic rename — so the wrapper
+;; only maps its byte progress onto the integer percent the UI polls, and
+;; feeds the watchdog's stall clock on every report.
 (define (download-with-progress! config candidate destination)
-  (define artifact (update-candidate-artifact candidate))
-  (define total (update-artifact-size artifact))
-  (when (> total (updater-config-maximum-download-bytes config))
-    (error 'download-update "signed artifact size exceeds the download limit"))
-  (make-parent-directory* destination)
-  (define temporary (path-add-extension destination #".partial"))
-  (when (file-exists? temporary) (delete-file temporary))
-  (define in
-    (get-pure-port (string->url (update-artifact-url artifact))
-                   '("User-Agent: PDFGist-Updater/1")
-                   #:redirections 10))
-  (dynamic-wind
-    void
-    (lambda ()
-      (call-with-output-file temporary
-        #:exists 'truncate/replace
-        #:mode 'binary
-        (lambda (out) (copy-with-progress! in out total))))
-    (lambda () (close-input-port in)))
-  ;; size + SHA-256 against the signed manifest before the file is trusted
-  (verify-update-artifact! candidate temporary)
-  (rename-file-or-directory temporary destination #t)
-  destination)
+  (define total (update-artifact-size (update-candidate-artifact candidate)))
+  (download-update
+   config candidate destination
+   #:on-progress
+   (lambda (done)
+     (set-box! last-progress-seconds (current-seconds))
+     (state-set! 'percent
+                 (if (> total 0)
+                     (min 100 (quotient (* done 100) total))
+                     0)))))
 
 (define (start-download!)
   (define worker (unbox worker-thread-box))
@@ -311,16 +284,44 @@
                     (rollout-bucket)
                     maximum-download-bytes))
   (define destination (destination-path candidate))
-  (set-box! worker-thread-box
-            (thread
-             (lambda ()
-               (with-handlers
-                   ([exn:fail?
-                     (lambda (e)
-                       (state-set! 'phase "error")
-                       (state-set! 'message (exn-message e)))])
-                 (define path
-                   (download-with-progress! config candidate destination))
-                 (state-set! 'phase "downloaded")
-                 (state-set! 'percent 100)
-                 (state-set! 'downloadedPath (path->string path)))))))
+  (set-box! last-progress-seconds (current-seconds))
+  (define worker-thread
+    (thread
+     (lambda ()
+       ;; The watchdog breaks a stalled worker; exn:break is not an
+       ;; exn:fail, so it needs its own arm — either way rivet's partial
+       ;; cleanup removes the .partial and the phase lands on error
+       ;; (never mid-flight).
+       (with-handlers
+           ([(lambda (e) (or (exn:fail? e) (exn:break? e)))
+             (lambda (e)
+               (state-set! 'phase "error")
+               (state-set! 'message
+                           (if (exn:break? e)
+                               "update download stalled or timed out"
+                               (exn-message e))))])
+         (define path
+           (download-with-progress! config candidate destination))
+         (state-set! 'phase "downloaded")
+         (state-set! 'percent 100)
+         (state-set! 'downloadedPath (path->string path))))))
+  (set-box! worker-thread-box worker-thread)
+  ;; Watchdog: exits once the worker finishes on its own; otherwise a stall
+  ;; (no byte progress) or the total wall-clock limit breaks the worker so
+  ;; phase never rests on "downloading" indefinitely.
+  (define download-started (current-seconds))
+  (thread
+   (lambda ()
+     (let loop ()
+       (cond
+         [(sync/timeout download-stall-limit-seconds
+                        (thread-dead-evt worker-thread))
+          (void)]
+         [(> (- (current-seconds) (unbox last-progress-seconds))
+             download-stall-limit-seconds)
+          (break-thread worker-thread)]
+         [(> (- (current-seconds) download-started)
+             download-total-limit-seconds)
+          (break-thread worker-thread)]
+         [else (loop)]))))
+  (void))

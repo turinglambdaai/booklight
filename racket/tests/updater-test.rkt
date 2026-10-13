@@ -1,0 +1,237 @@
+#lang racket/base
+
+;; Updater tests (family pattern, ported from taskly/brainfuel): platform
+;; mapping, manifest URL construction, the sticky rollout bucket (drawn
+;; once from crypto-random-bytes and persisted in updater.json), the .partial
+;; cleanup rivet's download-update performs on failed downloads, and the
+;; offline trust chain — craft a manifest, sign it with a throwaway Ed25519
+;; key, verify and select it the same way the live checker does, then drive
+;; the real download path against a local TCP server.
+;; (fetch-update-manifest only accepts HTTPS, so the network half of the
+;; check is exercised in production; everything else runs offline here.)
+
+(require crypto
+         crypto/all
+         json
+         net/base64
+         rackunit
+         rivet/distribution
+         racket/file
+         racket/path
+         racket/tcp
+         "../../app/updater.rkt"
+         "../../app/version.rkt"
+         "../pdfgist/settings.rkt")
+
+(use-all-factories!)
+
+;; Every state-file touch lands in a throwaway config dir, never the user's
+;; (current-config-dir is the settings.rkt parameter the updater reads).
+(parameterize ([current-config-dir
+                (make-temporary-file "pdfgist-updater-home-~a" 'directory)])
+  (define download-limit (* 800 1024 1024))
+
+  (test-case "platform symbols match rivet release manifests"
+    (case (system-type 'os)
+      [(macosx) (check-equal? (platform-symbol) 'macos)]
+      [(windows) (check-equal? (platform-symbol) 'windows)]
+      [else (check-equal? (platform-symbol) 'linux)])
+    (check-not-false (memq (architecture-symbol) '(arm64 x64))))
+
+  (test-case "installer extension follows platform"
+    (case (system-type 'os)
+      [(macosx) (check-equal? (installer-extension) ".dmg")]
+      [(windows) (check-equal? (installer-extension) ".msi")]
+      [else (check-equal? (installer-extension) ".tar.gz")]))
+
+  (test-case "manifest url joins base and channel file name"
+    (check-equal?
+     (manifest-url)
+     (string-append default-update-base-url "/update-stable.json")))
+
+  (test-case "rollout bucket is sticky and persists to updater.json"
+    (check-true (exact-integer? (rollout-bucket)))
+    (define bucket0 (rollout-bucket))
+    (check-true (<= 0 bucket0 99))
+    ;; a second read returns the persisted bucket, not a fresh draw
+    (check-equal? (rollout-bucket) bucket0)
+    (define doc
+      (with-input-from-file (build-path (config-dir-path) "updater.json")
+        read-json))
+    (check-equal? (hash-ref doc 'rolloutBucket) bucket0)
+    ;; a persisted bucket wins over any fresh draw (sticky per install)
+    (with-output-to-file (build-path (config-dir-path) "updater.json")
+      #:exists 'truncate/replace
+      (lambda () (write-json (hasheq 'rolloutBucket 42))))
+    (check-equal? (rollout-bucket) 42))
+
+  (test-case "corrupt updater.json degrades to empty prefs, not a crash"
+    (with-output-to-file (build-path (config-dir-path) "updater.json")
+      #:exists 'truncate/replace
+      (lambda () (display "not json{")))
+    (check-equal? (rollout-bucket) (rollout-bucket))
+    (check-true (<= 0 (rollout-bucket) 99))
+    (check-equal? (last-update-check-at) 'null))
+
+  ;; A minimal one-shot HTTP artifact server: get-pure-port insists on a
+  ;; well-formed response head. The declared Content-Length and the bytes
+  ;; actually sent are separate, so the truncated case can mimic a dropped
+  ;; connection mid-download.
+  (define (serve-artifact-payload! payload declared-length)
+    (define listener (tcp-listen 0 4 #f "127.0.0.1"))
+    (define-values (_bind-host port-number _peer-host _peer-port)
+      (tcp-addresses listener #t))
+    (define server
+      (thread
+       (lambda ()
+         (let accept-loop ()
+           (define-values (in out) (tcp-accept listener))
+           (thread
+            (lambda ()
+              (let drain ()
+                (define line (read-line in 'any))
+                (unless (or (eof-object? line) (equal? line "") (equal? line "\r"))
+                  (drain)))
+              (write-string
+               (format "HTTP/1.0 200 OK\r\nContent-Length: ~a\r\n" declared-length)
+               out)
+              (write-string "Content-Type: application/zip\r\n\r\n" out)
+              (write-bytes payload out)
+              (close-output-port out)
+              (close-input-port in)))
+         (accept-loop)))))
+    (values port-number
+            (lambda ()
+              (kill-thread server)
+              (tcp-close listener))))
+
+  (define (candidate-for pub url payload)
+    (define manifest
+      (update-manifest
+       app-identifier "9.9.9" 7 'stable
+       "2026-10-13T00:00:00Z" "0.0.0" #f #t 100
+       (list (update-artifact (platform-symbol) (architecture-symbol)
+                              url (bytes->hex-string (sha256-bytes payload))
+                              (bytes-length payload) 'zip '()))))
+    (select-update
+     (updater-config app-identifier app-version app-channel
+                     (platform-symbol) (architecture-symbol)
+                     pub update-key-id 0 download-limit)
+     manifest))
+
+  (define pub
+    (datum->pk-key (base64-string->bytes update-public-key-b64)
+                   'SubjectPublicKeyInfo))
+
+  (test-case "download-update stages the artifact and reports percent"
+    (define payload (make-bytes 300000 42))
+    (define-values (port-number stop-server!)
+      (serve-artifact-payload! payload (bytes-length payload)))
+    (define candidate
+      (candidate-for pub
+                     (format "http://127.0.0.1:~a/pdfgist.zip" port-number)
+                     payload))
+    (check-true (update-candidate? candidate))
+    (reset-update-state!)
+    (define destination
+      (build-path (config-dir-path) "updates" "PDFGist-9.9.9.zip"))
+    (check-equal?
+     (download-with-progress!
+      (updater-config app-identifier app-version app-channel
+                      (platform-symbol) (architecture-symbol)
+                      pub update-key-id 0 download-limit)
+      candidate destination)
+     destination)
+    (check-true (file-exists? destination))
+    (check-equal? (file-size destination) (bytes-length payload))
+    (check-equal? (hash-ref (update-state-snapshot) 'percent) 100)
+    (check-false (file-exists? (path-add-extension destination #".partial")))
+    (delete-file destination)
+    (stop-server!))
+
+  (test-case "a truncated download raises and leaves no .partial behind"
+    (define payload (make-bytes 300000 42))
+    ;; declare the full length but send half: the size gate must fail the
+    ;; download and rivet's partial cleanup must remove the residue
+    (define-values (port-number stop-server!)
+      (serve-artifact-payload! (subbytes payload 0 150000)
+                               (bytes-length payload)))
+    (define candidate
+      (candidate-for pub
+                     (format "http://127.0.0.1:~a/pdfgist.zip" port-number)
+                     payload))
+    (define destination
+      (build-path (config-dir-path) "updates" "PDFGist-9.9.9.zip"))
+    (check-exn exn:fail?
+               (lambda ()
+                 (download-with-progress!
+                  (updater-config app-identifier app-version app-channel
+                                  (platform-symbol) (architecture-symbol)
+                                  pub update-key-id 0 download-limit)
+                  candidate destination)))
+    (check-false (file-exists? destination))
+    (check-false (file-exists? (path-add-extension destination #".partial")))
+    (stop-server!))
+
+  (test-case "signed manifest verifies and selects updates"
+    ;; throwaway keypair: same DER formats the release pipeline uses
+    (define priv (generate-private-key 'eddsa '((curve ed25519))))
+    (define priv-der (pk-key->datum priv 'OneAsymmetricKey))
+    (define priv-path (make-temporary-file "pdfgist-test-key-~a.der"))
+    (with-output-to-file priv-path
+      #:exists 'truncate
+      (lambda () (write-bytes priv-der)))
+    (define test-pub (datum->pk-key (pk-key->datum priv 'rkt-public) 'rkt-public))
+    (define artifact-file (make-temporary-file "pdfgist-artifact-~a.zip"))
+    (call-with-output-file artifact-file
+      #:exists 'truncate
+      (lambda (out) (write-bytes (make-bytes 128 3) out)))
+    (define manifest
+      (update-manifest
+       app-identifier "9.9.9" 7 'stable
+       "2026-10-13T00:00:00Z" "0.0.0" #f #t 100
+       (list (update-artifact (platform-symbol) (architecture-symbol)
+                              "https://dl.example/pdfgist/pdfgist-9.9.9.zip"
+                              (sha256-file/hex artifact-file)
+                              (file-size artifact-file)
+                              'zip '()))))
+    (define wrapped (open-output-bytes))
+    (write-signed-manifest manifest priv "pdfgist-test" wrapped)
+    (define verified
+      (verify-signed-manifest (open-input-bytes (get-output-bytes wrapped))
+                              test-pub
+                              #:key-id "pdfgist-test"))
+    (check-equal? (update-manifest-version verified) "9.9.9")
+    ;; a different key-id fails closed
+    (check-exn exn:fail?
+               (lambda ()
+                 (verify-signed-manifest
+                  (open-input-bytes (get-output-bytes wrapped))
+                  test-pub
+                  #:key-id "some-other-key")))
+    ;; select-update picks the artifact for this platform/architecture the
+    ;; same way the live checker does
+    (define config
+      (updater-config app-identifier "0.0.1" app-channel
+                      (platform-symbol) (architecture-symbol)
+                      test-pub "pdfgist-test" 42 download-limit))
+    (define candidate (select-update config verified))
+    (check-true (update-candidate? candidate))
+    (check-equal? (update-artifact-size (update-candidate-artifact candidate))
+                  (file-size artifact-file))
+    ;; the destination layout rides the signed manifest's installer symbol
+    (check-equal?
+     (destination-path candidate)
+     (build-path (config-dir-path) "updates"
+                 (string-append "PDFGist-9.9.9.zip")))
+    (delete-file priv-path)
+    (delete-file artifact-file))
+
+  (test-case "embedded release identity is coherent"
+    (check-equal? app-identifier "site.jrtx.pdfgist")
+    (check-equal? app-channel 'stable)
+    (check-equal? update-key-id "pdfgist-2026-10")
+    (check-true (string? app-version))
+    (check-equal? app-build 1)))
+
+(reset-update-state!)
