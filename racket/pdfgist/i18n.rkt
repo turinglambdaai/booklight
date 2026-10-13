@@ -22,9 +22,11 @@
 (define-runtime-path en-json-path (build-path 'up 'up "shared" "i18n" "en.json"))
 
 ;; Embedded fallback: identical to shared/i18n/zh.json at the time of the
-;; port. Only used if the JSON single source cannot be read.
+;; port. Only used if the JSON single source cannot be read. Equal-based
+;; `hash`, not `hasheq`: the lookup keys arrive as string literals from
+;; other modules, and eq? on strings across compilation units is luck.
 (define fallback-catalog-zh
-  (hasheq "app.name" "PDFGist"
+  (hash "app.name" "PDFGist"
           "backend.error.connect" "连接失败：{0}"
           "backend.error.connect-timeout" "连接失败：连接超时（{0} 秒）"
           "backend.error.http-status" "HTTP {0}"
@@ -56,7 +58,7 @@
           "backend.provider.custom" "自定义"))
 
 (define fallback-catalog-en
-  (hasheq "app.name" "PDFGist"
+  (hash "app.name" "PDFGist"
           "backend.error.connect" "Connection failed: {0}"
           "backend.error.connect-timeout" "Connection failed: timed out after {0} s"
           "backend.error.http-status" "HTTP {0}"
