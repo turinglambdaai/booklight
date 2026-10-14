@@ -6,8 +6,9 @@
 # Nothing is committed to git: the cache lives under windows\build (gitignored)
 # and the download is re-fetched on a fresh checkout or CI runner.
 #
-# Runs under MSBuild Exec, which sanitizes PSModulePath — so only .NET types
-# and external executables are used (no Get-FileHash / Invoke-WebRequest).
+# Runs under MSBuild Exec, which sanitizes PSModulePath and the default .NET
+# references — so this script only uses plain PowerShell syntax plus the two
+# executables Windows 10 1803+ ships in System32: curl.exe and certutil.
 #
 # Usage (normally invoked by the FetchPdfium target in RivetHost.vcxproj):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File fetch-pdfium.ps1 `
@@ -42,50 +43,43 @@ if (Test-Path $stamp) {
 }
 
 $asset = "pdfium-win-$arch.tgz"
-$baseUrl = "https://github.com/bblanchon/pdfium-binaries/releases/download/$PdfiumVersion"
+$url = "https://github.com/bblanchon/pdfium-binaries/releases/download/$PdfiumVersion/$asset"
 
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("pdfium-" + [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 try {
   $tgz = Join-Path $tmp $asset
-  Write-Host "Downloading $baseUrl/$asset"
+  Write-Host "Downloading $url"
   # Retries: transient release-CDN hiccups must not fail the whole build.
   $attempt = 0
   while ($true) {
-    try {
-      $client = New-Object System.Net.Http.HttpClient
-      $client.Timeout = [TimeSpan]::FromMinutes(5)
-      $stream = $client.GetStreamAsync("$baseUrl/$asset").GetAwaiter().GetResult()
-      $file = [System.IO.File]::Create($tgz)
-      $stream.CopyTo($file)
-      $file.Close()
-      $stream.Close()
-      break
-    } catch {
-      $attempt++
-      if ($attempt -ge 3) { throw }
-      Write-Host "Download failed (attempt $attempt), retrying..."
-      Start-Sleep -Seconds (3 * $attempt)
+    & curl.exe -sSL --retry 3 --retry-delay 3 -o $tgz $url
+    if ($LASTEXITCODE -eq 0 -and (Test-Path $tgz)) { break }
+    $attempt++
+    if ($attempt -ge 3) {
+      throw "curl download failed with exit code $LASTEXITCODE"
     }
+    Write-Host "Download failed (attempt $attempt), retrying..."
+    Start-Sleep -Seconds (3 * $attempt)
   }
 
-  # SHA-256 via .NET (Get-FileHash is unavailable under MSBuild's environment).
-  $sha = [System.Security.Cryptography.SHA256]::Create()
-  $hashStream = [System.IO.File]::OpenRead($tgz)
-  try {
-    $actual = ([System.BitConverter]::ToString($sha.ComputeHash($hashStream)))
-  } finally {
-    $hashStream.Close()
-    $sha.Dispose()
+  # SHA-256 via certutil (external; Get-FileHash is unavailable under
+  # MSBuild's sanitized environment).
+  $hashOutput = & certutil -hashfile $tgz SHA256
+  $actual = ""
+  foreach ($line in $hashOutput) {
+    $trimmed = $line.Trim()
+    if ($trimmed -match '^[0-9a-fA-F]{64}$') {
+      $actual = $trimmed.ToLowerInvariant()
+      break
+    }
   }
-  $actual = $actual.Replace("-", "").ToLowerInvariant()
   if ($actual -ne $expected) {
     throw ("sha256 mismatch for {0}: expected {1}, got {2}" -f $asset, $expected, $actual)
   }
 
   if (Test-Path $target) { Remove-Item -Recurse -Force $target }
   New-Item -ItemType Directory -Path $target -Force | Out-Null
-  # bsdtar ships with Windows 10 1803+; the runners have it.
   & tar -xzf $tgz -C $target
   if ($LASTEXITCODE -ne 0) { throw "tar extraction failed with exit code $LASTEXITCODE" }
 
