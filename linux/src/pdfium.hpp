@@ -70,10 +70,12 @@ class Document {
   bool page_size(int index, double* width, double* height);
 
   // Renders one page at `scale` (device pixels per point) into a fresh
-  // ARGB32 cairo surface over a white background. Returns null when the
-  // page cannot be loaded.
-  cairo_surface_t* render_page(int index, double scale, int* out_width_px,
-                               int* out_height_px);
+  // ARGB32 cairo surface. With `dark`, painted pixels invert (PDF.js-style
+  // dark reading, mirroring windows/PdfDocument.cpp) and unpainted margins
+  // take the dark page background so pages sit flush in dark mode. Returns
+  // null when the page cannot be loaded.
+  cairo_surface_t* render_page(int index, double scale, bool dark,
+                               int* out_width_px, int* out_height_px);
 
  private:
   Document() = default;

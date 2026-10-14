@@ -43,11 +43,14 @@ class PdfDocument {
   void* handle() const { return impl_ != nullptr ? impl_->handle() : nullptr; }
 
   // Renders one page at `scale` device pixels per point into a fresh
-  // ARGB32 cairo surface (viewer + thumbnails; main thread only).
-  cairo_surface_t* render(int index, double scale, int* out_width_px,
-                          int* out_height_px) {
+  // ARGB32 cairo surface (viewer + thumbnails; main thread only). With
+  // `dark`, painted pixels invert and margins take the dark page background
+  // so pages sit flush in dark mode.
+  cairo_surface_t* render(int index, double scale, bool dark,
+                          int* out_width_px, int* out_height_px) {
     return impl_ != nullptr
-               ? impl_->render_page(index, scale, out_width_px, out_height_px)
+               ? impl_->render_page(index, scale, dark, out_width_px,
+                                    out_height_px)
                : nullptr;
   }
 

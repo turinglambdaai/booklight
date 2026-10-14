@@ -250,6 +250,9 @@ void apply_theme() {
   if (g_host.epub != nullptr) {
     g_host.epub->apply_theme(dark ? "dark" : "light");
   }
+  // set_dark dropped each tab's cached thumbnails; rebuild the sidebar so
+  // visible thumbs re-render in the new palette.
+  populate_thumbs();
 }
 
 void set_theme(std::string const& theme) {

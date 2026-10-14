@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <tuple>
 
 namespace pdfgist {
 
@@ -231,17 +232,21 @@ struct PdfTab::Impl {
   struct CacheEntry {
     cairo_surface_t* surface{nullptr};
   };
-  std::map<std::pair<int, double>, CacheEntry> cache;
-  std::vector<std::pair<int, double>> cache_order;
+  // (page, scale, dark) — dark surfaces are a separate cache population so a
+  // theme flip re-renders instead of reusing light pixels.
+  using CacheKey = std::tuple<int, double, bool>;
+  std::map<CacheKey, CacheEntry> cache;
+  std::vector<CacheKey> cache_order;
   std::map<int, GdkTexture*> thumbs;
 
   cairo_surface_t* surface_for(int page) {
     int const sf = std::max(1, gtk_widget_get_scale_factor(draw));
-    double const key = tab->zoom_ * sf;
-    auto const cache_key = std::make_pair(page, key);
+    double const scale = tab->zoom_ * sf;
+    auto const cache_key = CacheKey{page, scale, dark_};
     auto it = cache.find(cache_key);
     if (it != cache.end()) return it->second.surface;
-    cairo_surface_t* surface = tab->doc_->render(page, key, nullptr, nullptr);
+    cairo_surface_t* surface =
+        tab->doc_->render(page, scale, dark_, nullptr, nullptr);
     if (surface == nullptr) return nullptr;
     cache[cache_key] = CacheEntry{surface};
     cache_order.push_back(cache_key);
@@ -274,9 +279,11 @@ struct PdfTab::Impl {
 
   void paint(cairo_t* cr) {
     if (!layout_valid) rebuild_layout();
-    // page paper on a neutral tray; PDFs fill their own background
-    cairo_set_source_rgb(cr, dark_ ? 0.09 : 0.88, dark_ ? 0.09 : 0.88,
-                         dark_ ? 0.10 : 0.88);
+    // page paper on a neutral tray; PDFs fill their own background. The dark
+    // tray matches the dark page background (0x1A, 0x17, 0x14) so pages sit
+    // flush (same palette as windows/PdfDocument.cpp).
+    cairo_set_source_rgb(cr, dark_ ? 0.102 : 0.88, dark_ ? 0.090 : 0.88,
+                         dark_ ? 0.078 : 0.88);
     cairo_paint(cr);
 
     double const view_y = gtk_adjustment_get_value(vadj);
@@ -518,7 +525,13 @@ PdfTab::PdfTab(std::shared_ptr<PdfDocument> doc, std::string path,
       impl.get(), nullptr, G_CONNECT_AFTER);
 }
 
-PdfTab::~PdfTab() { impl->clear_cache(); }
+PdfTab::~PdfTab() {
+  impl->clear_cache();
+  for (auto& [page, texture] : impl->thumbs) {
+    (void)page;
+    g_object_unref(texture);
+  }
+}
 
 // --------------------------------------------------------------- zoom ----
 
@@ -554,7 +567,16 @@ void PdfTab::set_double_mode(bool on) {
 }
 
 void PdfTab::set_dark(bool on) {
+  if (impl->dark_ == on) return;
   impl->dark_ = on;
+  // Cached page surfaces are keyed with dark, but stale entries would still
+  // hold memory and the thumbnail cache is keyed by page only — drop both.
+  impl->clear_cache();
+  for (auto& [page, texture] : impl->thumbs) {
+    (void)page;
+    g_object_unref(texture);
+  }
+  impl->thumbs.clear();
   if (impl->draw != nullptr) gtk_widget_queue_draw(impl->draw);
 }
 
@@ -723,8 +745,9 @@ GdkTexture* PdfTab::thumbnail(int page) {
 
   double w_pts = 0;
   if (!doc_->page_size(index, &w_pts, nullptr) || w_pts <= 0) return nullptr;
-  cairo_surface_t* surface = doc_->render(
-      index, kThumbWidthPx * kThumbSuperSample / w_pts, nullptr, nullptr);
+  cairo_surface_t* surface =
+      doc_->render(index, kThumbWidthPx * kThumbSuperSample / w_pts,
+                   impl->dark_, nullptr, nullptr);
   if (surface == nullptr) return nullptr;
   int const px_w = cairo_image_surface_get_width(surface);
   int const px_h = cairo_image_surface_get_height(surface);

@@ -315,7 +315,7 @@ bool Document::page_size(int index, double* width, double* height) {
   return true;
 }
 
-cairo_surface_t* Document::render_page(int index, double scale,
+cairo_surface_t* Document::render_page(int index, double scale, bool dark,
                                        int* out_width_px,
                                        int* out_height_px) {
   if (handle_ == nullptr || index < 0 || index >= page_count_) return nullptr;
@@ -344,16 +344,50 @@ cairo_surface_t* Document::render_page(int index, double scale,
     g_api.FPDF_ClosePage(page);
     return nullptr;
   }
-  // White background first: PDFs without a painted background otherwise
-  // render translucent and show the window color through.
-  cairo_t* cr = cairo_create(surface);
-  cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
-  cairo_paint(cr);
-  cairo_destroy(cr);
+  if (!dark) {
+    // White background first: PDFs without a painted background otherwise
+    // render translucent and show the window color through. Dark mode skips
+    // the fill on purpose: unpainted margins stay alpha 0 so the negative
+    // filter below can map them to the dark page background.
+    cairo_t* cr = cairo_create(surface);
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+  }
   g_api.FPDF_RenderPageBitmap(bitmap, page, /*start_x=*/0, /*start_y=*/0,
                               px_width, px_height, /*rotate=*/0,
                               /*flags=*/0);
   g_api.FPDFBitmap_Destroy(bitmap);
+  if (dark) {
+    // PDF.js-style negative filter (semantics of windows/PdfDocument.cpp):
+    // invert painted RGB, map the unpainted fill to the dark page background.
+    // cairo ARGB32 is premultiplied, so partial-coverage pixels (antialiasing
+    // edges) are un-premultiplied first to keep their true color.
+    constexpr uint8_t kDarkB = 0x14, kDarkG = 0x17, kDarkR = 0x1A;
+    cairo_surface_flush(surface);
+    for (int y = 0; y < px_height; ++y) {
+      uint8_t* row = static_cast<uint8_t*>(data) +
+                     static_cast<std::size_t>(y) * stride;
+      for (int x = 0; x < px_width; ++x) {
+        uint8_t* px = row + static_cast<std::size_t>(x) * 4;
+        uint8_t const alpha = px[3];
+        if (alpha == 0) {
+          px[0] = kDarkB;
+          px[1] = kDarkG;
+          px[2] = kDarkR;
+        } else if (alpha != 0xFF) {
+          px[0] = static_cast<uint8_t>(0xFF - px[0] * 0xFF / alpha);
+          px[1] = static_cast<uint8_t>(0xFF - px[1] * 0xFF / alpha);
+          px[2] = static_cast<uint8_t>(0xFF - px[2] * 0xFF / alpha);
+        } else {
+          px[0] = static_cast<uint8_t>(0xFF - px[0]);
+          px[1] = static_cast<uint8_t>(0xFF - px[1]);
+          px[2] = static_cast<uint8_t>(0xFF - px[2]);
+        }
+        px[3] = 0xFF;
+      }
+    }
+  }
   cairo_surface_mark_dirty(surface);
   g_api.FPDF_ClosePage(page);
   if (out_width_px != nullptr) *out_width_px = px_width;
