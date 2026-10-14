@@ -112,6 +112,7 @@ struct Host {
 
   // backend boot handshake (mirrors the scaffold)
   std::thread startup_thread;
+  std::thread bootstrap_thread;  // joined on shutdown (holds a raw api ptr)
   std::mutex startup_mutex;
   std::unique_ptr<rivet::linux_runtime::Backend> startup_backend;
   std::string startup_error;
@@ -1013,7 +1014,7 @@ int on_backend_finished(gpointer) {
   g_host.api = std::make_unique<rivet_app::API>(*g_host.backend);
   g_host.panel_ctx.api = g_host.api.get();
   gtk_label_set_text(g_host.status_label, Tr("ui.backend-not-ready").c_str());
-  std::thread(bootstrap).detach();
+  g_host.bootstrap_thread = std::thread(bootstrap);
   return G_SOURCE_REMOVE;
 }
 
@@ -2645,6 +2646,11 @@ void on_shutdown(GApplication*, gpointer) {
   stop_update_poll();
   if (g_host.startup_thread.joinable()) {
     g_host.startup_thread.join();
+  }
+  // bootstrap runs against the raw api pointer; join it before the api and
+  // backend below are torn down.
+  if (g_host.bootstrap_thread.joinable()) {
+    g_host.bootstrap_thread.join();
   }
   std::unique_ptr<rivet::linux_runtime::Backend> startup_backend;
   {
