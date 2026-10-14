@@ -678,7 +678,7 @@ void MainWindow::OpenDroppedRaw(mux::DragEventArgs const& args) {
   }
 }
 
-std::uint32_t MainWindow::IndexOfTabItem(muxc::TabViewItem const& item) const {
+std::uint32_t MainWindow::IndexOfTabItem(muxc::TabViewItem const& item) {
   std::uint32_t index = 0;
   (void)DocTabs().TabItems().IndexOf(item, index);
   return index;
@@ -1399,10 +1399,12 @@ void MainWindow::OnCellPointerMoved(
   if (!tab->selecting || tab->selection_page != cell->page) return;
   try {
     auto const point = args.GetCurrentPoint(cell->canvas).Position();
-    tab->selection_left = std::min(tab->selection_x0, point.X);
-    tab->selection_right = std::max(tab->selection_x0, point.X);
-    tab->selection_top = std::min(tab->selection_y0, point.Y);
-    tab->selection_bottom = std::max(tab->selection_y0, point.Y);
+    double const x = point.X;
+    double const y = point.Y;
+    tab->selection_left = std::min(tab->selection_x0, x);
+    tab->selection_right = std::max(tab->selection_x0, x);
+    tab->selection_top = std::min(tab->selection_y0, y);
+    tab->selection_bottom = std::max(tab->selection_y0, y);
     DrawCellOverlays(*cell, *tab);
   } catch (...) {
   }

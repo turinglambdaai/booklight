@@ -203,7 +203,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void CloseTab(PdfTab const* tab);
   void CloseActiveReader();
   std::uint32_t IndexOfTabItem(
-      winrt::Microsoft::UI::Xaml::Controls::TabViewItem const& item) const;
+      winrt::Microsoft::UI::Xaml::Controls::TabViewItem const& item);
 
   // left panel
   void RefreshLeftPanel();     // recents + thumbs/outline/toc + page ops
