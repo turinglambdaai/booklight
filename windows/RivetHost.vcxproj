@@ -60,9 +60,12 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <!-- Pinned by fetch-pdfium.ps1; the cache lives under windows\build
-         (gitignored) and is re-fetched on fresh checkouts and CI runners.
-         Defined before the ItemDefinitionGroups that consume it. -->
+    <!-- Mirrors $PdfiumVersion in fetch-pdfium.ps1 (the single source):
+         the script's tag with '/' replaced by '-'. The script verifies this
+         literal at build time and fails with a drift error on mismatch.
+         The cache lives under windows\build (gitignored) and is re-fetched
+         on fresh checkouts and CI runners. Defined before the
+         ItemDefinitionGroups that consume it. -->
     <PDFIUM_VERSION_DIR>chromium-8100</PDFIUM_VERSION_DIR>
     <PDFIUM_ROOT>$(MSBuildProjectDirectory)\build\pdfium\$(PDFIUM_VERSION_DIR)\$(Platform.ToLower())</PDFIUM_ROOT>
   </PropertyGroup>

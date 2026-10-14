@@ -22,6 +22,26 @@ param(
 $ErrorActionPreference = "Stop"
 
 $PdfiumVersion = "chromium/8100"
+
+# Single source for the PDFium pin. RivetHost.vcxproj repeats the derived
+# cache-dir name (PDFIUM_VERSION_DIR) because MSBuild evaluates its
+# properties before this script runs; the check below turns any drift into
+# a named build error instead of a confusing "pdfium.lib not found" later.
+$expectedVersionDir = $PdfiumVersion.Replace("/", "-")
+$vcxproj = Join-Path $PSScriptRoot "RivetHost.vcxproj"
+if (Test-Path $vcxproj -PathType Leaf) {
+  $pin = Select-String -Path $vcxproj `
+    -Pattern "<PDFIUM_VERSION_DIR>(.+)</PDFIUM_VERSION_DIR>" |
+    Select-Object -First 1
+  if ($null -eq $pin -or
+      $pin.Matches[0].Groups[1].Value -ne $expectedVersionDir) {
+    throw ("PDFium pin drift: this script pins '{0}' but RivetHost.vcxproj " +
+           "declares a different PDFIUM_VERSION_DIR. Update the vcxproj " +
+           "literal to '{1}' (or move this script's pin)." -f `
+           $expectedVersionDir, $expectedVersionDir)
+  }
+}
+
 # sha256(pdfium-win-<arch>.tgz) at the pinned tag, verified at pin time.
 $PinnedSha256 = @{
   "x64"   = "51621bcc1d9be9ea448f4b84b0516862b928e3968d3fca899af1a6d6e2848d6d"
