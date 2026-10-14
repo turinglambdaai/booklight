@@ -11,6 +11,7 @@ namespace winrt::RivetHost::implementation {
 
 namespace mux = winrt::Microsoft::UI::Xaml;
 namespace muxc = winrt::Microsoft::UI::Xaml::Controls;
+namespace muxcp = winrt::Microsoft::UI::Xaml::Controls::Primitives;
 namespace wu = winrt::Windows::UI;
 namespace wut = winrt::Windows::UI::Text;
 
@@ -23,10 +24,10 @@ void MainWindow::BuildAiSidebar() {
   chat_scope_buttons_.clear();
   AiTabRow().Children().Clear();
 
-  wchar_t const* tabs[] = {L"ui.tab.translate", L"ui.tab.summarize",
-                           L"ui.tab.chat", L"ui.tab.settings"};
+  char const* tabs[] = {"ui.tab.translate", "ui.tab.summarize",
+                        "ui.tab.chat", "ui.tab.settings"};
   for (int i = 0; i < 4; ++i) {
-    auto button = muxc::Primitives::ToggleButton();
+    auto button = muxcp::ToggleButton();
     muxc::TextBlock label;
     label.Text(pdfgist::Tr(tabs[i]));
     label.FontSize(12);
@@ -123,7 +124,7 @@ void MainWindow::BuildAiSidebar() {
   auto chat_pane = muxc::StackPanel();
   chat_pane.Spacing(8);
   auto scope_row = muxc::StackPanel();
-  scope_row.Orientation(mux::Orientation::Horizontal);
+  scope_row.Orientation(muxc::Orientation::Horizontal);
   scope_row.Spacing(4);
   auto scope_label = muxc::TextBlock();
   scope_label.Text(pdfgist::Tr("ui.chat.scope"));
@@ -131,10 +132,10 @@ void MainWindow::BuildAiSidebar() {
   scope_label.Opacity(0.7);
   scope_label.VerticalAlignment(mux::VerticalAlignment::Center);
   scope_row.Children().Append(scope_label);
-  wchar_t const* scopes[] = {L"ui.chat.scope.page", L"ui.chat.scope.selection",
-                             L"ui.chat.scope.doc"};
+  char const* scopes[] = {"ui.chat.scope.page", "ui.chat.scope.selection",
+                          "ui.chat.scope.doc"};
   for (int i = 0; i < 3; ++i) {
-    auto button = muxc::Primitives::ToggleButton();
+    auto button = muxcp::ToggleButton();
     muxc::TextBlock label;
     label.Text(pdfgist::Tr(scopes[i]));
     label.FontSize(11);
@@ -222,7 +223,7 @@ void MainWindow::AppendCardUi(muxc::StackPanel const& list,
                               std::shared_ptr<StreamCardUi> card) {
   if (!card) return;
   auto border = muxc::Border();
-  border.Padding(10);
+  border.Padding({10, 10, 10, 10});
   border.CornerRadius({8, 8, 8, 8});
   border.BorderThickness({1, 1, 1, 1});
   border.BorderBrush(ThemeBorderBrush());
@@ -234,7 +235,7 @@ void MainWindow::AppendCardUi(muxc::StackPanel const& list,
   // header: title · meta [stop]
   if (!card->title.empty()) {
     auto header = muxc::StackPanel();
-    header.Orientation(mux::Orientation::Horizontal);
+    header.Orientation(muxc::Orientation::Horizontal);
     header.Spacing(6);
     muxc::TextBlock title;
     title.Text(card->title);
@@ -540,7 +541,7 @@ void MainWindow::CurrentPageText(
   auto const weak = get_weak();
   std::thread([weak, dispatcher, doc, page,
                on_ready = std::move(on_ready)]() mutable {
-    auto text = doc->PageText(page - 1);
+    auto text = to_wide(doc->PageText(page - 1));
     dispatcher.TryEnqueue([weak, text = std::move(text), page,
                            on_ready = std::move(on_ready)]() mutable {
       if (auto window = weak.get()) on_ready(std::move(text), page);
@@ -577,7 +578,7 @@ void MainWindow::DocText(std::function<void(std::wstring, int)> on_ready) {
                on_ready = std::move(on_ready)]() mutable {
     std::wstring text;
     for (int i = 0; i < pages; ++i) {
-      auto raw = doc->PageText(i);
+      auto raw = to_wide(doc->PageText(i));
       if (raw.empty()) continue;
       if (raw.size() > 3000) raw = raw.substr(0, 3000) + L"…";
       text += L"--- 第 " + std::to_wstring(i + 1) + L" 页 ---\n" + raw + L"\n\n";

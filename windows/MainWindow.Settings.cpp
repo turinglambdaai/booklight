@@ -82,7 +82,7 @@ void MainWindow::BuildSettingsPane() {
   auto pane = muxc::ScrollViewer();
   auto stack = muxc::StackPanel();
   stack.Spacing(6);
-  stack.Padding(8);
+  stack.Padding({8, 8, 8, 8});
   stack.MaxWidth(380);
 
   // ---- provider section ----
@@ -134,7 +134,7 @@ void MainWindow::BuildSettingsPane() {
   stack.Children().Append(SettingLabel(pdfgist::Tr("ui.settings.api-key")));
   settings_api_key_ = muxc::PasswordBox();
   auto key_row = muxc::StackPanel();
-  key_row.Orientation(mux::Orientation::Horizontal);
+  key_row.Orientation(muxc::Orientation::Horizontal);
   key_row.Spacing(6);
   settings_api_key_.Width(220);
   key_row.Children().Append(settings_api_key_);
@@ -154,7 +154,7 @@ void MainWindow::BuildSettingsPane() {
   stack.Children().Append(key_row);
 
   auto actions_row = muxc::StackPanel();
-  actions_row.Orientation(mux::Orientation::Horizontal);
+  actions_row.Orientation(muxc::Orientation::Horizontal);
   actions_row.Spacing(6);
   actions_row.Margin({0, 8, 0, 0});
   auto fetch_models = muxc::Button();
@@ -216,7 +216,7 @@ void MainWindow::BuildSettingsPane() {
   stack.Children().Append(SettingLabel(pdfgist::Tr("ui.settings.view-mode")));
   settings_view_mode_ = muxc::ComboBox();
   settings_view_mode_.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
-  for (wchar_t const* key : {L"ui.settings.view-single", L"ui.settings.view-double"}) {
+  for (char const* key : {"ui.settings.view-single", "ui.settings.view-double"}) {
     auto item = muxc::ComboBoxItem();
     muxc::TextBlock label;
     label.Text(pdfgist::Tr(key));
@@ -295,7 +295,7 @@ void MainWindow::BuildSettingsPane() {
   stack.Children().Append(version);
 
   auto links = muxc::StackPanel();
-  links.Orientation(mux::Orientation::Horizontal);
+  links.Orientation(muxc::Orientation::Horizontal);
   links.Spacing(14);
   links.Margin({0, 6, 0, 0});
   auto website = muxc::HyperlinkButton();
@@ -587,7 +587,7 @@ void MainWindow::ShowAboutDialog() {
   stack.Children().Append(license);
 
   auto links = muxc::StackPanel();
-  links.Orientation(mux::Orientation::Horizontal);
+  links.Orientation(muxc::Orientation::Horizontal);
   links.Spacing(14);
   auto website = muxc::HyperlinkButton();
   website.Content(winrt::box_value(pdfgist::Tr("ui.about.website")));

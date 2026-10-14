@@ -27,6 +27,7 @@ namespace wut = winrt::Windows::UI::Text;
 using Microsoft::UI::Xaml::Visibility;
 
 namespace {
+using pdfgist::PdfOpenError;
 
 constexpr wchar_t kAppTitle[] = L"PDFGist";
 constexpr double kZoomStep = 1.2;
@@ -973,7 +974,7 @@ void MainWindow::LayoutTab(PdfTab& tab) {
   int page = 1;
   while (page <= tab.page_count) {
     auto row = muxc::StackPanel();
-    row.Orientation(mux::Orientation::Horizontal);
+    row.Orientation(muxc::Orientation::Horizontal);
     row.Spacing(8);
     row.HorizontalAlignment(mux::HorizontalAlignment::Center);
     int const second = two_up && page + 1 <= tab.page_count ? page + 1 : 0;
@@ -1832,7 +1833,7 @@ void MainWindow::RefreshRecentsRows() {
     button.MinHeight(0);
     button.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
     auto row = muxc::StackPanel();
-    row.Orientation(mux::Orientation::Horizontal);
+    row.Orientation(muxc::Orientation::Horizontal);
     row.Spacing(6);
     muxc::TextBlock page_label;
     page_label.Text(std::to_wstring(entry.page));

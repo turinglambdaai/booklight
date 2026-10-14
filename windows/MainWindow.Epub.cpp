@@ -10,6 +10,7 @@ namespace winrt::RivetHost::implementation {
 
 namespace mux = winrt::Microsoft::UI::Xaml;
 namespace muxc = winrt::Microsoft::UI::Xaml::Controls;
+namespace wu = winrt::Windows::UI;
 namespace wut = winrt::Windows::UI::Text;
 
 using Microsoft::UI::Xaml::Visibility;

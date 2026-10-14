@@ -66,7 +66,7 @@ void MainWindow::BuildPageOpsRow() {
   }
 
   auto row2 = muxc::StackPanel();
-  row2.Orientation(mux::Orientation::Horizontal);
+  row2.Orientation(muxc::Orientation::Horizontal);
   row2.Spacing(4);
   Op const ops_row2[] = {{L"ui.pages.extract", 3}, {L"ui.pages.merge", 4},
                          {L"ui.pages.bake", 5}};
