@@ -39,7 +39,9 @@ TTS, split view). The Windows host ships the P0 reading cut: tabbed PDF
 reading (PDFium), selection translate / summarize / chat with streaming,
 EPUB via WebView2, page surgery, settings and the signed self-updater. The
 Linux host matches the same P0 cut on GTK4: PDFium rendering (the same
-pinned, SHA-256-verified binaries), EPUB via WebKitGTK, page surgery, the
+pinned chromium/8100 revision as the Windows host — per-OS packages of one
+bblanchon/pdfium-binaries build, each SHA-256-verified), EPUB via WebKitGTK,
+page surgery, the
 AI workflow, settings and the signed self-updater with the three Linux
 install shapes (deb/rpm upgrade through the package manager, AppImage
 in-place swap + restart, tarball extraction hint) — annotation overlays,

@@ -1,7 +1,8 @@
 // PDFium binding for the Linux host.
 //
-// PDFium ships as a C API only (bblanchon/pdfium-binaries, the same binaries
-// the Windows host consumes). The library is loaded with dlopen instead of
+// PDFium ships as a C API only (bblanchon/pdfium-binaries, pinned to the
+// same chromium/8100 revision as the Windows host — per-OS packages of one
+// build, each SHA-256-verified). The library is loaded with dlopen instead of
 // link-time DT_NEEDED so the executable always starts: a missing libpdfium.so
 // surfaces as a readable message in the host UI instead of a loader abort,
 // and release layouts never need an embedded rpath (CMAKE_SKIP_RPATH).

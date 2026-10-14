@@ -62,16 +62,18 @@ endif()
 # PDFium (bblanchon/pdfium-binaries) — rendered pages, text layer, outline.
 #
 # Fetched at build time from a pinned release with a pinned sha256; binaries
-# never enter git. The two digests must move together on a bump: the tag has
-# to exist for both architectures.
+# never enter git. The tag is kept in lockstep with $PdfiumVersion in
+# windows/fetch-pdfium.ps1 (same chromium revision on both hosts); the two
+# digests must move together on a bump: the tag has to exist for every pinned
+# architecture on both platforms.
 # ---------------------------------------------------------------------------
-set(PDFGIST_PDFIUM_TAG "chromium/8086")
+set(PDFGIST_PDFIUM_TAG "chromium/8100")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
   set(PDFGIST_PDFIUM_ASSET "pdfium-linux-arm64.tgz")
-  set(PDFGIST_PDFIUM_SHA256 "e7e2fe4686925618330103cb167950aca5a84bb00fd977a41b86be59dd1480a2")
+  set(PDFGIST_PDFIUM_SHA256 "58c87a95a40a24c914a9c755fae798843f46f06adf9e5e9f2c893302d4bdb040")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
   set(PDFGIST_PDFIUM_ASSET "pdfium-linux-x64.tgz")
-  set(PDFGIST_PDFIUM_SHA256 "588577cf52dabc1a444988bac841920df54cc2f141801424de97ab04f4fbb935")
+  set(PDFGIST_PDFIUM_SHA256 "1c1894a12d4d96ee01400c3874444126254180c5c7d2ab628576b67f8120320a")
 else()
   message(FATAL_ERROR "no pdfium-binaries asset pinned for ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
