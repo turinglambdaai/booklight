@@ -2163,8 +2163,8 @@ void build_primary_menu() {
   g_menu_append(view, "Zoom Out", "app.zoom-out");
   g_menu_append(view, "Reset Zoom", "app.zoom-reset");
   g_menu_append(view, "Fit Width", "app.fit-width");
-  g_object_unref(view);
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(view));
+  g_object_unref(view);
   {
     auto* modes = g_menu_new();
     g_menu_append(modes, "Single Page", "app.view-mode::single");
