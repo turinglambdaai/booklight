@@ -53,8 +53,15 @@
 
 ;; ------------------------------------------------------------------ zlib
 
-(define-ffi-definer define-zlib
-  (ffi-lib "libz" '("1" "2" #f "1.2" "libz" "zlib1")))
+;; Windows names the official binary zlib1.dll, and ffi-lib joins variants
+;; as libz-<variant>.dll there, so the unix/mac variant list can never reach
+;; it — the platform picks the library form.
+(define zlib-ffi-lib
+  (if (eq? (system-type) 'windows)
+      (ffi-lib "zlib1" (list #f))
+      (ffi-lib "libz" '("1" "2" #f "1.2" "libz" "zlib1"))))
+
+(define-ffi-definer define-zlib zlib-ffi-lib)
 
 (define _zulong _ulong)
 (define-zlib uncompress
