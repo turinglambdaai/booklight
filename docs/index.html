@@ -180,7 +180,7 @@
   <h1 data-en='An AI PDF reader that <em>brings your own model</em>' data-zh='接入<em>自己大模型</em>的 AI PDF 阅读器'>接入<em>自己大模型</em>的 AI PDF 阅读器</h1>
   <p class="sub" data-en="PDF and EPUB, tabs and continue-reading, selection translation, paragraph-aligned bilingual reading, one-click summaries and document chat — streamed from any OpenAI-compatible endpoint you choose. Your key never leaves your machine." data-zh="PDF 与 EPUB、多标签与续读、划词翻译、段落对照精读、一键总结、与文档对话——流式输出，接你选择的任意 OpenAI 协议端点。API Key 只存本机。">PDF 与 EPUB、多标签与续读、划词翻译、段落对照精读、一键总结、与文档对话——流式输出，接你选择的任意 OpenAI 协议端点。API Key 只存本机。</p>
   <div class="hero-actions">
-    <a class="btn btn-primary" href="#download" data-en="Download for macOS" data-zh="下载 macOS 版">下载 macOS 版</a>
+    <a class="btn btn-primary" href="https://github.com/turinglambdaai/pdfgist/releases/latest/download/pdfgist-macos-arm64.dmg" data-en="Download for macOS" data-zh="下载 macOS 版">下载 macOS 版</a>
     <a class="btn btn-ghost" href="https://github.com/turinglambdaai/pdfgist" target="_blank" rel="noopener" data-en="View on GitHub" data-zh="GitHub 源码">GitHub 源码</a>
   </div>
   <p class="hero-note" data-en="Works with GLM Coding Plan, Kimi Code, DeepSeek, Qwen, Doubao, SiliconFlow, Ollama and more" data-zh="支持 GLM Coding 套餐、Kimi Code、DeepSeek、通义千问、豆包、硅基流动、Ollama 等">支持 GLM Coding 套餐、Kimi Code、DeepSeek、通义千问、豆包、硅基流动、Ollama 等</p>
@@ -294,14 +294,15 @@
       <div class="dl-card">
         <h3>macOS</h3>
         <p class="fmt">Apple silicon · dmg</p>
-        <a href="https://github.com/turinglambdaai/pdfgist/releases/latest" target="_blank" rel="noopener" data-en="Download" data-zh="下载">下载</a>
+        <a href="https://github.com/turinglambdaai/pdfgist/releases/latest/download/pdfgist-macos-arm64.dmg" target="_blank" rel="noopener" data-en="Download" data-zh="下载">下载</a>
       </div>
       <div class="dl-card">
         <h3>macOS (Intel)</h3>
         <p class="fmt">Intel 芯片 · dmg</p>
-        <a href="https://github.com/turinglambdaai/pdfgist/releases/latest" target="_blank" rel="noopener" data-en="Download" data-zh="下载">下载</a>
+        <a href="https://github.com/turinglambdaai/pdfgist/releases/latest/download/pdfgist-macos-x64.dmg" target="_blank" rel="noopener" data-en="Download" data-zh="下载">下载</a>
       </div>
     </div>
+    <p style="text-align:center;margin-top:10px"><a href="https://github.com/turinglambdaai/pdfgist/releases" target="_blank" rel="noopener" data-en="All releases" data-zh="全部版本">全部版本</a></p>
     <p class="hero-note" style="text-align:center;margin-top:18px" data-en="Pick the dmg (or portable zip) matching your Mac on the release page; SHA-256 checksums included. Windows and Linux hosts are under development — follow GitHub Releases for updates." data-zh="在 Release 页选择与你芯片匹配的 dmg（或便携 zip），附 SHA-256 校验文件。Windows 与 Linux 版开发中——进展请关注 GitHub Releases。">在 Release 页选择与你芯片匹配的 dmg（或便携 zip），附 SHA-256 校验文件。Windows 与 Linux 版开发中——进展请关注 GitHub Releases。</p>
   </div>
 </section>
@@ -336,6 +337,32 @@
     });
   }, { threshold: 0.12 });
   document.querySelectorAll(".animate-on-scroll").forEach(function (el) { io.observe(el); });
+
+  // Arch-aware direct downloads (macOS-only product): point the hero CTA at
+  // the dmg matching the visitor's chip and outline the matching card.
+  // Safari's UA never reveals the arch, so the default is Apple silicon —
+  // Chromium users get the real answer via userAgentData; Intel users can
+  // always use the second card or "All releases".
+  (function () {
+    var style = document.createElement("style");
+    style.textContent = ".dl-card.current{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}";
+    document.head.appendChild(style);
+    var ua = navigator.userAgent;
+    if (!/Mac|iPhone|iPad/i.test(ua)) return; // mac-only product
+    var cards = document.querySelectorAll("#download .dl-card");
+    var pick = function (arch) { return "https://github.com/turinglambdaai/pdfgist/releases/latest/download/pdfgist-macos-" + arch + ".dmg"; };
+    var applyArch = function (arch) {
+      document.querySelector('.hero-actions a.btn-primary').setAttribute("href", pick(arch));
+      var idx = arch === "x64" ? 1 : 0;
+      if (cards[idx]) cards[idx].classList.add("current");
+    };
+    applyArch("arm64");
+    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+      navigator.userAgentData.getHighEntropyValues(["architecture", "platform"]).then(function (h) {
+        if (h && /Mac/i.test(h.platform || "") && h.architecture === "x86") applyArch("x64");
+      }).catch(function () {});
+    }
+  })();
 </script>
 </body>
 </html>

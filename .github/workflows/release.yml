@@ -157,3 +157,18 @@ jobs:
         uses: actions/attest-build-provenance@v1
         with:
           subject-path: dist/*
+      - name: Stable alias copies (versionless direct-download links)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Family rule: download buttons point at
+          # releases/latest/download/<alias>, so every release also ships
+          # versionless copies. PDFGist is macOS-only (dmg per arch).
+          # Deliberately after the provenance attestation so dist/* there
+          # stays versioned-only.
+          mkdir -p stable-alias
+          cp "dist/pdfgist-${VERSION}-macos-arm64.dmg" stable-alias/pdfgist-macos-arm64.dmg
+          cp "dist/pdfgist-${VERSION}-macos-x64.dmg" stable-alias/pdfgist-macos-x64.dmg
+          gh release upload "${{ github.ref_name }}" stable-alias/* --clobber -R turinglambdaai/pdfgist
