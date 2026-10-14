@@ -44,6 +44,22 @@
       [(windows) (check-equal? (installer-extension) ".msi")]
       [else (check-equal? (installer-extension) ".tar.gz")]))
 
+  (test-case "appimage asset name maps the feed arch onto the AppImage arch"
+    (check-equal?
+     (appimage-asset-name "pdfgist-0.1.1-linux-x64.tar.gz" 'x64)
+     "pdfgist-0.1.1-linux-x86_64.AppImage")
+    (check-equal?
+     (appimage-asset-name "pdfgist-0.1.1-linux-arm64.tar.gz" 'arm64)
+     "pdfgist-0.1.1-linux-aarch64.AppImage")
+    ;; anything but a .tar.gz feed name is rejected…
+    (check-exn exn:fail?
+               (lambda ()
+                 (appimage-asset-name "pdfgist-0.1.1-linux-x64.zip" 'x64)))
+    ;; …as is a feed name whose arch suffix does not match
+    (check-exn exn:fail?
+               (lambda ()
+                 (appimage-asset-name "pdfgist-0.1.1-linux-arm.tar.gz" 'arm64))))
+
   (test-case "manifest url joins base and channel file name"
     (check-equal?
      (manifest-url)

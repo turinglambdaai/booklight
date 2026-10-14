@@ -41,6 +41,7 @@
 
 (provide platform-symbol
          architecture-symbol
+         appimage-asset-name
          installer-extension
          manifest-url
          destination-path
