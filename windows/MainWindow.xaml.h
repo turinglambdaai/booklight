@@ -98,6 +98,7 @@ struct StreamCardUi {
   std::wstring reasoning;
   enum class Phase { Streaming, Done, Empty, Error, Notice };
   Phase phase = Phase::Streaming;
+  bool stopping = false;  // the user pressed stop; an empty result reports it
   bool stopped = false;
   std::wstring failure;
 
@@ -417,8 +418,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   winrt::Microsoft::UI::Xaml::Controls::StackPanel chat_list_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::StackPanel page_ops_row_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::TextBlock page_ops_hint_{nullptr};
-  std::vector<winrt::Microsoft::UI::Xaml::Controls::ToggleButton> ai_tab_buttons_;
-  std::vector<winrt::Microsoft::UI::Xaml::Controls::ToggleButton> chat_scope_buttons_;
+  std::vector<winrt::Microsoft::UI::Xaml::Controls::Primitives::ToggleButton> ai_tab_buttons_;
+  std::vector<winrt::Microsoft::UI::Xaml::Controls::Primitives::ToggleButton> chat_scope_buttons_;
   bool settings_built_ = false;
 
   // timers

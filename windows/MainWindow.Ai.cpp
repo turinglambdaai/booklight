@@ -26,7 +26,7 @@ void MainWindow::BuildAiSidebar() {
   wchar_t const* tabs[] = {L"ui.tab.translate", L"ui.tab.summarize",
                            L"ui.tab.chat", L"ui.tab.settings"};
   for (int i = 0; i < 4; ++i) {
-    auto button = muxc::ToggleButton();
+    auto button = muxc::Primitives::ToggleButton();
     muxc::TextBlock label;
     label.Text(pdfgist::Tr(tabs[i]));
     label.FontSize(12);
@@ -134,7 +134,7 @@ void MainWindow::BuildAiSidebar() {
   wchar_t const* scopes[] = {L"ui.chat.scope.page", L"ui.chat.scope.selection",
                              L"ui.chat.scope.doc"};
   for (int i = 0; i < 3; ++i) {
-    auto button = muxc::ToggleButton();
+    auto button = muxc::Primitives::ToggleButton();
     muxc::TextBlock label;
     label.Text(pdfgist::Tr(scopes[i]));
     label.FontSize(11);
@@ -163,9 +163,9 @@ void MainWindow::BuildAiSidebar() {
   chat_pane.Children().Append(chat_list_);
 
   AiContent().Children().Clear();
-  ai_content_.Children().Append(translate_pane);
-  ai_content_.Children().Append(summarize_pane);
-  ai_content_.Children().Append(chat_pane);
+  AiContent().Children().Append(translate_pane);
+  AiContent().Children().Append(summarize_pane);
+  AiContent().Children().Append(chat_pane);
   ShowAiPane(ai_pane_);
 }
 
@@ -281,18 +281,16 @@ void MainWindow::AppendCardUi(muxc::StackPanel const& list,
     source.Opacity(0.55);
     source.MaxLines(3);
     source.TextTrimming(
-        winrt::Windows::UI::Xaml::TextTrimming::CharacterEllipsis);
-    source.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
+        mux::TextTrimming::CharacterEllipsis);
+    source.TextWrapping(mux::TextWrapping::Wrap);
     source.Padding({6, 4, 6, 4});
-    source.Background(ThemePanelAltBrush());
-    source.CornerRadius({5, 5, 5, 5});
     stack.Children().Append(source);
   }
 
   // status line: thinking / notices / errors
   auto status = muxc::TextBlock();
   status.FontSize(11);
-  status.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
+  status.TextWrapping(mux::TextWrapping::Wrap);
   status.IsTextSelectionEnabled(true);
   card->status_line = status;
   stack.Children().Append(status);
@@ -301,7 +299,7 @@ void MainWindow::AppendCardUi(muxc::StackPanel const& list,
   auto body = muxc::TextBlock();
   body.FontSize(12);
   body.IsTextSelectionEnabled(true);
-  body.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
+  body.TextWrapping(mux::TextWrapping::Wrap);
   card->body = body;
   stack.Children().Append(body);
 
@@ -924,7 +922,7 @@ void MainWindow::AppendChatBubble(ChatBubble bubble) {
     muxc::TextBlock text;
     text.Text(bubble.text);
     text.FontSize(12);
-    text.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
+    text.TextWrapping(mux::TextWrapping::Wrap);
     border.Child(text);
     bubble.root = border;
     chat_list_.Children().Append(border);
@@ -941,7 +939,7 @@ void MainWindow::AppendChatBubble(ChatBubble bubble) {
   text.Text(bubble.text);
   text.FontSize(12);
   text.Opacity(0.6);
-  text.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
+  text.TextWrapping(mux::TextWrapping::Wrap);
   border.Child(text);
   bubble.root = border;
   chat_list_.Children().Append(border);

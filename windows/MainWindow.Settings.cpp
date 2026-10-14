@@ -187,7 +187,7 @@ void MainWindow::BuildSettingsPane() {
 
   settings_status_ = muxc::TextBlock();
   settings_status_.FontSize(11);
-  settings_status_.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
+  settings_status_.TextWrapping(mux::TextWrapping::Wrap);
   settings_status_.IsTextSelectionEnabled(true);
   stack.Children().Append(settings_status_);
 
@@ -283,7 +283,7 @@ void MainWindow::BuildSettingsPane() {
   privacy.Text(pdfgist::Tr("ui.settings.privacy"));
   privacy.FontSize(11);
   privacy.Opacity(0.55);
-  privacy.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
+  privacy.TextWrapping(mux::TextWrapping::Wrap);
   privacy.Margin({0, 12, 0, 0});
   stack.Children().Append(privacy);
 
@@ -583,7 +583,7 @@ void MainWindow::ShowAboutDialog() {
   license.Text(pdfgist::Tr("ui.about.license"));
   license.FontSize(12);
   license.Opacity(0.7);
-  license.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
+  license.TextWrapping(mux::TextWrapping::Wrap);
   stack.Children().Append(license);
 
   auto links = muxc::StackPanel();

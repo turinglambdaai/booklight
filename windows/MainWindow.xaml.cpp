@@ -136,7 +136,7 @@ MainWindow::MainWindow() {
   pdfgist::SetUiLanguage(PRIMARYLANGID(lang) == LANG_CHINESE ? "zh" : "en");
 
   OpenLabel().Text(pdfgist::Tr("ui.toolbar.open"));
-  auto set_tip = [](muxc::FrameworkElement const& element,
+  auto set_tip = [](mux::FrameworkElement const& element,
                     std::wstring const& text) {
     muxc::ToolTipService::SetToolTip(element, winrt::box_value(text));
   };
@@ -370,7 +370,7 @@ void MainWindow::ShowDialog(std::wstring const& title, std::wstring const& body,
   // Selection-enabled text so failure messages stay copyable (mac parity).
   muxc::TextBlock content;
   content.Text(body);
-  content.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
+  content.TextWrapping(mux::TextWrapping::Wrap);
   content.IsTextSelectionEnabled(true);
   content.MaxWidth(360);
   dialog.Content(winrt::box_value(content));
@@ -766,7 +766,7 @@ void MainWindow::OpenDocReady(std::wstring const& path,
   muxc::TextBlock header;
   header.Text(tab->title);
   header.MaxWidth(150);
-  header.TextTrimming(winrt::Windows::UI::Xaml::TextTrimming::CharacterEllipsis);
+  header.TextTrimming(mux::TextTrimming::CharacterEllipsis);
   item.Header(header);
   item.IsClosable(true);
 
@@ -1786,7 +1786,7 @@ void MainWindow::RefreshLeftPanel() {
         label.Text(node.title);
         label.FontSize(12);
         label.TextTrimming(
-            winrt::Windows::UI::Xaml::TextTrimming::CharacterEllipsis);
+            mux::TextTrimming::CharacterEllipsis);
         button.Content(label);
         int const page = node.page;
         button.Click([weak_window, weak_tab, page](
@@ -1843,7 +1843,7 @@ void MainWindow::RefreshRecentsRows() {
     name_label.Text(file_name(to_wide(entry.path)));
     name_label.FontSize(11);
     name_label.TextTrimming(
-        winrt::Windows::UI::Xaml::TextTrimming::CharacterEllipsis);
+        mux::TextTrimming::CharacterEllipsis);
     row.Children().Append(page_label);
     row.Children().Append(name_label);
     button.Content(row);

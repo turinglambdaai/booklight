@@ -76,7 +76,7 @@ void MainWindow::OpenEpub(std::wstring const& path, int resume_chapter) {
   muxc::TextBlock header;
   header.Text(book->title);
   header.MaxWidth(150);
-  header.TextTrimming(winrt::Windows::UI::Xaml::TextTrimming::CharacterEllipsis);
+  header.TextTrimming(mux::TextTrimming::CharacterEllipsis);
   item.Header(header);
   item.IsClosable(true);
 
@@ -472,7 +472,7 @@ void MainWindow::RenderEpubToc(EpubBook& book) {
     muxc::TextBlock label;
     label.Text(to_wide(toc_item.title));
     label.FontSize(12);
-    label.TextTrimming(winrt::Windows::UI::Xaml::TextTrimming::CharacterEllipsis);
+    label.TextTrimming(mux::TextTrimming::CharacterEllipsis);
     button.Content(label);
     int const chapter = static_cast<int>(toc_item.chapter);
     button.Foreground(ThemeBrush(
