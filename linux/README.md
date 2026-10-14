@@ -1,37 +1,62 @@
-# Linux host (GTK4) — scaffold, under construction
+# Linux host (GTK4)
 
-The Linux host is **not part of any release yet**. The plan is a GTK4 window
-over one embedded Racket CS backend, speaking RVT1 through the shared
-`runtime/` codec via rivet's Linux runtime bridge (`rivet::linux_runtime` —
-the same embedding contract as `rivet::windows`, with a connected
-`socketpair` standing in for the Win32 named pipe pair).
+The Linux host is a first-party GTK4 shell over the same embedded Racket CS
+backend the macOS and Windows hosts drive: RVT1 RPC through the generated
+client (`GeneratedBackend.hpp`, do not edit), every completion and event
+dispatched back to the main loop before widgets are touched.
 
-What is here today is the **rivet template scaffold**, not a PDF reader:
+State: **reading core, AI workflow, settings, EPUB, page editing, online
+updates and About are implemented** (P0). Annotation overlays, TTS,
+printing, split view and AcroForm stay P2 — see the top-level README
+roadmap.
 
-- `src/main.cpp` — a GTK4 counter demo over the generated client: boot the
-  runtime off the UI thread, render one State value, one button. No document
-  view, no tabs, no AI workflow — the reader UI lives only in `macos-host/`.
-- `GeneratedBackend.hpp` — the generated client for the full PDFGist schema
-  (chat / summarize / translate / epub / edit / settings / updates). The
-  scaffold UI does not call any of it yet.
-- `CMakeLists.txt` — builds the scaffold against `$RIVET_ROOT` (rivet's
-  `platform/linux/runtime` + `runtime/include`) and an embeddable Racket CS.
+## What is here
 
-Known staleness: `main.cpp` still calls the template-era counter API
-(`get_counter_async` / `set_counter_async`), which the PDFGist backend schema
-no longer exposes. The scaffold does not compile against the checked-in
-generated client and needs rework onto the real API before reader-UI work
-resumes. `windows/` is in the same state; pdfgist's CI does not compile
-either host yet. Progress is tracked in the top-level README roadmap
-("Windows & Linux host builds").
+- `src/pdfium.{hpp,cpp}` — PDFium binding. The library is dlopen'd (not
+  linked) so a missing `libpdfium.so` surfaces as a readable message
+  instead of a loader abort; the .so is searched beside the executable,
+  then `$RIVET_PDFIUM_PATH`, then the normal loader search. Pages render
+  into cairo ARGB32 surfaces (PDFium's BGRA is byte-identical on
+  little-endian), text/outline come from the same C API.
+- `src/pdfview.{hpp,cpp}` — reading core: PdfDocument (sizes + text-page
+  caches), PdfTab (continuous scroll, single/double spread, zoom +
+  fit-width, selection, find, thumbnails, outline). All PDFium calls run
+  on the UI thread.
+- `src/panels.{hpp,cpp}` — AI panel: translate / summarize / chat stream
+  cards (v1 StreamBuffer semantics: reasoning dimmed until the first
+  answer delta) and the settings tab (presets with per-preset stash, API
+  key, connection test, target language, view mode, sidecar, appearance).
+- `src/epub.{hpp,cpp}` — EPUB over WebKitGTK (webkitgtk-6.0): the whole
+  book as one continuous scroll, TOC popover, font scaling, whole-book
+  search with in-page `<mark>` highlights, selection bridge to the AI
+  actions. Builds without WebKitGTK (`-DPDFGIST_ENABLE_EPUB=OFF`) with a
+  readable fallback.
+- `src/main.cpp` — window assembly: header bar (open / page-edit menu /
+  TOC / primary menu), notebook tabs (the EPUB tab stays last), left
+  sidebar (thumbnails + outline), find bar, status bar, keyboard
+  navigation, drag & drop, page-level editing dialogs (delete / rotate /
+  insert blank / extract / merge / bake text), the three-shape update flow
+  (deb/rpm → package manager hint, AppImage → in-place swap + restart
+  consent, tarball → extraction hint) and the About dialog.
+- `src/host.{hpp,cpp}` — dispatch-to-main-loop helper, install-shape
+  detection, host-side prefs (theme, panel visibility) in
+  `<config-dir>/site.jrtx.pdfgist/host.conf`.
+- `cmake/StagePdfium.cmake` — copies `libpdfium.so` into the rivet stage
+  (`.rivet/stage`) when one exists so packages and AppImages bundle it.
+
+## PDFium binaries
+
+Fetched at configure time from bblanchon/pdfium-binaries with a pinned tag
+and sha256 (see `CMakeLists.txt`); binaries never enter git. Bumping the
+pin means moving the tag and **both** architecture digests together.
 
 ## Building by hand
 
-Requirements: an embeddable Racket CS build, CMake ≥ 3.24, pkg-config, GTK 4,
-zlib, LZ4, curses, and a graphical session (or Xvfb) to run. The standard
-prebuilt Linux Racket installer does not ship `libracketcs` or the three boot
-files; build and install Racket CS from a source distribution as described by
-Racket's embedding guide.
+Requirements: embeddable Racket CS (static `libracketcs` + boot files),
+CMake ≥ 3.24, Ninja or Make, pkg-config, GTK 4 (≥ 4.10), WebKitGTK 6.0,
+json-glib, cairo, zlib, LZ4, curses. The standard prebuilt Linux Racket
+installer does not ship `libracketcs`; build Racket CS from source per
+Racket's embedding guide (or use rivet's `setup-embed-racket` action).
 
 ```bash
 export RIVET_ROOT=/path/to/rivet
@@ -42,5 +67,5 @@ cmake --build /tmp/pdfgist-linux-build
 ```
 
 The executable must sit beside a staged runtime to start: `runtime/*.boot`
-and `res/core.zo` (the same artifacts every platform host consumes;
-`raco rivet build`, `dev`, and `package` create this layout automatically).
+and `res/core.zo` — `raco rivet build` (and `package`/`release`) create
+that layout automatically and are the supported path.
