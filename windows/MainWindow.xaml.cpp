@@ -1336,8 +1336,8 @@ void MainWindow::DrawCellOverlays(PdfTab::Cell& cell, PdfTab const& tab) {
       shape.Fill(Brush(color));
       shape.Width(width);
       shape.Height(height);
-      mux::Media::Canvas::SetLeft(shape, left);
-      mux::Media::Canvas::SetTop(shape, top);
+      muxc::Canvas::SetLeft(shape, left);
+      muxc::Canvas::SetTop(shape, top);
       shape.IsHitTestVisible(false);
       cell.canvas.Children().Append(shape);
     };
@@ -1658,6 +1658,14 @@ void MainWindow::BuildKeyboardAccelerators() {
 
 void MainWindow::RefreshLeftPanel() {
   // (re)build: recents + mode row + content (thumbs / outline / TOC) + page ops
+  // The page-ops row is reused across rebuilds; an element can only have one
+  // parent in XAML, so detach it from the panel of the previous build first.
+  try {
+    if (page_ops_row_ && page_ops_row_.Parent()) {
+      page_ops_row_.Parent().as<muxc::Panel>().Children().Clear();
+    }
+  } catch (...) {
+  }
   auto const host = LeftContent();
 
   // recents section
