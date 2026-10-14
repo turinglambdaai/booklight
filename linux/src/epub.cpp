@@ -5,7 +5,13 @@
 
 #include <jsc/jsc.h>
 #include <json-glib/json-glib.h>
+// WebKitGTK 2.46+ installs the umbrella as webkit/webkit.h; older 6.0
+// packages (2.40-2.44) shipped webkit/WebKit.h.
+#if __has_include(<webkit/webkit.h>)
+#include <webkit/webkit.h>
+#else
 #include <webkit/WebKit.h>
+#endif
 
 #include <algorithm>
 #include <thread>
