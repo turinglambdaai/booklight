@@ -3,35 +3,282 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <Grid Padding="32">
+    <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <InfoBar
+            x:Name="StatusBar"
+            Grid.Row="0"
+            IsOpen="False"
+            IsClosable="False"
+            Severity="Informational"
+            Message="Starting…" />
+
+        <!-- command bar -->
         <StackPanel
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            Spacing="16"
-            Width="320">
-            <TextBlock
-                Text="Rivet"
-                FontSize="32"
-                FontWeight="SemiBold" />
-            <TextBlock
-                Text="Racket + WinUI 3"
-                Opacity="0.65" />
-            <InfoBar
-                x:Name="StatusBar"
-                IsOpen="True"
-                IsClosable="False"
-                Severity="Informational"
-                Message="Starting embedded Racket CS…" />
-            <TextBlock
-                x:Name="CountText"
-                Text="Count: 0"
-                FontSize="24" />
+            Grid.Row="1"
+            Orientation="Horizontal"
+            Spacing="4"
+            Padding="8,6">
             <Button
-                x:Name="IncrementButton"
-                Content="Increment in Racket"
-                IsEnabled="False"
-                HorizontalAlignment="Stretch"
-                Click="Increment_Click" />
+                x:Name="OpenButton"
+                Click="Open_Click"
+                ToolTipService.ToolTip="打开">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE8E5;" />
+                    <TextBlock x:Name="OpenLabel" Text="打开 PDF" FontSize="12" />
+                </StackPanel>
+            </Button>
+            <ToggleButton
+                x:Name="LeftToggle"
+                Click="LeftToggle_Click"
+                ToolTipService.ToolTip="缩略图 / 目录">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE700;" />
+            </ToggleButton>
+            <Button
+                x:Name="FindToggle"
+                Click="FindToggle_Click"
+                ToolTipService.ToolTip="搜索">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE721;" />
+            </Button>
+            <ToggleButton
+                x:Name="AiToggle"
+                Click="AiToggle_Click"
+                ToolTipService.ToolTip="AI 助手">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE99A;" />
+            </ToggleButton>
+            <Button
+                x:Name="ThemeButton"
+                Click="Theme_Click"
+                ToolTipService.ToolTip="深色 / 浅色">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE706;" />
+            </Button>
         </StackPanel>
+
+        <Grid Grid.Row="2" x:Name="MainArea">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- left panel: recents / thumbnails / outline / page ops -->
+            <Grid
+                Grid.Column="0"
+                x:Name="LeftPanel"
+                Width="232"
+                Padding="8,4"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="0,0,1,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" x:Name="LeftTop" />
+
+                <StackPanel
+                    Grid.Row="1"
+                    Orientation="Horizontal"
+                    Spacing="4"
+                    Margin="0,6,0,6"
+                    x:Name="LeftModeRow">
+                    <ToggleButton
+                        x:Name="ThumbsMode"
+                        Click="ThumbsMode_Click"
+                        MinWidth="104">
+                        <TextBlock x:Name="ThumbsModeLabel" Text="缩略图" FontSize="12" />
+                    </ToggleButton>
+                    <ToggleButton
+                        x:Name="OutlineMode"
+                        Click="OutlineMode_Click"
+                        MinWidth="104">
+                        <TextBlock x:Name="OutlineModeLabel" Text="目录" FontSize="12" />
+                    </ToggleButton>
+                </StackPanel>
+
+                <ScrollViewer Grid.Row="2">
+                    <StackPanel x:Name="LeftContent" Spacing="4" />
+                </ScrollViewer>
+            </Grid>
+
+            <!-- center: tabs + welcome overlay + find bar -->
+            <Grid Grid.Column="1" x:Name="CenterHost">
+                <TabView
+                    x:Name="DocTabs"
+                    SelectionChanged="DocTabs_SelectionChanged"
+                    CloseRequested="DocTabs_CloseRequested"
+                    IsAddTabButtonVisible="False" />
+                <Grid x:Name="WelcomeOverlay">
+                    <ScrollViewer>
+                        <StackPanel
+                            MaxWidth="460"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="14"
+                            Padding="0,40">
+                            <TextBlock
+                                x:Name="WelcomeTitle"
+                                Text="PDFGist"
+                                FontSize="30"
+                                FontWeight="Bold"
+                                HorizontalAlignment="Center" />
+                            <TextBlock
+                                x:Name="WelcomeTagline"
+                                Text="接入自己大模型的 AI PDF 阅读器"
+                                FontSize="14"
+                                Opacity="0.7"
+                                HorizontalAlignment="Center" />
+                            <TextBlock
+                                x:Name="WelcomeFeature1"
+                                Text="划词翻译 · 一键总结 · 与文档对话"
+                                FontSize="12"
+                                Opacity="0.7"
+                                HorizontalAlignment="Center" />
+                            <TextBlock
+                                x:Name="WelcomeFeature2"
+                                Text="全文搜索 · 缩略图导航 · 深色模式"
+                                FontSize="12"
+                                Opacity="0.7"
+                                HorizontalAlignment="Center" />
+                            <TextBlock
+                                x:Name="WelcomeFeature3"
+                                Text="GLM / DeepSeek / Qwen / Kimi / Ollama，Key 只存本机"
+                                FontSize="12"
+                                Opacity="0.7"
+                                HorizontalAlignment="Center" />
+                            <Button
+                                x:Name="WelcomeOpen"
+                                Click="Open_Click"
+                                HorizontalAlignment="Center"
+                                Style="{ThemeResource AccentButtonStyle}">
+                                <TextBlock x:Name="WelcomeOpenLabel" Text="打开 PDF 文件" FontSize="14" FontWeight="SemiBold" />
+                            </Button>
+                            <TextBlock
+                                x:Name="WelcomeContinue"
+                                Text="继续阅读"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Opacity="0.7"
+                                Margin="0,10,0,0" />
+                            <StackPanel x:Name="WelcomeList" Spacing="4" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+                <Border
+                    x:Name="FindBar"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    Margin="0,8,0,0"
+                    Padding="10,6"
+                    CornerRadius="8"
+                    Visibility="Collapsed"
+                    BorderThickness="1"
+                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon FontFamily="Segoe Fluent Icons" FontSize="13" Glyph="&#xE721;" />
+                        <TextBox
+                            x:Name="FindInput"
+                            Width="200"
+                            PlaceholderText="搜索"
+                            TextChanged="FindInput_TextChanged"
+                            KeyDown="FindInput_KeyDown" />
+                        <TextBlock x:Name="FindCount" VerticalAlignment="Center" FontSize="11" Opacity="0.7" />
+                        <Button x:Name="FindPrev" Click="FindPrev_Click" ToolTipService.ToolTip="上一个">
+                            <FontIcon FontFamily="Segoe Fluent Icons" FontSize="12" Glyph="&#xE74A;" />
+                        </Button>
+                        <Button x:Name="FindNext" Click="FindNext_Click" ToolTipService.ToolTip="下一个">
+                            <FontIcon FontFamily="Segoe Fluent Icons" FontSize="12" Glyph="&#xE74B;" />
+                        </Button>
+                        <Button x:Name="FindClose" Click="FindClose_Click" ToolTipService.ToolTip="关闭">
+                            <FontIcon FontFamily="Segoe Fluent Icons" FontSize="12" Glyph="&#xE711;" />
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- AI sidebar -->
+            <Grid
+                Grid.Column="2"
+                x:Name="AiPanel"
+                Width="400"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="1,0,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="2" Padding="8,8,8,4" x:Name="AiTabRow" />
+
+                <ScrollViewer Grid.Row="1">
+                    <StackPanel x:Name="AiContent" Spacing="8" Padding="8,0,8,8" />
+                </ScrollViewer>
+
+                <Grid Grid.Row="2" x:Name="ChatInputBar" Visibility="Collapsed" Padding="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox
+                        x:Name="ChatInput"
+                        Grid.Column="0"
+                        PlaceholderText="基于文档内容提问…"
+                        KeyDown="ChatInput_KeyDown" />
+                    <Button x:Name="ChatSend" Grid.Column="1" Click="SendChat_Click" Margin="6,0,0,0">
+                        <TextBlock x:Name="ChatSendLabel" Text="发送" />
+                    </Button>
+                    <Button x:Name="ChatStop" Grid.Column="2" Click="StopChat_Click" Margin="6,0,0,0" Visibility="Collapsed">
+                        <TextBlock x:Name="ChatStopLabel" Text="停止" />
+                    </Button>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- bottom bar -->
+        <Grid Grid.Row="3" x:Name="BottomBar" Visibility="Collapsed" Padding="12,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox
+                x:Name="PageInput"
+                Grid.Column="0"
+                Width="48"
+                Text="1"
+                TextAlignment="Center"
+                KeyDown="PageInput_KeyDown" />
+            <TextBlock x:Name="PageTotal" Grid.Column="1" Text=" / 0" VerticalAlignment="Center" Margin="6,0,0,0" FontSize="12" Opacity="0.7" />
+            <TextBlock x:Name="PageInfo" Grid.Column="2" Text="" VerticalAlignment="Center" Margin="12,0,0,0" FontSize="12" Opacity="0.5" />
+            <Button x:Name="ZoomOut" Grid.Column="4" Click="ZoomOut_Click" ToolTipService.ToolTip="缩小">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="12" Glyph="&#xE71F;" />
+            </Button>
+            <Button x:Name="ZoomReset" Grid.Column="5" Click="ZoomReset_Click" ToolTipService.ToolTip="重置缩放">
+                <TextBlock x:Name="ScaleLabel" Text="100%" FontSize="12" />
+            </Button>
+            <Button x:Name="ZoomIn" Grid.Column="6" Click="ZoomIn_Click" ToolTipService.ToolTip="放大">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="12" Glyph="&#xE8A3;" />
+            </Button>
+            <Button x:Name="FitWidth" Grid.Column="7" Click="FitWidth_Click" Margin="8,0,0,0">
+                <TextBlock x:Name="FitWidthLabel" Text="适应宽度" FontSize="12" />
+            </Button>
+        </Grid>
     </Grid>
 </Window>
