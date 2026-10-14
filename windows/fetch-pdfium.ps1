@@ -6,6 +6,9 @@
 # Nothing is committed to git: the cache lives under windows\build (gitignored)
 # and the download is re-fetched on a fresh checkout or CI runner.
 #
+# Runs under MSBuild Exec, which sanitizes PSModulePath — so only .NET types
+# and external executables are used (no Get-FileHash / Invoke-WebRequest).
+#
 # Usage (normally invoked by the FetchPdfium target in RivetHost.vcxproj):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File fetch-pdfium.ps1 `
 #     -Platform x64 -OutputRoot <dir>
@@ -50,7 +53,13 @@ try {
   $attempt = 0
   while ($true) {
     try {
-      Invoke-WebRequest -Uri "$baseUrl/$asset" -OutFile $tgz -MaximumRedirection 10 -ErrorAction Stop
+      $client = New-Object System.Net.Http.HttpClient
+      $client.Timeout = [TimeSpan]::FromMinutes(5)
+      $stream = $client.GetStreamAsync("$baseUrl/$asset").GetAwaiter().GetResult()
+      $file = [System.IO.File]::Create($tgz)
+      $stream.CopyTo($file)
+      $file.Close()
+      $stream.Close()
       break
     } catch {
       $attempt++
@@ -60,7 +69,16 @@ try {
     }
   }
 
-  $actual = (Get-FileHash -Path $tgz -Algorithm SHA256).Hash.ToLowerInvariant()
+  # SHA-256 via .NET (Get-FileHash is unavailable under MSBuild's environment).
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  $hashStream = [System.IO.File]::OpenRead($tgz)
+  try {
+    $actual = ([System.BitConverter]::ToString($sha.ComputeHash($hashStream)))
+  } finally {
+    $hashStream.Close()
+    $sha.Dispose()
+  }
+  $actual = $actual.Replace("-", "").ToLowerInvariant()
   if ($actual -ne $expected) {
     throw ("sha256 mismatch for {0}: expected {1}, got {2}" -f $asset, $expected, $actual)
   }
@@ -68,7 +86,7 @@ try {
   if (Test-Path $target) { Remove-Item -Recurse -Force $target }
   New-Item -ItemType Directory -Path $target -Force | Out-Null
   # bsdtar ships with Windows 10 1803+; the runners have it.
-  tar -xzf $tgz -C $target
+  & tar -xzf $tgz -C $target
   if ($LASTEXITCODE -ne 0) { throw "tar extraction failed with exit code $LASTEXITCODE" }
 
   foreach ($required in @("bin\pdfium.dll", "lib\pdfium.dll.lib", "include\fpdfview.h")) {
