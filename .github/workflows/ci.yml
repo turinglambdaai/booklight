@@ -50,6 +50,16 @@ jobs:
       - name: Install Rivet (catalog)
         shell: bash
         run: raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}'
+      # The backend's pdf FFI (pdfdoc.rkt binds zlib) is instantiated while
+      # `raco rivet build` assembles the codegen contract, so zlib1.dll must
+      # be on PATH first; the same cache copy rides into the packaged stage.
+      - name: Locate zlib for the backend FFI
+        shell: pwsh
+        run: |
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File "windows\locate-zlib.ps1" -ProjectDir "windows"
+          $out | Write-Host
+          $dir = ($out | Select-String -Pattern 'ZLIBDIR=(.+)').Matches.Groups[1].Value
+          (Resolve-Path $dir).Path >> $env:GITHUB_PATH
       # MSBuild + NuGet restore; fetch-pdfium.ps1 downloads the pinned
       # PDFium binaries (sha256-verified) into the gitignored cache.
       - name: Build host

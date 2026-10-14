@@ -110,6 +110,16 @@ jobs:
       - name: Install WiX (v5; rivet's MSI toolchain)
         run: dotnet tool install --global wix --version 5.0.2
         shell: bash
+      # Same zlib pre-step as ci.yml's windows-host job: the codegen
+      # instantiates the backend's pdf FFI, and CopyZlibDll ships the DLL in
+      # the MSI / portable zip so the launch smoke and end users find it.
+      - name: Locate zlib for the backend FFI
+        shell: pwsh
+        run: |
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File "windows\locate-zlib.ps1" -ProjectDir "windows"
+          $out | Write-Host
+          $dir = ($out | Select-String -Pattern 'ZLIBDIR=(.+)').Matches.Groups[1].Value
+          (Resolve-Path $dir).Path >> $env:GITHUB_PATH
       - name: Version preflight (VERSION == rivet.rktd == updater == tag)
         shell: bash
         run: bash scripts/check-release-version.sh "${{ github.ref_name }}"

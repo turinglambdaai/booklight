@@ -127,6 +127,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="fetch-pdfium.ps1" />
+    <None Include="locate-zlib.ps1" />
   </ItemGroup>
   <ItemGroup><Midl Include="Project.idl"><SubType>Code</SubType></Midl></ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
@@ -145,6 +146,15 @@
        OutDir=<stage>, so this copy is what packaging ships. -->
   <Target Name="CopyPdfiumDll" AfterTargets="AfterBuild">
     <Copy SourceFiles="$(PDFIUM_ROOT)\bin\pdfium.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- The backend's pdf FFI (pdfdoc.rkt) binds zlib; the packaged app
+       needs zlib1.dll beside the exe. locate-zlib.ps1 fills the cache
+       before `raco rivet build` runs (CI puts it on PATH for the codegen
+       step); here it only rides along into the stage. Conditional: a local
+       build without the cache keeps linking, the DLL then comes from PATH. -->
+  <Target Name="CopyZlibDll" AfterTargets="AfterBuild" Condition="Exists('$(MSBuildProjectDirectory)\build\zlib\zlib1.dll')">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\build\zlib\zlib1.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="ValidateRivetEnvironment" BeforeTargets="PrepareForBuild">
