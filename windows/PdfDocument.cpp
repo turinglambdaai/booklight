@@ -1,3 +1,5 @@
+#include "pch.h"
+
 #include "PdfDocument.h"
 
 #include <windows.h>
