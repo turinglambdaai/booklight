@@ -298,9 +298,21 @@ PdfDocument::BoundedSelection PdfDocument::SelectionInRect(
         double const cy = (ct + cb) / 2.0;
         double const cx = (cl + cr) / 2.0;
         if (cx >= left && cx <= right && cy >= top && cy <= bottom) {
-          unsigned short code = FPDFText_GetUnicode(text_page, i);
-          if (code == 0) code = L' ';
-          chars.push_back(code);
+          // FPDFText_GetUnicode answers a full code point; non-BMP chars
+          // must become a UTF-16 surrogate pair or the narrow store would
+          // silently keep only the low 16 bits.
+          unsigned int const code_point = FPDFText_GetUnicode(text_page, i);
+          if (code_point == 0) {
+            chars.push_back(L' ');
+          } else if (code_point > 0xFFFF) {
+            unsigned int const offset = code_point - 0x10000;
+            chars.push_back(static_cast<unsigned short>(0xD800 |
+                                                        (offset >> 10)));
+            chars.push_back(static_cast<unsigned short>(0xDC00 |
+                                                        (offset & 0x3FF)));
+          } else {
+            chars.push_back(static_cast<unsigned short>(code_point));
+          }
           append_rect(i);
         }
       }
