@@ -7,6 +7,7 @@
 #                  the release pipeline produces:
 #                    pdfgist-<ver>-macos-arm64.zip   pdfgist-<ver>-macos-x64.zip
 #                    pdfgist-<ver>-windows-x64.zip
+#                    pdfgist-<ver>-linux-x64.tar.gz  pdfgist-<ver>-linux-arm64.tar.gz
 #   <key-der-path> Ed25519 private key in DER (SubjectPublicKeyInfo/OneAsymmetricKey)
 #                  form; the CI secret stores it base64-encoded.
 #
@@ -17,11 +18,11 @@
 # installs keep pulling update-stable.json, while anything probing the
 # standard name gets the identical manifest instead of a 404. Host code
 # switching to the standard name is a later, separate change. One artifact
-# entry per macOS architecture plus the Windows x64 portable zip; clients
-# pick theirs via rivet/distribution's platform + architecture filter, so
-# every entry must be present and correctly named. The feed serves the
-# portable zips (the DMGs and the MSI stay on the release for human
-# download).
+# entry per macOS architecture, the Windows x64 portable zip and the Linux
+# x64/arm64 tarballs; clients pick theirs via rivet/distribution's platform
+# + architecture filter, so every entry must be present and correctly
+# named. The feed serves the portable zips (the DMGs and the MSI stay on
+# the release for human download).
 #
 # Env overrides: RELEASE_ASSET_BASE_URL, RIVET_UPDATE_KEY_ID.
 
@@ -143,4 +144,4 @@ racket "$SCRIPT"
 # while existing stable-name installs keep working untouched.
 cp "$DIST/update-stable.json" "$DIST/update-manifest.json"
 
-echo "manifest: $MANIFEST + update-manifest.json alias (macos arm64/x64 + windows x64 zips)"
+echo "manifest: $MANIFEST + update-manifest.json alias (macos arm64/x64 + windows x64 zips + linux x64/arm64 tar.gz)"
