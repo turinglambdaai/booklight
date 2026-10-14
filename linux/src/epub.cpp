@@ -202,8 +202,14 @@ EpubTab::EpubTab(PanelContext* ctx, std::string path, std::string title)
       title_(std::move(title)) {
   root_ = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   impl->ucm = webkit_user_content_manager_new();
+#if WEBKIT_CHECK_VERSION(2, 46, 0)
+  // 2.46 gained the world_name parameter; NULL is the default world.
+  webkit_user_content_manager_register_script_message_handler(
+      impl->ucm, "bridge", nullptr);
+#else
   webkit_user_content_manager_register_script_message_handler(impl->ucm,
                                                               "bridge");
+#endif
   impl->message_handler_id = hook(
       impl->ucm, "script-message-received::bridge",
       Impl::script_message, impl.get());
