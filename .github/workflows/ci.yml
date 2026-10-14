@@ -109,9 +109,12 @@ jobs:
         run: |
           raco rivet build || true
           echo "=== webkitgtk include ground truth ==="
-          pkg-config --cflags webkitgtk-6.0 || true
-          dpkg -L libwebkitgtk-6.0-dev | grep -m3 "WebKit.h" || true
-          ls /usr/include/webkitgtk-6.0/ | head || true
+          dpkg -s libwebkitgtk-6.0-dev | head -3 || true
+          dpkg -L libwebkitgtk-6.0-dev | head -25 || true
+          find /usr/include -name "WebKitApplicationInfo.h" 2>/dev/null | head -3
+          dpkg -S WebKitApplicationInfo.h 2>&1 | head -2 || true
+          apt-cache search webkitgtk | head -5 || true
+          apt-cache policy libwebkitgtk-6.0-dev libwebkit2gtk-4.1-dev | head -12 || true
           echo "=== epub compile flags ==="
           grep -A2 "CXX_INCLUDES\|epub.cpp.o" .rivet/build/linux/CMakeFiles/RivetHost.dir/flags.make | head -12 || true
           exit 1
