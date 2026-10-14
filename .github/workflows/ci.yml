@@ -10,12 +10,14 @@ env:
 
 jobs:
   contract:
-    name: Contract preflight (release metadata)
+    name: Contract preflight (release metadata + i18n)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Verify release version alignment (VERSION == rivet.rktd == updater)
         run: bash scripts/check-release-version.sh
+      - name: Verify the WinUI i18n table matches shared/i18n
+        run: node scripts/gen-win-strings.mjs --check
 
   racket-tests:
     strategy:
@@ -32,3 +34,31 @@ jobs:
         run: raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}' crypto
       - name: Domain core tests
         run: raco test racket/
+
+  windows-host:
+    name: Windows host (WinUI3 build)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Racket CS 9.3
+        uses: Bogdanp/setup-racket@v1.15
+        with:
+          architecture: x64
+          distribution: full
+          variant: CS
+          version: '9.3'
+      - name: Install Rivet (catalog)
+        shell: bash
+        run: raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}'
+      # MSBuild + NuGet restore; fetch-pdfium.ps1 downloads the pinned
+      # PDFium binaries (sha256-verified) into the gitignored cache.
+      - name: Build host
+        shell: pwsh
+        run: raco rivet build
+      - name: Launch smoke
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath ".rivet\stage\RivetHost.exe" -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { Write-Error "RivetHost.exe exited during smoke"; exit 1 }
+          Stop-Process -Id $p.Id -Force

@@ -4,7 +4,7 @@
 
 [English](README.md) · **中文**
 
-[![release](https://img.shields.io/github/v/release/turinglambdaai/pdfgist)](https://github.com/turinglambdaai/pdfgist/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%28Apple%20silicon%20%26%20Intel%29-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml/badge.svg)](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![release](https://img.shields.io/github/v/release/turinglambdaai/pdfgist)](https://github.com/turinglambdaai/pdfgist/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml/badge.svg)](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 大多数 AI PDF 应用把你锁进它们的订阅。PDFGist 反其道而行：应用本身只是一个轻快的阅读器，智能来自你自己指定的模型。你的 Key、你的模型、你的账单——Key 保存在本机，请求直达你选择的服务商，除此之外没有任何数据离开你的机器。
 
@@ -31,16 +31,16 @@
 | 宿主 | 技术栈 | 目录 |
 |---|---|---|
 | macOS | SwiftUI + 生成客户端 | `macos-host/` |
-| Windows | C++/WinRT + 生成客户端 | `windows/`（建设中） |
+| Windows | WinUI 3（C++/WinRT）+ PDFium + 生成客户端 | `windows/` |
 | Linux | GTK4 + 生成客户端 | `linux/`（建设中） |
 
-macOS 宿主率先发布；Windows 与 Linux 宿主正在向对等推进，不随本版本发布。
+macOS 宿主功能最全（批注、表单、打印、朗读、分屏）。Windows 宿主首发 P0 阅读层：PDFium 多标签阅读、划选翻译/总结/对话（流式）、WebView2 渲染 EPUB、页编辑、设置与签名自更新——批注高亮、打印、朗读、分屏、表单随后补齐（见路线图）。
 
 PDF 页级操作由领域核心自研的最小 PDF 读写器（`racket/pdfgist/pdfdoc.rkt`）完成——不依赖任何第三方 PDF 库。
 
 ## 从源码构建
 
-前置要求：[Racket](https://racket-lang.org) CS 9.x 并以 link 方式安装 [Rivet](https://github.com/turinglambdaai/rivet)，以及所在平台的 Swift / WinRT / GTK 工具链。
+前置要求：[Racket](https://racket-lang.org) CS 9.x 并以 link 方式安装 [Rivet](https://github.com/turinglambdaai/rivet)，以及所在平台的 Swift / WinRT / GTK 工具链。Windows 宿主通过 [PDFium](https://pdfium.googlesource.com/pdfium/)（BSD-3）渲染 PDF：构建期从 bblanchon/pdfium-binaries 拉取 pin 死版本并做 SHA-256 校验的二进制——仓库里不提交任何二进制。
 
 ```bash
 raco rivet doctor --json   # 工具链自检
@@ -51,7 +51,9 @@ raco test racket/          # 领域核心测试
 
 ## 路线图
 
-- [ ] Windows 与 Linux 宿主构建
+- [x] Windows 宿主——阅读 / AI / EPUB / 页编辑 / 更新（P0 层）
+- [ ] Windows P2——批注高亮叠加、朗读、打印、分屏、表单填写
+- [ ] Linux 宿主构建
 - [ ] 移动端 —— iOS / iPadOS 宿主（Rivet portable Swift 层）与 Android 宿主（Rivet Kotlin 平台），对齐家族全平台标准；watchOS 进度伴机尾随手机宿主
 
 ## 许可证

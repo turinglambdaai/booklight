@@ -4,7 +4,7 @@
 
 **English** · [中文](README.zh-CN.md)
 
-[![release](https://img.shields.io/github/v/release/turinglambdaai/pdfgist)](https://github.com/turinglambdaai/pdfgist/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%28Apple%20silicon%20%26%20Intel%29-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml/badge.svg)](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![release](https://img.shields.io/github/v/release/turinglambdaai/pdfgist)](https://github.com/turinglambdaai/pdfgist/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml/badge.svg)](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 Most AI PDF apps lock you into their subscription. PDFGist takes the opposite approach: the app is a thin, fast reader, and the intelligence is whatever model *you* point it at. Your key, your model, your cost — stored locally, sent directly to the provider you choose. Nothing leaves your machine except the requests you make to your own provider.
 
@@ -31,17 +31,21 @@ One Racket domain core (`racket/` + `app/backend.rkt`) owns all business logic �
 | Host | Stack | Directory |
 |---|---|---|
 | macOS | SwiftUI + generated client | `macos-host/` |
-| Windows | C++/WinRT + generated client | `windows/` (under construction) |
+| Windows | WinUI 3 (C++/WinRT) + PDFium + generated client | `windows/` |
 | Linux | GTK4 + generated client | `linux/` (under construction) |
 
-The macOS host ships first; the Windows and Linux hosts are being brought to
-parity and are not part of this release.
+The macOS host ships the full feature set (annotations, AcroForm, printing,
+TTS, split view). The Windows host ships the P0 reading cut: tabbed PDF
+reading (PDFium), selection translate / summarize / chat with streaming,
+EPUB via WebView2, page surgery, settings and the signed self-updater —
+annotation overlays, printing, TTS, split view and AcroForm follow (see the
+roadmap).
 
 PDF page-level operations run on the domain core's own minimal PDF reader/writer (`racket/pdfgist/pdfdoc.rkt`) — no external PDF libraries.
 
 ## Building from source
 
-Prerequisites: [Racket](https://racket-lang.org) CS 9.x with [Rivet](https://github.com/turinglambdaai/rivet) linked, plus the Swift / WinRT / GTK toolchain for your platform.
+Prerequisites: [Racket](https://racket-lang.org) CS 9.x with [Rivet](https://github.com/turinglambdaai/rivet) linked, plus the Swift / WinRT / GTK toolchain for your platform. The Windows host additionally renders PDF through [PDFium](https://pdfium.googlesource.com/pdfium/) (BSD-3): the build fetches pinned, SHA-256-verified binaries from the bblanchon/pdfium-binaries releases at build time — nothing is committed to the repository.
 
 ```bash
 raco rivet doctor --json   # toolchain check
@@ -52,7 +56,10 @@ raco test racket/          # domain-core tests
 
 ## Roadmap
 
-- [ ] Windows & Linux host builds
+- [x] Windows host — reading / AI / EPUB / page editing / updates (P0 cut)
+- [ ] Windows P2 — annotation highlights overlay, TTS, printing, split
+      view, AcroForm filling
+- [ ] Linux host build
 - [ ] Mobile — iOS / iPadOS host (Rivet's portable Swift layer) and Android
       host (Rivet's Kotlin platform), matching the family's full-platform
       scope; a watchOS progress companion trails the phone host

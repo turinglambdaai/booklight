@@ -8,6 +8,27 @@ releases and tags were deleted and the history lives in git on `main`.
 ## [Unreleased]
 
 ### Added
+- **Windows host.** PDFGist now ships a first-party WinUI 3 host
+  (`windows/`): PDFium-rendered tabbed reading (continuous scroll,
+  two-page view, zoom / fit-width, dark mode, thumbnails, outline,
+  full-text search, keyboard navigation), the selection AI workflow
+  (translate / summarize / chat, streaming over the shared RVT1 events),
+  the settings pane (presets, connection test, target language, view
+  mode, sidecar, theme, About), EPUB reading through WebView2 (TOC,
+  whole-book search), the six page-surgery operations (`edit-*`) and the
+  signed self-updater (throttled silent check, 400 ms progress polling,
+  zip-swap install handoff; MSI installs get the releases-page path).
+  PDFium (BSD-3) binaries are fetched and SHA-256-verified at build time
+  from bblanchon/pdfium-binaries — pinned, never committed. Windows P2
+  (annotation overlays, TTS, printing, split view, AcroForm) is tracked
+  in the roadmap.
+- **Windows CI and release pipeline.** `ci.yml` gains a `windows-host`
+  job (Racket CS + `raco rivet build` + launch smoke) and the contract
+  job checks the generated WinUI i18n table against `shared/i18n`.
+  `release.yml` gains a Windows leg (MSI + portable zip via rivet's
+  WiX 5.0.2 toolchain), the publish job merges the Windows artifacts
+  into the signed update feed (mac zips + Windows x64 zip), and stable
+  download aliases now include `pdfgist-windows-x64.msi`.
 - **The settings pane closes with the support surface** (the taskly
   About facts): the version footer now carries a Website link
   (pdfgist.jrtx.site), a Report-an-Issue link (the GitHub issue
@@ -17,6 +38,14 @@ releases and tags were deleted and the history lives in git on `main`.
   from the About link lands structured.
 
 ### Changed
+- **`rivet-schema.json` baseline regenerated** over the 29-RPC backend:
+  the EPUB (`epub-*`), page-surgery (`edit-*`) and updater
+  (`check-updates` / `start-download` / `update-state`) RPCs and the
+  `EditTextBox` / `EpubTocItem` / `EpubView` records that shipped with
+  0.1.1 were missing from the 16-RPC baseline.
+- **The shared i18n catalog gains the host strings** the Windows UI
+  needed (bake-text dialog, update-flow notices); the generated Swift
+  and WinUI tables are regenerated from the same source.
 - **Update error text is selectable** in the macOS update sheet, so a
   failure can travel into a bug report unchanged.
 - **The release feed is published under both names.** The signed

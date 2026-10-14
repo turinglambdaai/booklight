@@ -89,9 +89,65 @@ jobs:
           path: dist/pdfgist-*
           if-no-files-found: error
 
+  windows:
+    name: Windows (MSI + portable zip)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Racket CS
+        uses: Bogdanp/setup-racket@v1.15
+        with:
+          architecture: x64
+          distribution: full
+          variant: CS
+          version: '9.3'
+      - name: Install Rivet (catalog)
+        shell: bash
+        run: raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}'
+      - name: Install crypto (updater dependency)
+        shell: pwsh
+        run: raco pkg install --auto --no-docs crypto
+      - name: Install WiX (v5; rivet's MSI toolchain)
+        run: dotnet tool install --global wix --version 5.0.2
+        shell: bash
+      - name: Version preflight (VERSION == rivet.rktd == updater == tag)
+        shell: bash
+        run: bash scripts/check-release-version.sh "${{ github.ref_name }}"
+      # MSI + portable zip + SBOM + notices, launch smoke included (the
+      # taskly windows release shape). The portable zip is the update-feed
+      # entry; the publish job assembles and signs the merged manifest.
+      - name: Release (MSI + portable zip)
+        shell: pwsh
+        run: raco rivet release --without-updates --development
+      - name: Family naming + checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd dist
+          # rivet v0.11.0 names the MSI and the portable zip in family form
+          # already; only the SBOM/notices lack the platform segment.
+          mv sbom.cdx.json "pdfgist-${VERSION}-windows-x64.sbom.cdx.json"
+          mv THIRD_PARTY_NOTICES.txt "pdfgist-${VERSION}-windows-x64-THIRD_PARTY_NOTICES.txt"
+          for f in pdfgist-*; do
+            case "$f" in
+              *.sha256) ;;
+              # The sbom/notices/wixpdb bodies stay in the CI artifact only;
+              # a sidecar without its body on the release is a dangling
+              # reference (the taskly 1.4.0 leftover). Checksum what we upload.
+              *.sbom.cdx.json | *-THIRD_PARTY_NOTICES.txt | *.wixpdb) ;;
+              *) [ -f "$f.sha256" ] || sha256sum "$f" > "$f.sha256";;
+            esac
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: dist/pdfgist-*
+          if-no-files-found: error
+
   release:
     name: Publish
-    needs: [macos]
+    needs: [macos, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -113,6 +169,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           mv artifacts/macos-package-arm64/* artifacts/macos-package-x64/* dist/
+          mv artifacts/windows-package/* dist/
       - name: Sign the update feed over the final zips
         env:
           UPDATE_ED25519_PRIVATE_KEY_B64: ${{ secrets.UPDATE_ED25519_PRIVATE_KEY_B64 }}
@@ -165,10 +222,11 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           # Family rule: download buttons point at
           # releases/latest/download/<alias>, so every release also ships
-          # versionless copies. PDFGist is macOS-only (dmg per arch).
-          # Deliberately after the provenance attestation so dist/* there
-          # stays versioned-only.
+          # versionless copies of the primary installers (dmg per macOS
+          # arch, MSI for Windows). Deliberately after the provenance
+          # attestation so dist/* there stays versioned-only.
           mkdir -p stable-alias
           cp "dist/pdfgist-${VERSION}-macos-arm64.dmg" stable-alias/pdfgist-macos-arm64.dmg
           cp "dist/pdfgist-${VERSION}-macos-x64.dmg" stable-alias/pdfgist-macos-x64.dmg
+          cp "dist/pdfgist-${VERSION}-windows-x64.msi" stable-alias/pdfgist-windows-x64.msi
           gh release upload "${{ github.ref_name }}" stable-alias/* --clobber -R turinglambdaai/pdfgist

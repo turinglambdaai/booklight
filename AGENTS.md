@@ -14,7 +14,7 @@ PDFGist 以 Rivet（github.com/turinglambdaai/rivet）构建：一份 Racket 领
 | 平台宿主 | 技术栈 | 目录 | 状态 |
 |---|---|---|---|
 | macOS | SwiftUI 宿主 + 生成客户端 | `macos-host/` | 可跑（阅读/AI/批注/表单/页编辑/打印/TTS/分屏全量） |
-| Windows | C++/WinRT 宿主 + 生成客户端 | `windows/` | 宿主骨架 + 生成客户端 |
+| Windows | WinUI 3（C++/WinRT）宿主 + PDFium + 生成客户端 | `windows/` | P0 阅读层可跑（阅读/AI/EPUB/页编辑/更新器）；P2 见 README 路线图 |
 | Linux | GTK4 宿主 + 生成客户端 | `linux/` | 宿主骨架 + 生成客户端 |
 | agent CLI | — | — | 不适用 |
 
