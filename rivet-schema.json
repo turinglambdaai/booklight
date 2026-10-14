@@ -52,6 +52,101 @@
     {
       "fields": [
         {
+          "name": "page",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "x-ratio-milli",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "y-ratio-milli",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "text",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "size",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        }
+      ],
+      "name": "EditTextBox"
+    },
+    {
+      "fields": [
+        {
+          "name": "title",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "chapter",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "level",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        }
+      ],
+      "name": "EpubTocItem"
+    },
+    {
+      "fields": [
+        {
+          "name": "title",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "chapters",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "toc",
+          "type": {
+            "element": {
+              "kind": "record",
+              "name": "EpubTocItem"
+            },
+            "kind": "list"
+          }
+        }
+      ],
+      "name": "EpubView"
+    },
+    {
+      "fields": [
+        {
           "name": "id",
           "type": {
             "kind": "scalar",
@@ -385,6 +480,292 @@
     {
       "arguments": [
         {
+          "name": "force",
+          "type": {
+            "kind": "scalar",
+            "name": "Bool"
+          }
+        }
+      ],
+      "name": "check-updates",
+      "result": {
+        "kind": "scalar",
+        "name": "Bytes"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "other-path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "edit-append-doc",
+      "result": {
+        "kind": "scalar",
+        "name": "Bytes"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "watermark-text",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "watermark-size",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "watermark-opacity-milli",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "boxes",
+          "type": {
+            "element": {
+              "kind": "record",
+              "name": "EditTextBox"
+            },
+            "kind": "list"
+          }
+        }
+      ],
+      "name": "edit-bake-text",
+      "result": {
+        "kind": "scalar",
+        "name": "Bytes"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "pages",
+          "type": {
+            "element": {
+              "kind": "scalar",
+              "name": "Int64"
+            },
+            "kind": "list"
+          }
+        }
+      ],
+      "name": "edit-delete-pages",
+      "result": {
+        "kind": "scalar",
+        "name": "Bytes"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "pages",
+          "type": {
+            "element": {
+              "kind": "scalar",
+              "name": "Int64"
+            },
+            "kind": "list"
+          }
+        }
+      ],
+      "name": "edit-extract-pages",
+      "result": {
+        "kind": "scalar",
+        "name": "Bytes"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "page",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        }
+      ],
+      "name": "edit-insert-blank-after",
+      "result": {
+        "kind": "scalar",
+        "name": "Bytes"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "pages",
+          "type": {
+            "element": {
+              "kind": "scalar",
+              "name": "Int64"
+            },
+            "kind": "list"
+          }
+        },
+        {
+          "name": "delta",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        }
+      ],
+      "name": "edit-rotate-pages",
+      "result": {
+        "kind": "scalar",
+        "name": "Bytes"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "index",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        }
+      ],
+      "name": "epub-chapter-html",
+      "result": {
+        "kind": "scalar",
+        "name": "Bytes"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "index",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        }
+      ],
+      "name": "epub-chapter-text",
+      "result": {
+        "kind": "scalar",
+        "name": "String"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "max-chapters",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "cap-chars",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        }
+      ],
+      "name": "epub-doc-text",
+      "result": {
+        "kind": "scalar",
+        "name": "String"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "epub-open",
+      "result": {
+        "kind": "record",
+        "name": "EpubView"
+      }
+    },
+    {
+      "arguments": [
+        {
           "name": "pdf-path",
           "type": {
             "kind": "scalar",
@@ -541,6 +922,14 @@
       }
     },
     {
+      "arguments": [],
+      "name": "start-download",
+      "result": {
+        "kind": "scalar",
+        "name": "Void"
+      }
+    },
+    {
       "arguments": [
         {
           "name": "request-id",
@@ -660,6 +1049,14 @@
       "result": {
         "kind": "scalar",
         "name": "Void"
+      }
+    },
+    {
+      "arguments": [],
+      "name": "update-state",
+      "result": {
+        "kind": "scalar",
+        "name": "Bytes"
       }
     }
   ],
