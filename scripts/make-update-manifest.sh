@@ -47,7 +47,9 @@ fi
 
 for artifact in "$DIST/pdfgist-$VERSION-macos-arm64.zip" \
                 "$DIST/pdfgist-$VERSION-macos-x64.zip" \
-                "$DIST/pdfgist-$VERSION-windows-x64.zip"; do
+                "$DIST/pdfgist-$VERSION-windows-x64.zip" \
+                "$DIST/pdfgist-$VERSION-linux-x64.tar.gz" \
+                "$DIST/pdfgist-$VERSION-linux-arm64.tar.gz"; do
   if [ ! -f "$artifact" ]; then
     echo "error: missing installer: $artifact" >&2
     exit 1
@@ -107,7 +109,14 @@ cat > "$SCRIPT" <<RKT
                          (artifact 'macos 'x64
                                    (format "pdfgist-~a-macos-x64.zip" version) 'zip)
                          (artifact 'windows 'x64
-                                   (format "pdfgist-~a-windows-x64.zip" version) 'zip))))
+                                   (format "pdfgist-~a-windows-x64.zip" version) 'zip)
+                         ;; Linux updates through the tar.gz; the host's
+                         ;; install-shape dispatch layers the deb/rpm hint
+                         ;; and the AppImage sibling swap on top.
+                         (artifact 'linux 'x64
+                                   (format "pdfgist-~a-linux-x64.tar.gz" version) 'targz)
+                         (artifact 'linux 'arm64
+                                   (format "pdfgist-~a-linux-arm64.tar.gz" version) 'targz))))
 
 ;; write-signed-manifest validates the struct against the manifest schema
 ;; before signing, so a malformed manifest fails the release instead of

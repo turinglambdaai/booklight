@@ -155,9 +155,63 @@ jobs:
           path: dist/pdfgist-*
           if-no-files-found: error
 
+  linux:
+    name: Linux package (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, runner: ubuntu-latest, racket-arch: x64 }
+          - { arch: arm64, runner: ubuntu-24.04-arm, racket-arch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up embeddable Racket CS
+        uses: turinglambdaai/rivet/.github/actions/setup-embed-racket@v0.11.0
+      - name: Install Rivet (catalog) and backend packages
+        run: |
+          raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}'
+          raco pkg install --auto --no-docs crypto
+      - name: Install GTK4, WebKitGTK and packaging tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config \
+            libgtk-4-dev libwebkitgtk-6.0-dev libjson-glib-dev \
+            libglib2.0-dev file rpm desktop-file-utils
+      - name: Version preflight (VERSION == rivet.rktd == updater == tag)
+        run: bash scripts/check-release-version.sh "${{ github.ref_name }}"
+      # tar.gz (the update-feed payload) + deb + rpm + AppImage + portable
+      # zip + SBOM, launch smoke included. The AppImage carries its own GTK
+      # dependency closure and libpdfium.so; APPIMAGE_EXTRACT_AND_RUN lets
+      # appimagetool run on the runner (taskly release.yml pattern).
+      - name: Release (tar.gz + deb + rpm + AppImage + portable zip)
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: raco rivet release --without-updates --development
+      - name: Family naming + checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          ls -1
+          # The AppImage sidecar (write-appimage-checksum!) backs the
+          # AppImage self-update flow — keep it verbatim. Everything else
+          # gets a sidecar if it lacks one.
+          for f in pdfgist-*; do
+            case "$f" in
+              *.sha256) ;;
+              *.sbom.cdx.json | *-THIRD_PARTY_NOTICES.txt) ;;
+              *) [ -f "$f" ] || continue; [ -f "$f.sha256" ] || sha256sum "$f" > "$f.sha256" ;;
+            esac
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-package-${{ matrix.arch }}
+          path: dist/pdfgist-*
+          if-no-files-found: error
+
   release:
     name: Publish
-    needs: [macos, windows]
+    needs: [macos, windows, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -180,6 +234,7 @@ jobs:
           mkdir -p dist
           mv artifacts/macos-package-arm64/* artifacts/macos-package-x64/* dist/
           mv artifacts/windows-package/* dist/
+          mv artifacts/linux-package-x64/* artifacts/linux-package-arm64/* dist/
       - name: Sign the update feed over the final zips
         env:
           UPDATE_ED25519_PRIVATE_KEY_B64: ${{ secrets.UPDATE_ED25519_PRIVATE_KEY_B64 }}
@@ -238,5 +293,13 @@ jobs:
           mkdir -p stable-alias
           cp "dist/pdfgist-${VERSION}-macos-arm64.dmg" stable-alias/pdfgist-macos-arm64.dmg
           cp "dist/pdfgist-${VERSION}-macos-x64.dmg" stable-alias/pdfgist-macos-x64.dmg
+          # Linux: deb (x64/arm64), AppImage (x86_64/aarch64 naming) and
+          # the tar.gz the linux feed entry serves.
+          cp "dist/pdfgist-${VERSION}-linux-amd64.deb" stable-alias/pdfgist-linux-x64.deb
+          cp "dist/pdfgist-${VERSION}-linux-arm64.deb" stable-alias/pdfgist-linux-arm64.deb
+          cp "dist/pdfgist-${VERSION}-linux-x86_64.AppImage" stable-alias/pdfgist-linux-x64.AppImage
+          cp "dist/pdfgist-${VERSION}-linux-aarch64.AppImage" stable-alias/pdfgist-linux-arm64.AppImage
+          cp "dist/pdfgist-${VERSION}-linux-x64.tar.gz" stable-alias/pdfgist-linux-x64.tar.gz
+          cp "dist/pdfgist-${VERSION}-linux-arm64.tar.gz" stable-alias/pdfgist-linux-arm64.tar.gz
           cp "dist/pdfgist-${VERSION}-windows-x64.msi" stable-alias/pdfgist-windows-x64.msi
           gh release upload "${{ github.ref_name }}" stable-alias/* --clobber -R turinglambdaai/pdfgist
