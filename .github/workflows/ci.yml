@@ -108,15 +108,16 @@ jobs:
       - name: Build host
         run: raco rivet build
       # Headless Wayland smoke: boot the app under weston and let the
-      # embedded backend come up (dbus session for GSettings).
+      # embedded backend come up (dbus session for GSettings). Runs under
+      # gdb so a crash prints a backtrace instead of failing silently.
       - name: Headless Wayland smoke (weston)
         run: |
-          sudo apt-get install -y at-spi2-core dbus-x11 weston
+          sudo apt-get install -y at-spi2-core dbus-x11 weston gdb
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/wayland-smoke"
           mkdir -p "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
           dbus-run-session -- bash -c '
-            set -euo pipefail
+            set -uo pipefail
             export XDG_RUNTIME_DIR
             export WAYLAND_DISPLAY=pdfgist-smoke
             export GDK_BACKEND=wayland
@@ -124,9 +125,15 @@ jobs:
             weston --backend=headless-backend.so --socket="$WAYLAND_DISPLAY" \
               --idle-time=0 &
             sleep 2
-            ./.rivet/stage/RivetHost &
-            APP_PID=$!
-            sleep 12
-            kill -0 $APP_PID
-            kill $APP_PID
+            timeout -s KILL 15 gdb -batch \
+              -ex run \
+              -ex "bt 25" \
+              --args ./.rivet/stage/RivetHost > smoke.log 2>&1
+            echo "=== smoke.log tail ==="
+            tail -60 smoke.log
+            if grep -qE "SIGSEGV|SIGABRT|SIGBUS" smoke.log; then
+              echo "::error::host crashed under weston"
+              exit 1
+            fi
+            exit 0
           '
