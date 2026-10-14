@@ -113,7 +113,7 @@
                 <TabView
                     x:Name="DocTabs"
                     SelectionChanged="DocTabs_SelectionChanged"
-                    CloseRequested="DocTabs_CloseRequested"
+                    TabCloseRequested="DocTabs_CloseRequested"
                     IsAddTabButtonVisible="False" />
                 <Grid x:Name="WelcomeOverlay">
                     <ScrollViewer>
