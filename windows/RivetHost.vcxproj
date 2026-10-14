@@ -59,6 +59,14 @@
     <RivetRuntimeLibrary Condition="'$(RivetRuntimeLibrary)'=='' and '$(Configuration)'=='Release'">MultiThreadedDLL</RivetRuntimeLibrary>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Pinned by fetch-pdfium.ps1; the cache lives under windows\build
+         (gitignored) and is re-fetched on fresh checkouts and CI runners.
+         Defined before the ItemDefinitionGroups that consume it. -->
+    <PDFIUM_VERSION_DIR>chromium-8100</PDFIUM_VERSION_DIR>
+    <PDFIUM_ROOT>$(MSBuildProjectDirectory)\build\pdfium\$(PDFIUM_VERSION_DIR)\$(Platform.ToLower())</PDFIUM_ROOT>
+  </PropertyGroup>
+
   <ItemDefinitionGroup>
     <ClCompile>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -68,9 +76,9 @@
       <AdditionalOptions>%(AdditionalOptions) /bigobj /permissive- /utf-8</AdditionalOptions>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>$(RivetRuntimeLibrary)</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(RIVET_RACKET_INCLUDE);$(RIVET_ROOT)\runtime\include;$(RIVET_ROOT)\platform\windows\runtime;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(RIVET_RACKET_INCLUDE);$(RIVET_ROOT)\runtime\include;$(RIVET_ROOT)\platform\windows\runtime;$(PDFIUM_ROOT)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
-    <Link><AdditionalDependencies>$(RIVET_RACKET_IMPORT_LIB);%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><AdditionalDependencies>$(RIVET_RACKET_IMPORT_LIB);$(PDFIUM_ROOT)\lib\pdfium.dll.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
@@ -93,7 +101,10 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="App.xaml.h"><DependentUpon>App.xaml</DependentUpon></ClInclude>
     <ClInclude Include="MainWindow.xaml.h"><DependentUpon>MainWindow.xaml</DependentUpon></ClInclude>
+    <ClInclude Include="PdfDocument.h" />
     <ClInclude Include="GeneratedBackend.hpp" />
+    <ClInclude Include="I18n.h" />
+    <ClInclude Include="I18nGenerated.h" />
     <ClInclude Include="$(RIVET_ROOT)\platform\windows\runtime\backend.hpp" />
     <ClInclude Include="$(RIVET_ROOT)\platform\windows\runtime\win32_pipe_transport.hpp" />
     <ClInclude Include="$(RIVET_ROOT)\platform\windows\system\system_services.hpp" />
@@ -103,13 +114,35 @@
     <ClCompile Include="pch.cpp"><PrecompiledHeader>Create</PrecompiledHeader></ClCompile>
     <ClCompile Include="App.xaml.cpp"><DependentUpon>App.xaml</DependentUpon></ClCompile>
     <ClCompile Include="MainWindow.xaml.cpp"><DependentUpon>MainWindow.xaml</DependentUpon></ClCompile>
+    <ClCompile Include="MainWindow.Ai.cpp" />
+    <ClCompile Include="MainWindow.Settings.cpp" />
+    <ClCompile Include="MainWindow.Epub.cpp" />
+    <ClCompile Include="MainWindow.Pages.cpp" />
+    <ClCompile Include="MainWindow.Update.cpp" />
+    <ClCompile Include="PdfDocument.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="fetch-pdfium.ps1" />
   </ItemGroup>
   <ItemGroup><Midl Include="Project.idl"><SubType>Code</SubType></Midl></ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup Condition="'$(RIVET_WINDOWS_ICON_RC)'!=''">
     <ResourceCompile Include="$(RIVET_WINDOWS_ICON_RC)" />
   </ItemGroup>
+
+  <!-- PDFium binaries are never committed: fetch + sha256-verify at build
+       time (see windows/fetch-pdfium.ps1). Runs on every build; the script
+       exits in milliseconds once the .stamp is present. -->
+  <Target Name="FetchPdfium" BeforeTargets="PrepareForBuild">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\fetch-pdfium.ps1&quot; -Platform $(Platform) -OutputRoot &quot;$(MSBuildProjectDirectory)\build\pdfium&quot;" />
+  </Target>
+
+  <!-- pdfium.dll must sit next to RivetHost.exe; raco rivet build passes
+       OutDir=<stage>, so this copy is what packaging ships. -->
+  <Target Name="CopyPdfiumDll" AfterTargets="AfterBuild">
+    <Copy SourceFiles="$(PDFIUM_ROOT)\bin\pdfium.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
 
   <Target Name="ValidateRivetEnvironment" BeforeTargets="PrepareForBuild">
     <Error Condition="'$(RIVET_ROOT)'==''" Text="RIVET_ROOT is not set. Run this project through `raco rivet build`." />
