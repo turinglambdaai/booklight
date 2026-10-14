@@ -7,6 +7,24 @@ releases and tags were deleted and the history lives in git on `main`.
 
 ## [Unreleased]
 
+### Added
+- **The settings pane closes with the support surface** (the taskly
+  About facts): the version footer now carries a Website link
+  (pdfgist.jrtx.site), a Report-an-Issue link (the GitHub issue
+  tracker) and the AGPL-3.0 license line. A bug report starts one click
+  away from the failure it describes.
+- **GitHub issue templates** (bug report + feature request) so feedback
+  from the About link lands structured.
+
+### Changed
+- **Update error text is selectable** in the macOS update sheet, so a
+  failure can travel into a bug report unchanged.
+- **The release feed is published under both names.** The signed
+  manifest ships as `update-stable.json` (what installed clients pull,
+  unchanged) and, with identical bytes, as the family-standard
+  `update-manifest.json` — family probes of the standard name stop
+  404ing. Existing installs are unaffected; the host switching to the
+  standard name is a later change.
 ## [0.1.1] - 2026-10-14
 
 Alignment, honesty, and a manual. No new features.
