@@ -72,3 +72,61 @@ jobs:
           Start-Sleep -Seconds 10
           if ($p.HasExited) { Write-Error "RivetHost.exe exited during smoke"; exit 1 }
           Stop-Process -Id $p.Id -Force
+
+  linux-host:
+    name: Linux host (${{ matrix.arch }} GTK4 build)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, runner: ubuntu-latest, racket-arch: x64 }
+          - { arch: arm64, runner: ubuntu-24.04-arm, racket-arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      # Builds and caches the embeddable Racket CS runtime and exports
+      # RIVET_RACKET_* (rivet's own composite action, same as taskly).
+      - name: Set up embeddable Racket CS
+        uses: turinglambdaai/rivet/.github/actions/setup-embed-racket@v0.11.0
+      # Installed after the embeddable runtime so the catalog dependency
+      # closure (cext-lib, crypto-lib, keel) resolves against the minimal
+      # build — it ships no packages of its own. crypto backs the updater.
+      - name: Install Rivet (catalog) and backend packages
+        run: |
+          raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}'
+          raco pkg install --auto --no-docs crypto
+      - name: Install GTK4, WebKitGTK and packaging toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config \
+            libgtk-4-dev libwebkitgtk-6.0-dev libjson-glib-dev \
+            libglib2.0-dev
+      - name: Toolchain doctor
+        run: raco rivet doctor --json
+      # Configures the host CMake, which fetches the pinned PDFium binaries
+      # (sha256-verified) and stages libpdfium.so beside the executable.
+      - name: Build host
+        run: raco rivet build
+      # Headless Wayland smoke: boot the app under weston and let the
+      # embedded backend come up (dbus session for GSettings).
+      - name: Headless Wayland smoke (weston)
+        run: |
+          sudo apt-get install -y at-spi2-core dbus-x11 weston
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/wayland-smoke"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          dbus-run-session -- bash -c '
+            set -euo pipefail
+            export XDG_RUNTIME_DIR
+            export WAYLAND_DISPLAY=pdfgist-smoke
+            export GDK_BACKEND=wayland
+            unset DISPLAY
+            weston --backend=headless-backend.so --socket="$WAYLAND_DISPLAY" \
+              --idle-time=0 &
+            sleep 2
+            ./.rivet/stage/RivetHost &
+            APP_PID=$!
+            sleep 12
+            kill -0 $APP_PID
+            kill $APP_PID
+          '
