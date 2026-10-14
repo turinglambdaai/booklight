@@ -1036,18 +1036,21 @@ void MainWindow::RequestVisibleRenders(PdfTab& tab) {
     }
     top += cell->height + 8;
   }
-  double bottom = offset + viewport;
+  double const bottom = offset + viewport;
 
+  // The `requested` flag guards duplicate dispatches; rendered_key is only
+  // stamped on success, so a failed render retries on the next pass.
+  double row_top = 8;
   for (auto const& cell : tab.cells) {
-    bool const intersects = top < bottom && top + cell->height + 8 > offset;
-    top += cell->height + 8;
+    bool const intersects =
+        row_top < bottom && row_top + cell->height + 8 > offset;
+    row_top += cell->height + 8;
     if (!intersects) {
       continue;
     }
     if (cell->rendered_key == key || cell->requested) continue;
     if (std::abs(cell->page - first_visible) > 2) continue;
     cell->requested = true;
-    cell->rendered_key = key;  // reserve the slot; the render overwrites it
     RenderCell(SharedTab(&tab), cell, scale, dark, raster);
   }
 
@@ -1238,7 +1241,7 @@ void MainWindow::PageInput_KeyDown(
   auto tab = epub_active_ ? nullptr : active_pdf_.get();
   if (!tab) return;
   try {
-    int const page = std::stoi(PageInput().Text());
+    int const page = std::stoi(std::wstring(PageInput().Text()));
     if (page >= 1 && page <= tab->page_count) {
       ScrollToPage(*tab, page);
       return;

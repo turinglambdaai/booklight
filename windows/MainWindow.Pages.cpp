@@ -354,7 +354,7 @@ void MainWindow::RunBakeDialog() {
     std::wstring const text(input.Text());
     int const size = [&] {
       try {
-        return std::max(8, std::min(200, std::stoi(size_input.Text())));
+        return std::max(8, std::min(200, std::stoi(std::wstring(size_input.Text()))));
       } catch (...) {
         return 48;
       }
