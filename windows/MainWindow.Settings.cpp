@@ -374,7 +374,8 @@ void MainWindow::SwitchPreset(std::wstring const& id) {
   // restore the stash (or the preset defaults) for the new one.
   std::wstring const old_id = SelectedProviderId();
   if (old_id.empty() || old_id == id) return;
-  preset_stash_[old_id] = {settings_base_url_.Text(), settings_model_.Text()};
+  preset_stash_[old_id] = {std::wstring(settings_base_url_.Text()),
+                           std::wstring(settings_model_.Text())};
   std::wstring const provider_id = id;
   auto const stash = preset_stash_.find(provider_id);
   if (stash != preset_stash_.end()) {
@@ -459,7 +460,7 @@ void MainWindow::SaveSettingsFromPane() {
 
 void MainWindow::SaveApiKeyFromPane() {
   if (!ready_ || !api_ || settings_busy_) return;
-  std::wstring const key(settings_api_key_.Password());
+  std::wstring key(settings_api_key_.Password());
   // trim
   while (!key.empty() && key.front() == L' ') key.erase(0, 1);
   while (!key.empty() && key.back() == L' ') key.pop_back();
@@ -523,11 +524,10 @@ void MainWindow::TestConnectionFromPane() {
           if (!window) return;
           window->settings_busy_ = false;
           std::wstring status;
-          std::vector<std::wstring> models;
+          auto models = result.models.value_or(std::vector<std::string>{});
           if (!failure.empty()) {
             status = to_wide(failure);
           } else if (result.ok) {
-            models = result.models.value_or(std::vector<std::string>{});
             status = models.empty()
                          ? pdfgist::Tr("ui.settings.test-ok-no-list")
                          : pdfgist::Trf("ui.settings.test-ok",

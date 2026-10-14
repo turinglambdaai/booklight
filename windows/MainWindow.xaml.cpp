@@ -27,6 +27,7 @@ namespace wut = winrt::Windows::UI::Text;
 using Microsoft::UI::Xaml::Visibility;
 
 namespace {
+
 using pdfgist::PdfOpenError;
 
 constexpr wchar_t kAppTitle[] = L"PDFGist";
@@ -34,8 +35,10 @@ constexpr double kZoomStep = 1.2;
 constexpr double kMinZoom = 0.4;
 constexpr double kMaxZoom = 4.0;
 
-// ---- host helpers ---------------------------------------------------------------
+}  // namespace
 
+// Host helpers declared in MainWindow.xaml.h — namespace scope so the other
+// MainWindow.*.cpp translation units link against them.
 std::filesystem::path executable_path() {
   std::wstring buffer(32768, L'\0');
   auto const length = ::GetModuleFileNameW(nullptr, buffer.data(),
@@ -77,6 +80,8 @@ std::string to_utf8(std::wstring_view wide) {
 std::string utf8(std::filesystem::path const& path) {
   return to_utf8(path.wstring());
 }
+
+namespace {
 
 rivet::windows::RacketRuntimeConfig runtime_config() {
   auto const exe = executable_path();
@@ -1127,7 +1132,7 @@ void MainWindow::ScrollToPage(PdfTab& tab, int page) {
     if (cell->page == page) break;
     offset += cell->height + 8;
   }
-  tab.scroll.ChangeView(0, offset, nullptr, true);
+  tab.scroll.ChangeView(nullptr, offset, nullptr, true);
   RequestVisibleRenders(tab);
   UpdatePageBar();
   NoteActivity();

@@ -43,11 +43,11 @@ void MainWindow::BuildPageOpsRow() {
 
   auto const weak = get_weak();
   struct Op {
-    wchar_t const* key;
+    char const* key;
     int op;
   };
-  Op const ops_row1[] = {{L"ui.pages.rotate", 0}, {L"ui.pages.blank", 1},
-                         {L"ui.pages.delete", 2}};
+  Op const ops_row1[] = {{"ui.pages.rotate", 0}, {"ui.pages.blank", 1},
+                         {"ui.pages.delete", 2}};
   for (auto const& item : ops_row1) {
     auto button = muxc::Button();
     muxc::TextBlock label;
@@ -68,8 +68,8 @@ void MainWindow::BuildPageOpsRow() {
   auto row2 = muxc::StackPanel();
   row2.Orientation(muxc::Orientation::Horizontal);
   row2.Spacing(4);
-  Op const ops_row2[] = {{L"ui.pages.extract", 3}, {L"ui.pages.merge", 4},
-                         {L"ui.pages.bake", 5}};
+  Op const ops_row2[] = {{"ui.pages.extract", 3}, {"ui.pages.merge", 4},
+                         {"ui.pages.bake", 5}};
   for (auto const& item : ops_row2) {
     auto button = muxc::Button();
     muxc::TextBlock label;
@@ -184,7 +184,7 @@ void MainWindow::RunPageEdit(int op) {
 
 void MainWindow::ReloadTabDocument(std::shared_ptr<PdfTab> tab,
                                   std::vector<std::uint8_t> data) {
-  PdfOpenError error = PdfOpenError::None;
+  pdfgist::PdfOpenError error = pdfgist::PdfOpenError::None;
   auto doc = pdfgist::PdfDocument::OpenFromBytes(std::move(data), "", &error);
   if (!doc) {
     Alert(pdfgist::Trf("ui.pages.edit-failed",

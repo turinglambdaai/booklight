@@ -97,6 +97,11 @@ void MainWindow::OpenEpub(std::wstring const& path, int resume_chapter) {
   if (resume_chapter > 1) book->current_chapter = resume_chapter;
 }
 
+void MainWindow::ActivateEpub() {
+  if (!epub_) return;
+  DocTabs().SelectedIndex(IndexOfTabItem(epub_->tab_item));
+}
+
 void MainWindow::CloseEpub() {
   if (!epub_) return;
   auto const book = epub_;
@@ -160,86 +165,48 @@ void MainWindow::LoadEpubBook(std::shared_ptr<EpubBook> book) {
 }
 
 // Controller creation is async; the HTML load starts once it completes.
-// The user-data folder is pinned under %LOCALAPPDATA% so read-only install
-// directories cannot break the controller (unpackaged-app default is the
-// exe folder).
+// The default environment keeps the user-data folder under the per-user
+// local app data for unpackaged apps, so read-only install directories do
+// not break the controller; the event handlers use generic lambdas because
+// the wv2winrt-generated projection is not always include-ready.
 void MainWindow::NavigateToEpubController(
     std::shared_ptr<EpubBook> book,
     std::vector<std::pair<int, std::wstring>> const& sections) {
-  using WebView2Core = winrt::Microsoft::Web::WebView2::Core;
   auto const weak = get_weak();
   auto html = BuildEpubHtml(*book, sections);
 
   auto const weak_book = std::weak_ptr<EpubBook>(book);
-  auto finish = [weak, weak_book, html = std::move(html)](
-                    winrt::Windows::Foundation::IAsyncAction const& sender,
-                    winrt::Windows::Foundation::AsyncStatus) {
-    auto window = weak.get();
-    auto locked_book = weak_book.lock();
-    if (!window || !locked_book || !locked_book->web) return;
-    try {
-      sender.GetResults();
-    } catch (winrt::hresult_error const& e) {
-      window->Alert(
-          pdfgist::Trf("ui.pages.edit-failed", std::wstring(e.message())));
-      return;
-    } catch (...) {
-      return;
-    }
-    auto const webview = locked_book->web.CoreWebView2();
-    if (!webview) return;
-    // selection + chapter-tracking bridge (window.chrome.webview)
-    webview.WebMessageReceived(
-        [weak, weak_book](winrt::Windows::Foundation::IInspectable const&,
-                          WebView2Core::CoreWebView2WebMessageReceivedEventArgs
-                              const& args) {
-          if (auto current = weak.get()) {
-            if (auto current_book = weak_book.lock()) {
-              current->OnEpubWebMessage(*current_book, args);
-            }
-          }
-        });
-    // NavigateToString's limit is 2 MB; books beyond that would need a
-    // virtual host mapping — a documented later change.
-    webview.NavigateToString(html);
-  };
-
-  std::wstring user_data_folder;
-  {
-    wchar_t buffer[MAX_PATH]{};
-    if (::GetEnvironmentVariableW(L"LOCALAPPDATA", buffer, MAX_PATH) > 0) {
-      user_data_folder =
-          (std::filesystem::path(buffer) / L"site.jrtx.pdfgist" / L"WebView2")
-              .wstring();
-    }
-  }
-  if (user_data_folder.empty()) {
-    book->web.EnsureCoreWebView2Async().Completed(std::move(finish));
-    return;
-  }
-  // Pin the user-data folder under %LOCALAPPDATA% so read-only install
-  // directories cannot break the controller (the unpackaged default is the
-  // exe folder).
-  WebView2Core::CoreWebView2Environment::CreateAsync(winrt::hstring(),
-                                                     winrt::hstring(user_data_folder))
-      .Completed([weak, weak_book,
-                  finish = std::move(finish)](winrt::Windows::Foundation::
-                                                  IAsyncOperation<
-                                                      WebView2Core::CoreWebView2Environment>
-                                                  const& sender,
-                                              winrt::Windows::Foundation::
-                                                  AsyncStatus status) mutable {
+  book->web.EnsureCoreWebView2Async().Completed(
+      [weak, weak_book, html = std::move(html)](
+          winrt::Windows::Foundation::IAsyncAction const& sender,
+          winrt::Windows::Foundation::AsyncStatus) {
         auto window = weak.get();
         auto locked_book = weak_book.lock();
         if (!window || !locked_book || !locked_book->web) return;
         try {
-          auto environment = sender.GetResults();
-          locked_book->web.EnsureCoreWebView2Async(environment)
-              .Completed(std::move(finish));
+          sender.GetResults();
         } catch (winrt::hresult_error const& e) {
           window->Alert(
               pdfgist::Trf("ui.pages.edit-failed", std::wstring(e.message())));
+          return;
+        } catch (...) {
+          return;
         }
+        auto const webview = locked_book->web.CoreWebView2();
+        if (!webview) return;
+        // selection + chapter-tracking bridge (window.chrome.webview)
+        webview.WebMessageReceived(
+            [weak, weak_book](winrt::Windows::Foundation::IInspectable const&,
+                              auto const& args) {
+              if (auto current = weak.get()) {
+                if (auto current_book = weak_book.lock()) {
+                  current->OnEpubWebMessage(*current_book, args);
+                }
+              }
+            });
+        // NavigateToString's limit is 2 MB; books beyond that would need a
+        // virtual host mapping — a documented later change.
+        webview.NavigateToString(html);
       });
 }
 
@@ -391,7 +358,7 @@ void MainWindow::NavigateEpubFind(int step) {
   auto const& hit = epub_hits_[static_cast<std::size_t>(epub_find_index_)];
   FindCount().Text(std::to_wstring(epub_find_index_ + 1) + L"/" +
                    std::to_wstring(epub_hits_.size()));
-  HighlightEpubHit(hit.first, hit.second, FindInput().Text());
+  HighlightEpubHit(hit.first, hit.second, std::wstring(FindInput().Text()));
 }
 
 void MainWindow::HighlightEpubHit(int chapter, int ordinal,

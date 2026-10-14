@@ -79,13 +79,13 @@ void MainWindow::BuildAiSidebar() {
   auto summarize_pane = muxc::StackPanel();
   summarize_pane.Spacing(8);
   struct Action {
-    wchar_t const* key;
+    char const* key;
     rivet_app::SummarizeMode mode;
   };
   Action const actions[] = {
-      {L"ui.summarize.page", rivet_app::SummarizeMode::page},
-      {L"ui.summarize.selection", rivet_app::SummarizeMode::selection},
-      {L"ui.summarize.doc", rivet_app::SummarizeMode::doc}};
+      {"ui.summarize.page", rivet_app::SummarizeMode::page},
+      {"ui.summarize.selection", rivet_app::SummarizeMode::selection},
+      {"ui.summarize.doc", rivet_app::SummarizeMode::doc}};
   for (auto const& action : actions) {
     auto button = muxc::Button();
     muxc::TextBlock label;

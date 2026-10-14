@@ -235,7 +235,8 @@ std::vector<FindHit> PdfDocument::Find(std::string const& utf8_query) const {
       if (FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page)) {
         // No FPDF_MATCHCASE: case-insensitive, matching the mac find.
         if (FPDF_SCHHANDLE search = FPDFText_FindStart(
-                text_page, needle.c_str(), 0, 0)) {
+                text_page,
+                reinterpret_cast<FPDF_WIDESTRING>(needle.c_str()), 0, 0)) {
           while (FPDFText_FindNext(search)) {
             int const start = FPDFText_GetSchResultIndex(search);
             FindHit hit;

@@ -320,6 +320,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   // ---- EPUB (MainWindow.Epub.cpp) ----
   void OpenEpub(std::wstring const& path, int resume_chapter = 1);
   void CloseEpub();
+  void ActivateEpub();
   void LoadEpubBook(std::shared_ptr<EpubBook> book);
   void GoToChapter(EpubBook& book, int chapter);
   void ApplyEpubTheme(EpubBook& book);
