@@ -29,8 +29,12 @@
 (require crypto
          json
          net/base64
+         net/url
          rivet/distribution
          racket/file
+         racket/list
+         racket/path
+         racket/port
          racket/string
          "../racket/pdfgist/settings.rkt"
          "version.rkt")
@@ -222,6 +226,163 @@
      (save-updater-prefs! (pref-with prefs 'rolloutBucket bucket))
      bucket]))
 
+;; ---------- AppImage flavor (Linux installs run from an AppImage) ----------
+;; The feed's linux entry is the tar.gz; AppImage installs update through the
+;; sibling .AppImage release asset (taskly family pattern). Asset families
+;; disagree on arch names — feed/deb/rpm use x64|arm64, AppImage builds use
+;; x86_64|aarch64 — so the derivation maps the arch before appending. The
+;; download lands NEXT TO the running image (same filesystem → atomic
+;; rename) and replaces it after the sidecar checksum verifies; the host
+;; re-execs the replaced image on user consent.
+
+(define (install-flavor)
+  ;; Mirrors the host's install_shape(): $APPIMAGE (set by the AppImage
+  ;; runtime) points at the running image; deb lands under /opt/pdfgist and
+  ;; rpm under /usr — those upgrade through the package manager; everything
+  ;; else is the portable tarball layout. The embedded runtime's own process
+  ;; is the host executable, so /proc/self/exe is the install prefix —
+  ;; Linux-only, which is exactly the flavor this check matters for.
+  (define self (getenv "APPIMAGE"))
+  (if (and self (non-empty-string? self))
+      "appimage"
+      (let ([exe (with-handlers ([exn:fail? (lambda (_) #f)])
+                   (resolve-path (string->path "/proc/self/exe")))])
+        (if (and exe
+                 (let ([s (path->string exe)])
+                   (or (string-prefix? s "/opt/pdfgist/")
+                       (string-prefix? s "/usr/"))))
+            "package"
+            "tarball"))))
+
+
+(define (appimage-flavor?)
+  (and (eq? (platform-symbol) 'linux)
+       (equal? (install-flavor) "appimage")))
+
+;; Pure so tests can pin the derivation — the arch-name mapping is the trap.
+(define (appimage-asset-name tar-gz-filename architecture)
+  (unless (string-suffix? tar-gz-filename ".tar.gz")
+    (error 'appimage-asset-name "not a tar.gz filename: ~a" tar-gz-filename))
+  (define stem
+    (substring tar-gz-filename 0 (- (string-length tar-gz-filename) 7)))
+  (define feed-arch (string-append "-" (symbol->string architecture)))
+  (unless (string-suffix? stem feed-arch)
+    (error 'appimage-asset-name
+           "feed filename does not end in ~a: ~a" feed-arch stem))
+  (define appimage-arch
+    (case architecture [(arm64) "aarch64"] [else "x86_64"]))
+  (string-append (substring stem 0 (- (string-length stem)
+                                      (string-length feed-arch)))
+                 "-"
+                 appimage-arch
+                 ".AppImage"))
+
+(define (appimage-artifact-urls candidate)
+  (define url (update-artifact-url (update-candidate-artifact candidate)))
+  (define filename
+    (last (string-split (car (string-split url "?")) "/")))
+  (define appimage-name
+    (appimage-asset-name filename (architecture-symbol)))
+  (values (string-replace url filename appimage-name)
+          (string-append (string-replace url filename appimage-name)
+                         ".sha256")))
+
+(define (appimage-download-target)
+  ;; Stage next to the running image so the final rename stays on one
+  ;; device (atomic swap).
+  (define self (getenv "APPIMAGE"))
+  (unless (and self (non-empty-string? self))
+    (error 'start-download "APPIMAGE is not set; not running as an AppImage"))
+  (values self
+          (make-temporary-file "pdfgist-update-~a.AppImage"
+                               #f
+                               (path-only self))))
+
+(define (fetch-sidecar-sha256! url)
+  ;; sha256sum format: "<hex>  <filename>"; the first token is the digest.
+  (define in (get-pure-port (string->url url)
+                            '("User-Agent: PDFGist-Updater/1")
+                            #:redirections 10))
+  (dynamic-wind
+    void
+    (lambda ()
+      (define digest
+        (let ([body (string-trim (port->string in))])
+          (if (string=? body "") "" (first (string-split body)))))
+      (unless (regexp-match? #px"^[0-9a-fA-F]{64}$" digest)
+        (error 'start-download "appimage checksum sidecar has an unexpected shape"))
+      (string-downcase digest))
+    (lambda () (close-input-port in))))
+
+(define (open-download-with-total! url)
+  (define in (get-impure-port (string->url url)
+                              '("User-Agent: PDFGist-Updater/1"
+                                "Connection: close")))
+  (let loop ([total 0])
+    (define line (read-line in 'return-linefeed))
+    (cond
+      [(eof-object? line) (values in 0)]
+      [(non-empty-string? (string-trim line))
+       (define match
+         (regexp-match #px"(?i:^content-length:\\s*(\\d+))" line))
+       (loop (if match (string->number (second match)) total))]
+      [else (values in total)])))
+
+(define (copy-with-progress! in out total)
+  (define buffer (make-bytes 65536))
+  (let loop ([done 0] [last-percent -1])
+    (define count (read-bytes-avail! buffer in))
+    (cond
+      [(eof-object? count) done]
+      [else
+       ;; Every successful read feeds the watchdog's stall clock (not just
+       ;; integer percent changes, so a slow link never false-trips it).
+       (set-box! last-progress-seconds (current-seconds))
+       (write-bytes buffer out 0 count)
+       (define next (+ done count))
+       (define percent
+         (if (> total 0)
+             (min 100 (quotient (* next 100) total))
+             0))
+       (when (> percent last-percent)
+         (state-set! 'percent percent))
+       (loop next percent)])))
+
+(define (download-appimage-with-progress! candidate)
+  (define-values (appimage-url sidecar-url)
+    (appimage-artifact-urls candidate))
+  (define-values (self temporary) (appimage-download-target))
+  (define expected (fetch-sidecar-sha256! sidecar-url))
+  (with-handlers ([exn:fail?
+                   (lambda (e)
+                     (when (file-exists? temporary)
+                       (delete-file temporary))
+                     (raise e))])
+    (define-values (in total) (open-download-with-total! appimage-url))
+    (dynamic-wind
+      void
+      (lambda ()
+        (call-with-output-file temporary
+          #:exists 'truncate/replace
+          #:mode 'binary
+          (lambda (out) (copy-with-progress! in out total)))
+        (define actual (string-downcase (sha256-file/hex temporary)))
+        (unless (string=? actual expected)
+          (raise-arguments-error 'start-download
+                                 "downloaded appimage does not match its checksum sidecar"
+                                 "expected" expected
+                                 "actual" actual))
+        ;; The replaced image must stay executable: rename carries the temp
+        ;; file's modes, so set them explicitly before the swap.
+        (file-or-directory-permissions
+         temporary
+         #(user-read user-write user-execute
+                     group-read group-execute
+                     other-read other-execute))
+        (rename-file-or-directory temporary self #t))
+      (lambda () (close-input-port in))))
+  self)
+
 ;; ---------- download ----------
 
 ;; Container file extension for a manifest installer symbol. The family
@@ -283,25 +444,35 @@
                     update-key-id
                     (rollout-bucket)
                     maximum-download-bytes))
-  (define destination (destination-path candidate))
+  (define destination
+    (if (appimage-flavor?)
+        ;; the staged temp beside the running image; the final swap is an
+        ;; atomic rename onto $APPIMAGE (see download-appimage-with-progress!)
+        (let-values ([(_self temporary) (appimage-download-target)])
+          temporary)
+        (destination-path candidate)))
   (set-box! last-progress-seconds (current-seconds))
   (define worker-thread
     (thread
      (lambda ()
        ;; The watchdog breaks a stalled worker; exn:break is not an
        ;; exn:fail, so it needs its own arm — either way rivet's partial
-       ;; cleanup removes the .partial and the phase lands on error
-       ;; (never mid-flight).
+       ;; cleanup removes the .partial (the appimage path cleans its own
+       ;; temp) and the phase lands on error (never mid-flight).
        (with-handlers
            ([(lambda (e) (or (exn:fail? e) (exn:break? e)))
              (lambda (e)
+               (when (file-exists? (path-add-extension destination #".partial"))
+                 (delete-file (path-add-extension destination #".partial")))
                (state-set! 'phase "error")
                (state-set! 'message
                            (if (exn:break? e)
                                "update download stalled or timed out"
                                (exn-message e))))])
          (define path
-           (download-with-progress! config candidate destination))
+           (if (appimage-flavor?)
+               (download-appimage-with-progress! candidate)
+               (download-with-progress! config candidate destination)))
          (state-set! 'phase "downloaded")
          (state-set! 'percent 100)
          (state-set! 'downloadedPath (path->string path))))))
