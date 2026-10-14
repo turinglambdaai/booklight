@@ -11,4 +11,6 @@
         (backend . "app/backend.rkt")
         (module . "backend")
         (entry . "start")
-        (protocol . 1))
+        (protocol . 1)
+        (linux-icon . "design/app-icon.png")
+        (linux-formats . ("deb" "rpm" "appimage")))
