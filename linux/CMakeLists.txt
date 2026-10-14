@@ -33,11 +33,18 @@ pkg_check_modules(JSON_GLIB REQUIRED IMPORTED_TARGET json-glib-1.0)
 # Ubuntu 24.04+: libwebkitgtk-6.0-dev. Disable with -DPDFGIST_ENABLE_EPUB=OFF
 # for minimal builds; the host then reports EPUB support as unavailable.
 option(PDFGIST_ENABLE_EPUB "Render EPUB through WebKitGTK" ON)
+set(PDFGIST_WEBKIT_INCLUDES "")
+set(PDFGIST_WEBKIT_LIBDIRS "")
+set(PDFGIST_WEBKIT_LIBS "")
 if(PDFGIST_ENABLE_EPUB)
-  pkg_check_modules(WEBKIT IMPORTED_TARGET webkitgtk-6.0)
-  if(NOT WEBKIT_FOUND)
-    message(FATAL_ERROR "webkitgtk-6.0 not found: install libwebkitgtk-6.0-dev, or pass -DPDFGIST_ENABLE_EPUB=OFF")
-  endif()
+  # Deliberately not IMPORTED_TARGET: the imported target's include dirs
+  # did not survive to the compile line in practice, and epub.cpp failed
+  # with "webkit/WebKit.h: No such file or directory". Explicit dirs cannot
+  # silently drop.
+  pkg_check_modules(WEBKIT REQUIRED webkitgtk-6.0)
+  set(PDFGIST_WEBKIT_INCLUDES ${WEBKIT_INCLUDE_DIRS})
+  set(PDFGIST_WEBKIT_LIBDIRS ${WEBKIT_LIBRARY_DIRS})
+  set(PDFGIST_WEBKIT_LIBS ${WEBKIT_LIBRARIES})
 endif()
 
 # ---------------------------------------------------------------------------
@@ -82,6 +89,14 @@ target_include_directories(RivetHost PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
+target_include_directories(RivetHost SYSTEM PRIVATE
+  ${PDFGIST_WEBKIT_INCLUDES}
+)
+
+target_link_directories(RivetHost PRIVATE
+  ${PDFGIST_WEBKIT_LIBDIRS}
+)
+
 target_compile_definitions(RivetHost PRIVATE
   $<$<BOOL:${PDFGIST_ENABLE_EPUB}>:PDFGIST_HAVE_WEBKIT=1>
 )
@@ -89,7 +104,7 @@ target_compile_definitions(RivetHost PRIVATE
 target_link_libraries(RivetHost PRIVATE
   rivet::platform
   PkgConfig::JSON_GLIB
-  $<$<BOOL:${PDFGIST_ENABLE_EPUB}>:PkgConfig::WEBKIT>
+  ${PDFGIST_WEBKIT_LIBS}
 )
 
 target_compile_options(RivetHost PRIVATE -Wall -Wextra -Wpedantic)
