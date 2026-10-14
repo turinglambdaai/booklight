@@ -29,6 +29,31 @@ releases and tags were deleted and the history lives in git on `main`.
   WiX 5.0.2 toolchain), the publish job merges the Windows artifacts
   into the signed update feed (mac zips + Windows x64 zip), and stable
   download aliases now include `pdfgist-windows-x64.msi`.
+- **Linux host.** PDFGist now ships a first-party GTK4 host
+  (`linux/`): PDFium-rendered tabbed reading (continuous scroll, book
+  spread, zoom / fit-width, dark mode, thumbnails, outline, full-text
+  search, keyboard navigation), the selection AI workflow (translate /
+  summarize / chat, streaming over the shared RVT1 events), the settings
+  pane (presets with per-preset stash, connection test, target language,
+  view mode, sidecar, theme, About), EPUB reading through WebKitGTK (TOC,
+  whole-book search), the six page-surgery operations (`edit-*`) and the
+  signed self-updater (throttled silent check, 400 ms progress polling,
+  and the three Linux install shapes: deb/rpm installs upgrade through
+  the package manager, AppImage installs swap the sibling release asset
+  in place and re-exec on consent, tarball installs get the extraction
+  hint). PDFium (BSD-3) binaries are fetched and SHA-256-verified at
+  build time from bblanchon/pdfium-binaries — pinned, never committed.
+  Linux P2 (annotation overlays, TTS, printing, split view, AcroForm) is
+  tracked in the roadmap.
+- **Linux CI and release pipeline.** `ci.yml` gains a `linux-host` job
+  (x64 + arm64: embeddable Racket CS, GTK4 + WebKitGTK, `raco rivet
+  build`, headless-Wayland boot smoke under weston). `release.yml` gains
+  a Linux leg (tar.gz + deb + rpm + AppImage + portable zip via rivet's
+  packaging; the AppImage bundles its GTK closure and libpdfium.so), the
+  publish job merges the Linux artifacts into the signed update feed
+  (tar.gz entries for x64/arm64), and stable download aliases now include
+  `pdfgist-linux-{x64,arm64}.deb`, `pdfgist-linux-{x64,arm64}.AppImage`
+  and `pdfgist-linux-{x64,arm64}.tar.gz`.
 - **The settings pane closes with the support surface** (the taskly
   About facts): the version footer now carries a Website link
   (pdfgist.jrtx.site), a Report-an-Issue link (the GitHub issue

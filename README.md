@@ -32,14 +32,18 @@ One Racket domain core (`racket/` + `app/backend.rkt`) owns all business logic �
 |---|---|---|
 | macOS | SwiftUI + generated client | `macos-host/` |
 | Windows | WinUI 3 (C++/WinRT) + PDFium + generated client | `windows/` |
-| Linux | GTK4 + generated client | `linux/` (under construction) |
+| Linux | GTK4 + PDFium + WebKitGTK + generated client | `linux/` |
 
 The macOS host ships the full feature set (annotations, AcroForm, printing,
 TTS, split view). The Windows host ships the P0 reading cut: tabbed PDF
 reading (PDFium), selection translate / summarize / chat with streaming,
-EPUB via WebView2, page surgery, settings and the signed self-updater —
-annotation overlays, printing, TTS, split view and AcroForm follow (see the
-roadmap).
+EPUB via WebView2, page surgery, settings and the signed self-updater. The
+Linux host matches the same P0 cut on GTK4: PDFium rendering (the same
+pinned, SHA-256-verified binaries), EPUB via WebKitGTK, page surgery, the
+AI workflow, settings and the signed self-updater with the three Linux
+install shapes (deb/rpm upgrade through the package manager, AppImage
+in-place swap + restart, tarball extraction hint) — annotation overlays,
+printing, TTS, split view and AcroForm follow (see the roadmap).
 
 PDF page-level operations run on the domain core's own minimal PDF reader/writer (`racket/pdfgist/pdfdoc.rkt`) — no external PDF libraries.
 
@@ -59,7 +63,9 @@ raco test racket/          # domain-core tests
 - [x] Windows host — reading / AI / EPUB / page editing / updates (P0 cut)
 - [ ] Windows P2 — annotation highlights overlay, TTS, printing, split
       view, AcroForm filling
-- [ ] Linux host build
+- [x] Linux host — reading / AI / EPUB / page editing / updates (P0 cut)
+- [ ] Linux P2 — annotation overlays, TTS, printing, split view, AcroForm
+      filling
 - [ ] Mobile — iOS / iPadOS host (Rivet's portable Swift layer) and Android
       host (Rivet's Kotlin platform), matching the family's full-platform
       scope; a watchOS progress companion trails the phone host

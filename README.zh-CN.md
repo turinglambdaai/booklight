@@ -32,9 +32,9 @@
 |---|---|---|
 | macOS | SwiftUI + 生成客户端 | `macos-host/` |
 | Windows | WinUI 3（C++/WinRT）+ PDFium + 生成客户端 | `windows/` |
-| Linux | GTK4 + 生成客户端 | `linux/`（建设中） |
+| Linux | GTK4 + PDFium + WebKitGTK + 生成客户端 | `linux/` |
 
-macOS 宿主功能最全（批注、表单、打印、朗读、分屏）。Windows 宿主首发 P0 阅读层：PDFium 多标签阅读、划选翻译/总结/对话（流式）、WebView2 渲染 EPUB、页编辑、设置与签名自更新——批注高亮、打印、朗读、分屏、表单随后补齐（见路线图）。
+macOS 宿主功能最全（批注、表单、打印、朗读、分屏）。Windows 宿主首发 P0 阅读层：PDFium 多标签阅读、划选翻译/总结/对话（流式）、WebView2 渲染 EPUB、页编辑、设置与签名自更新。Linux 宿主对齐同一 P0 层（GTK4）：PDFium 渲染（同一套 pin 死、SHA-256 校验的二进制）、WebKitGTK 渲染 EPUB、页编辑、AI 工作流、设置，以及适配三种 Linux 安装形态的签名自更新（deb/rpm 走包管理器、AppImage 原地换+重启、tar.gz 给解压指引）——批注高亮、打印、朗读、分屏、表单随后补齐（见路线图）。
 
 PDF 页级操作由领域核心自研的最小 PDF 读写器（`racket/pdfgist/pdfdoc.rkt`）完成——不依赖任何第三方 PDF 库。
 
@@ -53,7 +53,8 @@ raco test racket/          # 领域核心测试
 
 - [x] Windows 宿主——阅读 / AI / EPUB / 页编辑 / 更新（P0 层）
 - [ ] Windows P2——批注高亮叠加、朗读、打印、分屏、表单填写
-- [ ] Linux 宿主构建
+- [x] Linux 宿主——阅读 / AI / EPUB / 页编辑 / 更新（P0 层）
+- [ ] Linux P2——批注高亮叠加、朗读、打印、分屏、表单填写
 - [ ] 移动端 —— iOS / iPadOS 宿主（Rivet portable Swift 层）与 Android 宿主（Rivet Kotlin 平台），对齐家族全平台标准；watchOS 进度伴机尾随手机宿主
 
 ## 许可证
