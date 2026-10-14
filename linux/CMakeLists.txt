@@ -6,8 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Release artifacts must not embed developer-machine library search paths;
-# every linked library (GTK4, GIO, libsecret, curses, LZ4, zlib) is a system
-# dependency resolved by the normal loader search on the target machine.
+# every linked library (GTK4, GIO, WebKitGTK, json-glib, curses, LZ4, zlib)
+# is a system dependency resolved by the normal loader search on the target
+# machine. libpdfium.so rides beside the executable and is dlopen'd (see
+# src/pdfium.cpp), so it needs no search path either.
 set(CMAKE_SKIP_RPATH TRUE)
 
 # RIVET_ROOT points at the installed Rivet package. `raco rivet build` sets
@@ -24,16 +26,90 @@ set(RIVET_ROOT "$ENV{RIVET_ROOT}")
 add_subdirectory("${RIVET_ROOT}/platform/linux"
                  "${CMAKE_BINARY_DIR}/rivet-platform-build")
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(JSON_GLIB REQUIRED IMPORTED_TARGET json-glib-1.0)
+
+# EPUB rendering rides WebKitGTK's GTK4 API (webkitgtk-6.0, WebKitGTK 2.40+).
+# Ubuntu 24.04+: libwebkitgtk-6.0-dev. Disable with -DPDFGIST_ENABLE_EPUB=OFF
+# for minimal builds; the host then reports EPUB support as unavailable.
+option(PDFGIST_ENABLE_EPUB "Render EPUB through WebKitGTK" ON)
+if(PDFGIST_ENABLE_EPUB)
+  pkg_check_modules(WEBKIT IMPORTED_TARGET webkitgtk-6.0)
+  if(NOT WEBKIT_FOUND)
+    message(FATAL_ERROR "webkitgtk-6.0 not found: install libwebkitgtk-6.0-dev, or pass -DPDFGIST_ENABLE_EPUB=OFF")
+  endif()
+endif()
+
+# ---------------------------------------------------------------------------
+# PDFium (bblanchon/pdfium-binaries) — rendered pages, text layer, outline.
+#
+# Fetched at build time from a pinned release with a pinned sha256; binaries
+# never enter git. The two digests must move together on a bump: the tag has
+# to exist for both architectures.
+# ---------------------------------------------------------------------------
+set(PDFGIST_PDFIUM_TAG "chromium/8086")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+  set(PDFGIST_PDFIUM_ASSET "pdfium-linux-arm64.tgz")
+  set(PDFGIST_PDFIUM_SHA256 "e7e2fe4686925618330103cb167950aca5a84bb00fd977a41b86be59dd1480a2")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
+  set(PDFGIST_PDFIUM_ASSET "pdfium-linux-x64.tgz")
+  set(PDFGIST_PDFIUM_SHA256 "588577cf52dabc1a444988bac841920df54cc2f141801424de97ab04f4fbb935")
+else()
+  message(FATAL_ERROR "no pdfium-binaries asset pinned for ${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+
+include(FetchContent)
+FetchContent_Declare(pdfium
+  URL "https://github.com/bblanchon/pdfium-binaries/releases/download/${PDFGIST_PDFIUM_TAG}/${PDFGIST_PDFIUM_ASSET}"
+  URL_HASH "SHA256=${PDFGIST_PDFIUM_SHA256}"
+)
+FetchContent_MakeAvailable(pdfium)
+
+if(NOT EXISTS "${pdfium_SOURCE_DIR}/lib/libpdfium.so")
+  message(FATAL_ERROR "the fetched pdfium archive has no lib/libpdfium.so")
+endif()
+
 add_executable(RivetHost
   src/main.cpp
+  src/host.cpp
+  src/pdfium.cpp
+  src/pdfview.cpp
+  src/panels.cpp
+  src/epub.cpp
 )
 
 target_include_directories(RivetHost PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
+target_compile_definitions(RivetHost PRIVATE
+  $<$<BOOL:${PDFGIST_ENABLE_EPUB}>:PDFGIST_HAVE_WEBKIT=1>
+)
+
 target_link_libraries(RivetHost PRIVATE
   rivet::platform
+  PkgConfig::JSON_GLIB
+  $<$<BOOL:${PDFGIST_ENABLE_EPUB}>:PkgConfig::WEBKIT>
 )
 
 target_compile_options(RivetHost PRIVATE -Wall -Wextra -Wpedantic)
+
+# The dlopen'd library must sit beside the executable in every layout. Two
+# copies: one beside the build-tree binary (manual `cmake --build` runs), one
+# in the rivet stage (`RIVET_STAGE_DIR` when set — `raco rivet build` stages
+# there and packages/AppImages bundle that directory wholesale). The stage
+# copy runs through cmake/StagePdfium.cmake so a missing stage never fails
+# the build (manual layouts stage nothing; RIVET_PDFIUM_PATH covers them).
+add_custom_command(TARGET RivetHost POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${pdfium_SOURCE_DIR}/lib/libpdfium.so"
+          "$<TARGET_FILE_DIR:RivetHost>/libpdfium.so"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${pdfium_SOURCE_DIR}/LICENSE"
+          "$<TARGET_FILE_DIR:RivetHost>/libpdfium-LICENSE.txt"
+  COMMAND ${CMAKE_COMMAND}
+          -Dsource=${pdfium_SOURCE_DIR}/lib/libpdfium.so
+          -Dbinary=$<TARGET_FILE:RivetHost>
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/StagePdfium.cmake
+  VERBATIM
+)
