@@ -11,11 +11,15 @@
 #
 # Overwrites <dist-dir>/update-stable.json — the signed stable-channel
 # manifest (family format: schema + base64 payload + signature block, as
-# written by rivet's own signer). One artifact entry per macOS
-# architecture; clients pick theirs via rivet/distribution's platform +
-# architecture filter, so both entries must be present and correctly
-# named. The feed serves the portable zips (the DMGs stay on the release
-# for human download).
+# written by rivet's own signer). The same bytes are also published as
+# <dist-dir>/update-manifest.json, the family-standard feed name: existing
+# installs keep pulling update-stable.json, while anything probing the
+# standard name gets the identical manifest instead of a 404. Host code
+# switching to the standard name is a later, separate change. One artifact
+# entry per macOS architecture; clients pick theirs via
+# rivet/distribution's platform + architecture filter, so both entries
+# must be present and correctly named. The feed serves the portable zips
+# (the DMGs stay on the release for human download).
 #
 # Env overrides: RELEASE_ASSET_BASE_URL, RIVET_UPDATE_KEY_ID.
 
@@ -120,4 +124,9 @@ RKT
 # rivet must be installed for the signer; the publish job links a checkout
 racket "$SCRIPT"
 
-echo "manifest: $MANIFEST (macos arm64 + x64 zips)"
+# Family-standard alias: identical bytes under the name the rest of the
+# family probes (update-manifest.json), so the family feed check stops 404
+# while existing stable-name installs keep working untouched.
+cp "$DIST/update-stable.json" "$DIST/update-manifest.json"
+
+echo "manifest: $MANIFEST + update-manifest.json alias (macos arm64 + x64 zips)"
