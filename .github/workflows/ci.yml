@@ -3,6 +3,11 @@ on:
   push:
   pull_request:
 
+# Single source of truth for the rivet pin; every install step below
+# references this so a bump is one edit, not a grep-replace across jobs.
+env:
+  RIVET_PIN: v0.11.0
+
 jobs:
   contract:
     name: Contract preflight (release metadata)
@@ -23,7 +28,7 @@ jobs:
       - uses: Bogdanp/setup-racket@v1.11
         with:
           version: stable
-      - name: Install Rivet (catalog) and crypto (updater dependency)
-        run: raco pkg install --auto --no-docs rivet crypto
+      - name: Install Rivet (pinned) and crypto (updater dependency)
+        run: raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}' crypto
       - name: Domain core tests
         run: raco test racket/

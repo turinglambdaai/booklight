@@ -14,7 +14,7 @@
          update-public-key-b64
          default-update-base-url)
 
-(define app-version "0.1.0")
+(define app-version "0.1.1")
 (define app-build 1)
 (define app-identifier "site.jrtx.pdfgist")
 (define app-channel 'stable)

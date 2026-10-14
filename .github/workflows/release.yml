@@ -4,6 +4,11 @@ on:
   push:
     tags: ['v*']
 
+# Single source of truth for the rivet pin; every install step below
+# references this so a bump is one edit, not a grep-replace across jobs.
+env:
+  RIVET_PIN: v0.11.0
+
 permissions:
   contents: write
   id-token: write
@@ -48,8 +53,8 @@ jobs:
           distribution: full
           variant: CS
           version: '9.3'
-      - name: Install Rivet (catalog) and crypto (updater dependency)
-        run: raco pkg install --auto --no-docs rivet crypto
+      - name: Install Rivet (pinned) and crypto (updater dependency)
+        run: raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}' crypto
         shell: bash
       - name: Version preflight (VERSION == rivet.rktd == updater == tag)
         run: bash scripts/check-release-version.sh "${{ github.ref_name }}"
@@ -97,8 +102,8 @@ jobs:
           distribution: full
           variant: CS
           version: '9.3'
-      - name: Install Rivet (catalog) and crypto (updater dependency)
-        run: raco pkg install --auto --no-docs rivet crypto
+      - name: Install Rivet (pinned) and crypto (updater dependency)
+        run: raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}' crypto
         shell: bash
       - uses: actions/download-artifact@v4
         with:

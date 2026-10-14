@@ -1,10 +1,10 @@
 # PDFGist
 
-> 本地优先的 AI PDF 阅读器——接入你自己的大模型。基于 [Rivet](https://github.com/turinglambdaai/rivet) 构建：一份 Racket 领域核心，通过类型化 RPC 驱动各平台第一方原生宿主。
+> 本地优先的 AI PDF 阅读器——接入你自己的大模型。一份 Racket 领域核心，通过类型化 RPC 驱动各平台第一方原生宿主。
 
 [English](README.md) · **中文**
 
-![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%28Apple%20silicon%20%26%20Intel%29-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![release](https://img.shields.io/github/v/release/turinglambdaai/pdfgist)](https://github.com/turinglambdaai/pdfgist/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%28Apple%20silicon%20%26%20Intel%29-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml/badge.svg)](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 大多数 AI PDF 应用把你锁进它们的订阅。PDFGist 反其道而行：应用本身只是一个轻快的阅读器，智能来自你自己指定的模型。你的 Key、你的模型、你的账单——Key 保存在本机，请求直达你选择的服务商，除此之外没有任何数据离开你的机器。
 
@@ -26,7 +26,7 @@
 
 ## 架构
 
-一份 Racket 领域核心（`racket/` + `app/backend.rkt`）拥有全部业务逻辑——AI 流式、PDF 页级操作、批注存储、设置——通过 Rivet 类型化 RPC（RVT1）暴露；各平台第一方宿主只做渲染与交互：
+一份 Racket 领域核心（`racket/` + `app/backend.rkt`）拥有全部业务逻辑——AI 流式、PDF 页级操作、批注存储、设置——通过 [Rivet](https://github.com/turinglambdaai/rivet) 类型化 RPC（RVT1）暴露；各平台第一方宿主只做渲染与交互：
 
 | 宿主 | 技术栈 | 目录 |
 |---|---|---|

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PDFGist — 用户手册 / User Guide</title>
+<meta name="description" content="PDFGist 用户手册：五分钟上手、翻译与自带模型配置、总结与批注、常见问题。" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="preload" href="assets/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin />
+<style>
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("assets/fonts/inter-latin-var.woff2") format("woff2");
+}
+  :root {
+    --bg: #F9F7F4;
+    --surface: #FFFFFF;
+    --text: #1C1917;
+    --text-2: #57534E;
+    --text-3: #A8A29E;
+    --accent: #D97757;
+    --accent-hover: #C4623E;
+    --accent-bg: #FFF7ED;
+    --border: #E7E5E4;
+    --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.05);
+    --shadow: 0 1px 3px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.04);
+    --shadow-lg: 0 10px 15px -3px rgba(28, 25, 23, 0.08), 0 4px 6px -4px rgba(28, 25, 23, 0.05);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-lg: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171412; --surface: #231F1D; --text: #E7E5E4; --text-2: #A8A29E; --text-3: #78716C;
+      --accent: #E8926A; --accent-hover: #F0A07C; --accent-bg: #2D2218; --border: #3D3835;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.2);
+      --shadow: 0 1px 3px rgba(0,0,0,.25);
+      --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.4);
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 15px; line-height: 1.75; color: var(--text); background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: "Inter", -apple-system, "Segoe UI", sans-serif; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
+  a { color: inherit; text-decoration: none; }
+  .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1px 7px; white-space: nowrap;
+  }
+  kbd {
+    font-family: -apple-system, "Segoe UI", sans-serif; font-size: 12px;
+    background: var(--surface); border: 1px solid var(--border); border-bottom-width: 2px;
+    border-radius: 6px; padding: 1px 7px; white-space: nowrap;
+  }
+
+  /* nav (same as index) */
+  .nav { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); }
+  .nav-inner { display: flex; align-items: center; height: 60px; gap: 28px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: "Inter", sans-serif; font-weight: 700; font-size: 17px; }
+  .brand img { width: 30px; height: 30px; border-radius: 8px; }
+  .nav-links { display: flex; gap: 22px; margin-left: auto; align-items: center; font-size: 14px; color: var(--text-2); }
+  .nav-links a:hover { color: var(--accent); }
+  .nav-cta { background: var(--accent); color: #fff !important; padding: 7px 16px; border-radius: 999px; font-weight: 600; }
+  .nav-cta:hover { background: var(--accent-hover); }
+  .lang-dropdown-wrapper { position: relative; }
+  .lang-btn { display: flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: 14px; color: var(--text-2); padding: 6px 10px; border-radius: 8px; transition: color .2s, background .2s; }
+  .lang-btn:hover { color: var(--accent); }
+  .lang-menu { position: absolute; top: calc(100% + 6px); right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12); padding: 6px; min-width: 132px; margin: 0; list-style: none; opacity: 0; visibility: hidden; transform: translateY(-4px); transition: opacity .18s, visibility .18s, transform .18s; z-index: 10000; }
+  .lang-dropdown-wrapper:hover .lang-menu, .lang-dropdown-wrapper:focus-within .lang-menu { opacity: 1; visibility: visible; transform: translateY(0); }
+  .lang-menu li { padding: 7px 12px; font-size: 14px; color: inherit; border-radius: 6px; cursor: pointer; transition: background .15s, color .15s; }
+  .lang-menu li:hover { background: var(--accent-bg); color: var(--accent); }
+
+  /* manual hero */
+  .manual-hero { padding: 72px 0 44px; text-align: center; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; background: var(--accent-bg); color: var(--accent); font-size: 13px; font-weight: 600; border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); border-radius: 999px; padding: 5px 16px; margin-bottom: 20px; }
+  .manual-hero h1 { font-size: 40px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 14px; }
+  .manual-hero .lead { font-size: 16.5px; color: var(--text-2); max-width: 620px; margin: 0 auto; }
+
+  /* two-column layout */
+  .manual-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; align-items: start; padding-bottom: 80px; }
+  .manual-toc { position: sticky; top: 84px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; max-height: calc(100vh - 108px); overflow-y: auto; padding-bottom: 12px; }
+  .manual-toc-group { font-family: "Inter", sans-serif; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); margin: 18px 0 6px; }
+  .manual-toc a { color: var(--text-2); padding: 5px 10px; border-radius: 8px; border-left: 2px solid transparent; }
+  .manual-toc a:hover { color: var(--accent); background: var(--accent-bg); }
+  .manual-toc a.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-bg); }
+
+  .manual-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 34px 36px; margin-bottom: 26px; scroll-margin-top: 84px; }
+  .manual-h2 { font-size: 24px; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+  .h2-emoji { font-size: 22px; }
+  .manual-section h3 { font-size: 16px; margin: 22px 0 8px; }
+  .manual-section p { color: var(--text-2); margin-bottom: 12px; }
+  .manual-section ol, .manual-section ul { padding-left: 22px; margin-bottom: 12px; }
+  .manual-section li { color: var(--text-2); margin-bottom: 8px; }
+  .manual-section li strong { color: var(--text); }
+  .manual-section a { color: var(--accent); }
+  .manual-section a:hover { text-decoration: underline; }
+  .manual-hint { font-size: 13px; color: var(--text-3); background: var(--bg); border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 10px 14px; margin-top: 14px; }
+  .manual-shot { width: 100%; border-radius: var(--radius); border: 1px solid var(--border); margin: 16px 0 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 10px 0 16px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-2); }
+  th { color: var(--text); font-family: "Inter", sans-serif; font-weight: 600; }
+  details { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 10px; background: var(--bg); }
+  details summary { cursor: pointer; font-weight: 600; color: var(--text); }
+  details p { margin: 10px 0 2px; }
+  .step-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 700; margin-right: 8px; }
+
+  footer { border-top: 1px solid var(--border); padding: 32px 0; }
+  .foot-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-3); }
+  .foot-inner a { color: var(--text-2); }
+  .foot-inner a:hover { color: var(--accent); }
+
+  @media (max-width: 900px) {
+    .manual-layout { grid-template-columns: 1fr; }
+    .manual-toc { display: none; }
+    .manual-hero h1 { font-size: 30px; }
+    .manual-section { padding: 26px 22px; }
+    .nav-links a:not(.nav-cta):not(.nav-manual) { display: none; }
+  }
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div class="container nav-inner">
+    <a class="brand" href="index.html"><img src="assets/favicon.png" alt="PDFGist" />PDFGist</a>
+    <div class="nav-links">
+      <a href="index.html#features" data-en="Features" data-zh="功能">功能</a>
+      <a href="guide.html" class="nav-manual" style="color:var(--accent)" data-en="Guide" data-zh="手册">手册</a>
+      <a href="https://github.com/turinglambdaai/pdfgist" target="_blank" rel="noopener">GitHub</a>
+      <div class="lang-dropdown-wrapper">
+          <button class="lang-btn" type="button" aria-label="Switch language">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+              <span id="current-lang-label">English</span>
+          </button>
+          <ul class="lang-menu">
+              <li onclick="setLanguage('en')">English</li>
+              <li onclick="setLanguage('zh')">简体中文</li>
+          </ul>
+      </div>
+      <a class="nav-cta" href="index.html#download" data-en="Download" data-zh="下载">下载</a>
+    </div>
+  </div>
+</nav>
+
+<section class="manual-hero container">
+  <span class="eyebrow" data-en="User Guide" data-zh="用户手册">用户手册</span>
+  <h1 data-en="Read, translate, and ask — in five minutes" data-zh="五分钟上手：读、译、问">五分钟上手：读、译、问</h1>
+  <p class="lead" data-en="Install, open your first PDF, set your own model key, and go. Short sentences. Verb first." data-zh="安装、打开第一份 PDF、配好自己的模型 Key，开工。句子短，动词开头。">安装、打开第一份 PDF、配好自己的模型 Key，开工。句子短，动词开头。</p>
+</section>
+
+<div class="container manual-layout">
+  <aside class="manual-toc" id="toc">
+    <div class="manual-toc-group" data-en="Get started" data-zh="上手">上手</div>
+    <a href="#quickstart" data-en="Five-minute start" data-zh="五分钟上手">五分钟上手</a>
+    <div class="manual-toc-group" data-en="Core features" data-zh="核心功能">核心功能</div>
+    <a href="#reading" data-en="Reading" data-zh="阅读">阅读</a>
+    <a href="#byok" data-en="Translation &amp; your model key" data-zh="翻译与模型 Key">翻译与模型 Key</a>
+    <a href="#summarize" data-en="Summaries &amp; chat" data-zh="总结与对话">总结与对话</a>
+    <a href="#annotations" data-en="Highlights &amp; bookmarks" data-zh="批注与书签">批注与书签</a>
+    <a href="#page-edit" data-en="Page editing" data-zh="页面编辑">页面编辑</a>
+    <div class="manual-toc-group" data-en="FAQ" data-zh="常见问题">常见问题</div>
+    <a href="#faq" data-en="Storage, privacy, platforms, updates" data-zh="存储、隐私、平台、更新">存储、隐私、平台、更新</a>
+  </aside>
+
+  <main>
+
+    <!-- =================== Quickstart =================== -->
+    <section class="manual-section" id="quickstart">
+      <h2 class="manual-h2"><span class="h2-emoji">🚀</span>
+        <span data-en="Five-minute start" data-zh="五分钟上手">五分钟上手</span>
+      </h2>
+      <p data-en="Download, open, translate one paragraph. That is the whole tutorial. Everything below is optional." data-zh="下载、打开、翻一段。教程到此结束。以下内容都是可选的。">下载、打开、翻一段。教程到此结束。以下内容都是可选的。</p>
+      <ol>
+        <li data-en="<strong>Install.</strong> Grab the latest dmg from the <a href='https://github.com/turinglambdaai/pdfgist/releases/latest'>Releases</a> page. Drag PDFGist into Applications. Launch it. macOS 14+ required; Apple silicon and Intel Macs are both supported."
+            data-zh="<strong>安装。</strong>到 <a href='https://github.com/turinglambdaai/pdfgist/releases/latest'>Releases</a> 页下载最新 dmg。把 PDFGist 拖进「应用程序」。启动。需要 macOS 14+；Apple 芯片与 Intel 芯片都支持。">
+          <strong>Install.</strong> Grab the latest dmg and drag PDFGist into Applications.
+        </li>
+        <li data-en="<strong>Open a PDF.</strong> Click <em>Open PDF</em> (or press <kbd>⌘O</kbd>) and pick any PDF. It opens in a tab. The left sidebar shows recents, thumbnails and the outline; your page and scroll position are remembered for next time."
+            data-zh="<strong>打开一份 PDF。</strong>点「打开 PDF」（或按 <kbd>⌘O</kbd>），选任意 PDF。它会在新标签页中打开。左侧栏是最近打开、缩略图和目录；页码与滚动位置会被记住，下次续读。">
+          <strong>Open a PDF.</strong> Click Open PDF or press <kbd>⌘O</kbd>.
+        </li>
+        <li data-en="<strong>Configure your model key once.</strong> Open the AI panel on the right, go to <em>Settings</em>, pick a preset (GLM, DeepSeek, Kimi, Qwen, Doubao, SiliconFlow, Ollama…), paste your API key, click <em>Save</em>. See <a href='#byok'>the key setup section</a> for details."
+            data-zh="<strong>一次性配好模型 Key。</strong>打开右侧 AI 面板，进「设置」，选一个预设（智谱 GLM、DeepSeek、Kimi、通义千问、豆包、硅基流动、Ollama…），粘贴 API Key，点「保存」。详见<a href='#byok'>Key 配置一节</a>。">
+          <strong>Configure your model key once.</strong> Settings tab, pick a preset, paste the key, save.
+        </li>
+        <li data-en="<strong>Translate a selection.</strong> Select any paragraph. Click the <em>Translate</em> bubble. The translation streams in. Use <em>Translate page</em> or <em>Paragraph pairs</em> to read the whole page bilingually."
+            data-zh="<strong>翻译一段。</strong>选中任意段落，点「翻译」气泡，译文流式输出。想整页对照阅读，用「本页翻译」或「段落对照」。">
+          <strong>Translate a selection.</strong> Select a paragraph, click Translate, read the stream.
+        </li>
+        <li data-en="<strong>Summarize.</strong> Switch to the <em>Summarize</em> tab. Choose current page, your selection, or the whole document. Click once. Read the structured result."
+            data-zh="<strong>来一份总结。</strong>切到「总结」标签，选当前页、选区或整份文档，点一下，读结构化结果。">
+          <strong>Summarize.</strong> Summarize tab, pick scope, click once.
+        </li>
+      </ol>
+      <img class="manual-shot" src="assets/hero-light.png" alt="PDFGist reading view on macOS"
+           data-alt-en="PDFGist reading view on macOS: sidebar, document, AI panel"
+           data-alt-zh="PDFGist 阅读界面（macOS）：左侧栏、文档与 AI 面板" />
+      <p class="manual-hint" data-en="The screenshot is the real macOS build." data-zh="截图为真实的 macOS 版本。">截图为真实的 macOS 版本。</p>
+    </section>
+
+    <!-- =================== Reading =================== -->
+    <section class="manual-section" id="reading">
+      <h2 class="manual-h2"><span class="h2-emoji">📖</span>
+        <span data-en="Reading" data-zh="阅读">阅读</span>
+      </h2>
+      <p data-en="Everything a reader needs. Nothing you must learn." data-zh="阅读器该有的都有，且不需要学。">阅读器该有的都有，且不需要学。</p>
+      <ul>
+        <li data-en="<strong>Tabs.</strong> Open many documents. Press <kbd>⌘W</kbd> to close the current tab." data-zh="<strong>多标签。</strong>同时开多份文档；<kbd>⌘W</kbd> 关闭当前标签。"><strong>Tabs.</strong> Open many documents; <kbd>⌘W</kbd> closes the tab.</li>
+        <li data-en="<strong>Views.</strong> Single page or two-page book view. Zoom with pinch or <kbd>⌘+</kbd> / <kbd>⌘−</kbd>. Fit width with one click." data-zh="<strong>视图。</strong>单页或双页书视图；捏合或 <kbd>⌘+</kbd> / <kbd>⌘−</kbd> 缩放，一键适宽。"><strong>Views.</strong> Single or two-page view; pinch to zoom.</li>
+        <li data-en="<strong>Navigate.</strong> Thumbnails, outline, and full-text search. Press <kbd>⌘F</kbd>, type, jump with Enter." data-zh="<strong>导航。</strong>缩略图、目录、全文搜索；<kbd>⌘F</kbd> 输入关键词，回车跳转。"><strong>Navigate.</strong> Thumbnails, outline, search with <kbd>⌘F</kbd>.</li>
+        <li data-en="<strong>Continue reading.</strong> Recents remember page and scroll position. Files stay where they are — PDFGist never copies them into a library." data-zh="<strong>续读。</strong>最近打开记住页码与滚动位置；文件留在原地，PDFGist 绝不复制进应用库。"><strong>Continue reading.</strong> Recents remember your position; files stay in place.</li>
+        <li data-en="<strong>Dark mode, print, read aloud.</strong> Toggle the sun icon for dark mode. Press <kbd>⌘P</kbd> to print. Click the speaker for text-to-speech." data-zh="<strong>深色、打印、朗读。</strong>点太阳图标切深色；<kbd>⌘P</kbd> 打印；点喇叭图标朗读。"><strong>Dark mode, print, read aloud.</strong> Sun icon, <kbd>⌘P</kbd>, speaker icon.</li>
+        <li data-en="<strong>EPUB too.</strong> Open an .epub the same way. You get reflowable typography, chapter TOC, book-wide search, font-size control, and the same AI workflow per chapter." data-zh="<strong>EPUB 也行。</strong>同样方式打开 .epub：流式排版、章节目录、书内搜索、字号调节，章节享受同一套 AI 工作流。"><strong>EPUB too.</strong> Same workflow for e-books.</li>
+      </ul>
+    </section>
+
+    <!-- =================== BYOK =================== -->
+    <section class="manual-section" id="byok">
+      <h2 class="manual-h2"><span class="h2-emoji">🔑</span>
+        <span data-en="Translation &amp; your model key" data-zh="翻译与模型 Key">翻译与模型 Key</span>
+      </h2>
+      <p data-en="PDFGist ships no AI quota. You connect your own provider. Your key stays on this machine; requests go straight to your provider." data-zh="PDFGist 不带任何 AI 配额，你接入自己的服务商。Key 只存本机，请求直达你的服务商。">PDFGist 不带任何 AI 配额，你接入自己的服务商。Key 只存本机，请求直达你的服务商。</p>
+      <h3 data-en="Where do I put my API key?" data-zh="API Key 填在哪里？">API Key 填在哪里？</h3>
+      <ol>
+        <li data-en="Open the AI panel on the right edge. Click the <em>Settings</em> tab (设置)." data-zh="打开最右侧的 AI 面板，点「设置」标签。">Open the AI panel. Click the Settings tab.</li>
+        <li data-en="Pick a <strong>preset</strong> from the dropdown. The preset fills the base URL for you — including plan-specific endpoints like the GLM Coding endpoint." data-zh="在「预设」下拉里选你的服务商。预设会自动填好 Base URL——包括 GLM Coding 套餐这类专属端点。">Pick a preset. The base URL fills itself.</li>
+        <li data-en="Paste your <strong>API key</strong> into the key field. Format: the plain string from your provider's console, for example <code>sk-...</code>. No quotes, no prefix, no line breaks." data-zh="把 <strong>API Key</strong> 粘进 Key 输入框。格式：服务商控制台给的原样字符串（如 <code>sk-...</code>）。不要引号、不要前缀、不要换行。">Paste the key as-is: <code>sk-...</code>, no quotes, no line breaks.</li>
+        <li data-en="Click <strong>Save</strong>. Then click <strong>Fetch models</strong> to list available models, pick one, and click <strong>Test</strong> to verify the connection." data-zh="点「保存」，再点「拉取模型」获取模型列表并选择，最后点「测试」验证连通。">Save. Fetch models. Pick one. Test.</li>
+      </ol>
+      <h3 data-en="Where do I get a key?" data-zh="Key 从哪来？">Key 从哪来？</h3>
+      <p data-en="From your provider's open-platform console (Zhipu, DeepSeek, Moonshot, Alibaba, Volcano, SiliconFlow). Most offer a free quota for new accounts. Already paying for a coding plan such as GLM Coding or Kimi Code? Its key and endpoint work here — pick the matching preset." data-zh="到服务商的开放平台控制台创建（智谱、DeepSeek、月之暗面、阿里、火山、硅基流动）。多数对新账号送免费额度。已经在用 GLM Coding、Kimi Code 这类套餐？它的 Key 和端点直接能用——选对应预设即可。">From your provider's console. Coding-plan keys work too — pick the matching preset.</p>
+      <h3 data-en="Which translation mode?" data-zh="翻译模式怎么选？">翻译模式怎么选？</h3>
+      <ul>
+        <li data-en="<strong>Selection translation.</strong> Select text, click Translate. Best for a sentence or a paragraph." data-zh="<strong>划词翻译。</strong>选中即译。适合句子或段落。"><strong>Selection translation.</strong> For a sentence or a paragraph.</li>
+        <li data-en="<strong>Translate page.</strong> One click translates the current page. Best for quick reading." data-zh="<strong>本页翻译。</strong>一键翻译当前页。适合快速读。"><strong>Translate page.</strong> For quick reading.</li>
+        <li data-en="<strong>Paragraph pairs.</strong> Original and translation shown in pairs, streamed in parallel. Best for careful reading." data-zh="<strong>段落对照。</strong>原文/译文成对展示、逐段并行流式。适合精读。"><strong>Paragraph pairs.</strong> For careful reading.</li>
+      </ul>
+      <p data-en="Set the target language in Settings. Default is Chinese." data-zh="目标语言在「设置」里改，默认中文。">Set the target language in Settings. Default is Chinese.</p>
+      <div class="manual-hint" data-en="Reasoning models are handled specially: chain-of-thought streams dimmed and the final answer stays clean." data-zh="对推理模型做了专门处理：思维过程置灰流式显示，最终答案保持干净。">Reasoning models are handled specially: chain-of-thought stays dimmed.</div>
+    </section>
+
+    <!-- =================== Summaries & chat =================== -->
+    <section class="manual-section" id="summarize">
+      <h2 class="manual-h2"><span class="h2-emoji">✨</span>
+        <span data-en="Summaries &amp; chat" data-zh="总结与对话">总结与对话</span>
+      </h2>
+      <ul>
+        <li data-en="<strong>Summarize.</strong> Open the Summarize tab. Choose page, selection, or document. Click once. The result is structured — read it in order." data-zh="<strong>总结。</strong>打开「总结」标签，选当前页、选区或整份文档，点一下即可，结果按结构组织。"><strong>Summarize.</strong> Pick scope, click once, read the structured result.</li>
+        <li data-en="<strong>Chat.</strong> Open the Chat tab. Ask about the current page, your selection, or the first pages of the document. Answers cite what you are reading." data-zh="<strong>对话。</strong>打开「对话」标签，针对当前页、选区或文档开头部分提问。回答基于你正在读的内容。"><strong>Chat.</strong> Ask about what you are reading.</li>
+        <li data-en="<strong>Reuse.</strong> Copy any result with one click." data-zh="<strong>复用。</strong>任何结果一键复制。"><strong>Reuse.</strong> One click to copy.</li>
+      </ul>
+    </section>
+
+    <!-- =================== Annotations =================== -->
+    <section class="manual-section" id="annotations">
+      <h2 class="manual-h2"><span class="h2-emoji">🖍️</span>
+        <span data-en="Highlights &amp; bookmarks" data-zh="批注与书签">批注与书签</span>
+      </h2>
+      <ul>
+        <li data-en="<strong>Highlight.</strong> Select text, pick one of three colors, done. Add a note to the same selection." data-zh="<strong>高亮。</strong>选中文字，三色任选其一。同一段落还能加笔记。"><strong>Highlight.</strong> Select, pick a color, add a note if you want.</li>
+        <li data-en="<strong>Bookmark.</strong> Press <kbd>⌘B</kbd> or click the bookmark icon to mark the current page." data-zh="<strong>书签。</strong>按 <kbd>⌘B</kbd> 或点书签图标，标记当前页。"><strong>Bookmark.</strong> <kbd>⌘B</kbd> or the bookmark icon.</li>
+        <li data-en="<strong>Storage.</strong> Annotations live in a sidecar JSON file next to your PDF — not inside it. Your PDF stays untouched, and the sidecar syncs with your cloud drive like any other file." data-zh="<strong>存储。</strong>批注存在 PDF 旁边的 sidecar JSON 文件里，不写入 PDF。源文件保持原样，sidecar 可以随网盘同步。"><strong>Storage.</strong> A sidecar JSON sits next to your PDF; the PDF itself is never modified.</li>
+        <li data-en="<strong>Export.</strong> Export your highlights as Markdown — ready for Obsidian and friends." data-zh="<strong>导出。</strong>高亮可导出为 Markdown，直接进 Obsidian 等笔记工具。"><strong>Export.</strong> Markdown export for Obsidian and friends.</li>
+      </ul>
+    </section>
+
+    <!-- =================== Page editing =================== -->
+    <section class="manual-section" id="page-edit">
+      <h2 class="manual-h2"><span class="h2-emoji">✂️</span>
+        <span data-en="Page editing" data-zh="页面编辑">页面编辑</span>
+      </h2>
+      <p data-en="All operations run in memory. Your source files are never modified." data-zh="所有操作都在内存中进行，绝不改动你的源文件。">所有操作都在内存中进行，绝不改动你的源文件。</p>
+      <ul>
+        <li data-en="<strong>Rotate or delete</strong> the current page from the sidebar." data-zh="<strong>旋转 / 删除</strong>当前页：侧栏一键完成。"><strong>Rotate or delete</strong> the current page from the sidebar.</li>
+        <li data-en="<strong>Insert a blank page</strong> after the current one." data-zh="<strong>插入空白页</strong>到当前页之后。"><strong>Insert a blank page</strong> after the current one.</li>
+        <li data-en="<strong>Extract</strong> selected pages into a new PDF." data-zh="<strong>提取</strong>所选页为新 PDF。"><strong>Extract</strong> selected pages into a new PDF.</li>
+        <li data-en="<strong>Merge</strong> another PDF into the document." data-zh="<strong>合并</strong>另一份 PDF。"><strong>Merge</strong> another PDF in.</li>
+        <li data-en="<strong>Bake watermarks and text boxes.</strong> Add a watermark or a text box, then bake it into the exported copy." data-zh="<strong>水印与文本框。</strong>添加后烘焙进导出的副本。"><strong>Bake watermarks and text boxes</strong> into the exported copy.</li>
+      </ul>
+      <p data-en="Fill forms too: open an AcroForm PDF, fill text, checkboxes and choices, then export the filled copy." data-zh="表单也能填：打开 AcroForm PDF，填写文本、勾选与选择字段，导出填写后的副本。">Fill AcroForm fields and export the filled copy.</p>
+    </section>
+
+    <!-- =================== FAQ =================== -->
+    <section class="manual-section" id="faq">
+      <h2 class="manual-h2"><span class="h2-emoji">❓</span>
+        <span data-en="FAQ" data-zh="常见问题">常见问题</span>
+      </h2>
+
+      <details open>
+        <summary data-en="Where is my data stored?" data-zh="我的数据存在哪里？">我的数据存在哪里？</summary>
+        <p data-en="Settings and your API key live in <code>~/Library/Application Support/site.jrtx.pdfgist/</code> (macOS). Annotations and bookmarks live in a sidecar JSON file next to each PDF. Your PDFs never move." data-zh="设置与 API Key 存在 <code>~/Library/Application Support/site.jrtx.pdfgist/</code>（macOS）。批注与书签存在每份 PDF 旁边的 sidecar JSON 里。你的 PDF 文件永远不被移动。">Settings live in the app config folder; annotations live beside each PDF.</p>
+      </details>
+
+      <details open>
+        <summary data-en="Is it private?" data-zh="隐私如何保障？">隐私如何保障？</summary>
+        <p data-en="PDFGist is local-first. No account. No telemetry. Your key and settings never leave this machine. The only network traffic is what you trigger: AI requests go directly from your machine to the provider endpoint you configured, and update checks download from the official GitHub Releases." data-zh="PDFGist 本地优先：无账号、无遥测。Key 与设置绝不离开本机。网络请求只有你主动触发的两类——AI 请求从你的机器直达你配置的服务商端点，更新检查从官方 GitHub Releases 下载。">Local-first: no account, no telemetry. AI requests go straight to your provider.</p>
+      </details>
+
+      <details open>
+        <summary data-en="Windows / Linux?" data-zh="Windows / Linux 什么时候有？">Windows / Linux 什么时候有？</summary>
+        <p data-en="In development, honestly. macOS (Apple silicon and Intel) is the supported platform today. The Windows and Linux hosts are being built in the open — watch the repository for progress." data-zh="诚实说：开发中。当前支持的平台是 macOS（Apple 芯片与 Intel 芯片）。Windows 与 Linux 宿主正在公开开发，进展见仓库。">macOS is supported today; Windows and Linux are under active development.</p>
+      </details>
+
+      <details open>
+        <summary data-en="How do updates work?" data-zh="更新机制是怎样的？">更新机制是怎样的？</summary>
+        <p data-en="Check manually via File → Check for Updates (<kbd>⌘U</kbd>). A silent check also runs at most once a day. Updates are Ed25519-signature-verified and SHA-256-checked before install. Nothing installs without your confirmation." data-zh="可通过「文件 → 检查更新」（<kbd>⌘U</kbd>）手动检查；静默检查每天最多一次。更新包经 Ed25519 签名校验与 SHA-256 校验后才会安装，全程需你确认。">File → Check for Updates (<kbd>⌘U</kbd>); silent checks at most daily; installs need your click.</p>
+      </details>
+
+      <details open>
+        <summary data-en="How do I uninstall?" data-zh="怎么卸载？">怎么卸载？</summary>
+        <p data-en="Drag PDFGist from Applications to Trash. Then remove the config folder <code>~/Library/Application Support/site.jrtx.pdfgist/</code> if you want to erase your key and settings. Sidecar annotation files sit next to your PDFs — delete them only if you want to lose the annotations." data-zh="把 PDFGist 从「应用程序」拖进废纸篓。想彻底清除 Key 与设置，再删掉 <code>~/Library/Application Support/site.jrtx.pdfgist/</code>。批注 sidecar 文件在 PDF 旁边——确认不需要批注了再删。">Drag the app to Trash; remove the config folder to erase keys and settings.</p>
+      </details>
+
+      <details open>
+        <summary data-en="Translation fails or hangs — what now?" data-zh="翻译失败或卡住怎么办？">翻译失败或卡住怎么办？</summary>
+        <p data-en="Check three things: the key is pasted exactly as issued; you clicked Save after pasting; the connection test passes. Still failing? Verify your provider quota and network, then try another model in the same preset." data-zh="检查三件事：Key 是否原样粘贴、粘贴后是否点了「保存」、「测试」是否通过。仍失败？确认服务商配额与网络，再换同预设下的其他模型试试。">Check the key, click Save, run the test; then check quota and network.</p>
+      </details>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="container foot-inner">
+    <span>© 2026 TuringLambdaAI · PDFGist is free software under AGPL-3.0</span>
+    <span><a href="index.html" data-en="Home" data-zh="首页">首页</a> · <a href="https://github.com/turinglambdaai/pdfgist" target="_blank" rel="noopener">GitHub</a></span>
+  </div>
+</footer>
+
+<script>
+  var lang = localStorage.getItem("pdfgist-lang") || "zh";
+  function applyLang(l) {
+    lang = l;
+    localStorage.setItem("pdfgist-lang", l);
+    document.documentElement.lang = l === "zh" ? "zh-CN" : "en";
+    document.querySelectorAll("[data-en]").forEach(function (el) {
+      var v = el.getAttribute(l === "zh" ? "data-zh" : "data-en");
+      if (v !== null) el.innerHTML = v;
+    });
+    document.querySelectorAll("[data-alt-en]").forEach(function (el) {
+      var v = el.getAttribute(l === "zh" ? "data-alt-zh" : "data-alt-en");
+      if (v !== null) el.setAttribute("alt", v);
+    });
+    document.getElementById("current-lang-label").textContent = l === "zh" ? "简体中文" : "English";
+  }
+  window.setLanguage = function (target) {
+    if (target === "zh" || target === "en") applyLang(target);
+  };
+  applyLang(lang);
+
+  // Active-TOC highlighting
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll(".manual-toc a"));
+    var sections = links.map(function (a) {
+      var el = document.querySelector(a.getAttribute("href"));
+      return el ? { a: a, el: el } : null;
+    }).filter(Boolean);
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          links.forEach(function (a) { a.classList.remove("active"); });
+          var m = sections.find(function (s) { return s.el === e.target; });
+          if (m) m.a.classList.add("active");
+        }
+      });
+    }, { rootMargin: "-20% 0px -70% 0px" });
+    sections.forEach(function (s) { observer.observe(s.el); });
+  })();
+</script>
+</body>
+</html>

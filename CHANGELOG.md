@@ -7,6 +7,53 @@ releases and tags were deleted and the history lives in git on `main`.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-14
+
+Alignment, honesty, and a manual. No new features.
+
+### Added
+
+- **User guide.** The site now carries a bilingual user manual
+  (`docs/guide.html`, linked from the nav): a five-minute start, the
+  bring-your-own-model key setup (where the key field is, what format the
+  key has, how to fetch models and test the connection), the reading /
+  summary / annotation workflow, and an FAQ covering storage locations,
+  privacy, platform status, updates and uninstall.
+- **Updater test suite.** The updater is pinned by an offline test suite:
+  the Ed25519 trust chain (in-process signing), the manifest rejection
+  matrix, the sticky rollout bucket, and the loopback download path.
+
+### Changed
+
+- **Updater moved onto rivet/distribution end to end.** The half-rolled
+  custom fetch is gone; the updater now uses rivet's fetch-update-manifest
+  (verify-before-parse, built-in redirects), select-update policy and
+  download-update with the signed size cap, SHA-256 verification and
+  `.partial` cleanup on every failure, plus a stall watchdog. Rollout
+  bookkeeping (sticky bucket, last-update timestamp) moved out of
+  `settings.json` — that document stays byte-compatible with v1 installs —
+  into a sibling `updater.json`.
+- **i18n fix.** Fallback translation catalogs used `hasheq`, so lookups
+  silently returned raw keys unless compilation coalesced the string
+  literals (CI green, local build broken). The tables are now equal-based,
+  so every host locale resolves the same way everywhere.
+- **Upstream Rivet alignment (v0.11.0).** All three hosts consume Rivet as
+  a package instead of compiling its sources: the macOS host depends on the
+  root rivet package (`Package.swift`), the Linux host links
+  `rivet::platform` via `add_subdirectory` (CMakeLists.txt), and the
+  Windows host references `rivet-host.vcxproj` via ProjectReference with
+  the CRT runtime library forwarded. CI and the release workflow install
+  Rivet from the pinned tag (`RIVET_PIN: v0.11.0`) instead of the floating
+  catalog package.
+- **Real screenshots.** The site hero images were renders of the retired
+  v1 (Tauri/PDF.js) app; they are replaced with captures of the current
+  native macOS build, light and dark.
+- **Site and README.** Download buttons point at the latest release page
+  instead of hardcoded versioned asset URLs (the numbers drifted every
+  release); the nav links to the guide; the README gains release and CI
+  badges and keeps its header free of URLs. The site ships its own
+  self-hosted Inter subset (no third-party font CDN).
+
 ## [0.1.0] - 2026-10-10
 
 Version epoch reset. The technical rewrite on Rivet is settled and the

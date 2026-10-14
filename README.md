@@ -1,10 +1,10 @@
 # PDFGist
 
-> A local-first AI PDF reader — bring your own model. Built on [Rivet](https://github.com/turinglambdaai/rivet): one Racket domain core driving first-party native hosts over typed RPC.
+> A local-first AI PDF reader — bring your own model. One Racket domain core driving first-party native hosts over typed RPC.
 
 **English** · [中文](README.zh-CN.md)
 
-![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%28Apple%20silicon%20%26%20Intel%29-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![release](https://img.shields.io/github/v/release/turinglambdaai/pdfgist)](https://github.com/turinglambdaai/pdfgist/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%28Apple%20silicon%20%26%20Intel%29-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml/badge.svg)](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 Most AI PDF apps lock you into their subscription. PDFGist takes the opposite approach: the app is a thin, fast reader, and the intelligence is whatever model *you* point it at. Your key, your model, your cost — stored locally, sent directly to the provider you choose. Nothing leaves your machine except the requests you make to your own provider.
 
@@ -26,7 +26,7 @@ Most AI PDF apps lock you into their subscription. PDFGist takes the opposite ap
 
 ## Architecture
 
-One Racket domain core (`racket/` + `app/backend.rkt`) owns all business logic — AI streaming, PDF page surgery, annotation storage, settings — and exposes it over Rivet's typed RPC (RVT1). First-party hosts render and interact only:
+One Racket domain core (`racket/` + `app/backend.rkt`) owns all business logic — AI streaming, PDF page surgery, annotation storage, settings — and exposes it over [Rivet](https://github.com/turinglambdaai/rivet)'s typed RPC (RVT1). First-party hosts render and interact only:
 
 | Host | Stack | Directory |
 |---|---|---|

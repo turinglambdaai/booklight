@@ -259,130 +259,130 @@ public struct RivetAPI: Sendable {
     public init(client: RivetClient) { self.client = client }
 
     public func chat(context_text: String, context_label: String, history: [[String]], user_message: String) async throws -> RivetTypes.StreamStart {
-        let result = try await client.call("chat", arguments: [encode_String(context_text), encode_String(context_label), encode__List_List_String_(history), encode_String(user_message)])
-        return try decode_StreamStart(result)
+        let rivetResult = try await client.call("chat", arguments: [encode_String(context_text), encode_String(context_label), encode__List_List_String_(history), encode_String(user_message)])
+        return try decode_StreamStart(rivetResult)
     }
     public func check_updates(force: Bool) async throws -> Data {
-        let result = try await client.call("check-updates", arguments: [encode_Bool(force)])
-        return try decode_Bytes(result)
+        let rivetResult = try await client.call("check-updates", arguments: [encode_Bool(force)])
+        return try decode_Bytes(rivetResult)
     }
     public func edit_append_doc(path: String, other_path: String) async throws -> Data {
-        let result = try await client.call("edit-append-doc", arguments: [encode_String(path), encode_String(other_path)])
-        return try decode_Bytes(result)
+        let rivetResult = try await client.call("edit-append-doc", arguments: [encode_String(path), encode_String(other_path)])
+        return try decode_Bytes(rivetResult)
     }
     public func edit_bake_text(path: String, watermark_text: String, watermark_size: Int64, watermark_opacity_milli: Int64, boxes: [RivetTypes.EditTextBox]) async throws -> Data {
-        let result = try await client.call("edit-bake-text", arguments: [encode_String(path), encode_String(watermark_text), encode_Int64(watermark_size), encode_Int64(watermark_opacity_milli), encode__List_EditTextBox_(boxes)])
-        return try decode_Bytes(result)
+        let rivetResult = try await client.call("edit-bake-text", arguments: [encode_String(path), encode_String(watermark_text), encode_Int64(watermark_size), encode_Int64(watermark_opacity_milli), encode__List_EditTextBox_(boxes)])
+        return try decode_Bytes(rivetResult)
     }
     public func edit_delete_pages(path: String, pages: [Int64]) async throws -> Data {
-        let result = try await client.call("edit-delete-pages", arguments: [encode_String(path), encode__List_Int64_(pages)])
-        return try decode_Bytes(result)
+        let rivetResult = try await client.call("edit-delete-pages", arguments: [encode_String(path), encode__List_Int64_(pages)])
+        return try decode_Bytes(rivetResult)
     }
     public func edit_extract_pages(path: String, pages: [Int64]) async throws -> Data {
-        let result = try await client.call("edit-extract-pages", arguments: [encode_String(path), encode__List_Int64_(pages)])
-        return try decode_Bytes(result)
+        let rivetResult = try await client.call("edit-extract-pages", arguments: [encode_String(path), encode__List_Int64_(pages)])
+        return try decode_Bytes(rivetResult)
     }
     public func edit_insert_blank_after(path: String, page: Int64) async throws -> Data {
-        let result = try await client.call("edit-insert-blank-after", arguments: [encode_String(path), encode_Int64(page)])
-        return try decode_Bytes(result)
+        let rivetResult = try await client.call("edit-insert-blank-after", arguments: [encode_String(path), encode_Int64(page)])
+        return try decode_Bytes(rivetResult)
     }
     public func edit_rotate_pages(path: String, pages: [Int64], delta: Int64) async throws -> Data {
-        let result = try await client.call("edit-rotate-pages", arguments: [encode_String(path), encode__List_Int64_(pages), encode_Int64(delta)])
-        return try decode_Bytes(result)
+        let rivetResult = try await client.call("edit-rotate-pages", arguments: [encode_String(path), encode__List_Int64_(pages), encode_Int64(delta)])
+        return try decode_Bytes(rivetResult)
     }
     public func epub_chapter_html(path: String, index: Int64) async throws -> Data {
-        let result = try await client.call("epub-chapter-html", arguments: [encode_String(path), encode_Int64(index)])
-        return try decode_Bytes(result)
+        let rivetResult = try await client.call("epub-chapter-html", arguments: [encode_String(path), encode_Int64(index)])
+        return try decode_Bytes(rivetResult)
     }
     public func epub_chapter_text(path: String, index: Int64) async throws -> String {
-        let result = try await client.call("epub-chapter-text", arguments: [encode_String(path), encode_Int64(index)])
-        return try decode_String(result)
+        let rivetResult = try await client.call("epub-chapter-text", arguments: [encode_String(path), encode_Int64(index)])
+        return try decode_String(rivetResult)
     }
     public func epub_doc_text(path: String, max_chapters: Int64, cap_chars: Int64) async throws -> String {
-        let result = try await client.call("epub-doc-text", arguments: [encode_String(path), encode_Int64(max_chapters), encode_Int64(cap_chars)])
-        return try decode_String(result)
+        let rivetResult = try await client.call("epub-doc-text", arguments: [encode_String(path), encode_Int64(max_chapters), encode_Int64(cap_chars)])
+        return try decode_String(rivetResult)
     }
     public func epub_open(path: String) async throws -> RivetTypes.EpubView {
-        let result = try await client.call("epub-open", arguments: [encode_String(path)])
-        return try decode_EpubView(result)
+        let rivetResult = try await client.call("epub-open", arguments: [encode_String(path)])
+        return try decode_EpubView(rivetResult)
     }
     public func get_annotations(pdf_path: String, sidecar: Bool) async throws -> Data {
-        let result = try await client.call("get-annotations", arguments: [encode_String(pdf_path), encode_Bool(sidecar)])
-        return try decode_Bytes(result)
+        let rivetResult = try await client.call("get-annotations", arguments: [encode_String(pdf_path), encode_Bool(sidecar)])
+        return try decode_Bytes(rivetResult)
     }
     public func get_recents() async throws -> [RivetTypes.RecentEntry] {
-        let result = try await client.call("get-recents", arguments: [])
-        return try decode__List_RecentEntry_(result)
+        let rivetResult = try await client.call("get-recents", arguments: [])
+        return try decode__List_RecentEntry_(rivetResult)
     }
     public func get_settings() async throws -> RivetTypes.SettingsView {
-        let result = try await client.call("get-settings", arguments: [])
-        return try decode_SettingsView(result)
+        let rivetResult = try await client.call("get-settings", arguments: [])
+        return try decode_SettingsView(rivetResult)
     }
     public func initialize() async throws -> Void {
-        let result = try await client.call("initialize", arguments: [])
-        return try decode_Void(result)
+        let rivetResult = try await client.call("initialize", arguments: [])
+        return try decode_Void(rivetResult)
     }
     public func list_presets() async throws -> [RivetTypes.ProviderPreset] {
-        let result = try await client.call("list-presets", arguments: [])
-        return try decode__List_ProviderPreset_(result)
+        let rivetResult = try await client.call("list-presets", arguments: [])
+        return try decode__List_ProviderPreset_(rivetResult)
     }
     public func save_api_key(key: String) async throws -> Void {
-        let result = try await client.call("save-api-key", arguments: [encode_String(key)])
-        return try decode_Void(result)
+        let rivetResult = try await client.call("save-api-key", arguments: [encode_String(key)])
+        return try decode_Void(rivetResult)
     }
     public func save_settings(update: RivetTypes.SettingsUpdate) async throws -> RivetTypes.SettingsView {
-        let result = try await client.call("save-settings", arguments: [encode_SettingsUpdate(update)])
-        return try decode_SettingsView(result)
+        let rivetResult = try await client.call("save-settings", arguments: [encode_SettingsUpdate(update)])
+        return try decode_SettingsView(rivetResult)
     }
     public func set_annotations(pdf_path: String, sidecar: Bool, data: Data) async throws -> Void {
-        let result = try await client.call("set-annotations", arguments: [encode_String(pdf_path), encode_Bool(sidecar), encode_Bytes(data)])
-        return try decode_Void(result)
+        let rivetResult = try await client.call("set-annotations", arguments: [encode_String(pdf_path), encode_Bool(sidecar), encode_Bytes(data)])
+        return try decode_Void(rivetResult)
     }
     public func set_locale(code: String) async throws -> Void {
-        let result = try await client.call("set-locale", arguments: [encode_String(code)])
-        return try decode_Void(result)
+        let rivetResult = try await client.call("set-locale", arguments: [encode_String(code)])
+        return try decode_Void(rivetResult)
     }
     public func split_paragraphs(text: String) async throws -> [String] {
-        let result = try await client.call("split-paragraphs", arguments: [encode_String(text)])
-        return try decode__List_String_(result)
+        let rivetResult = try await client.call("split-paragraphs", arguments: [encode_String(text)])
+        return try decode__List_String_(rivetResult)
     }
     public func start_download() async throws -> Void {
-        let result = try await client.call("start-download", arguments: [])
-        return try decode_Void(result)
+        let rivetResult = try await client.call("start-download", arguments: [])
+        return try decode_Void(rivetResult)
     }
     public func stop_stream(request_id: Int64) async throws -> Void {
-        let result = try await client.call("stop-stream", arguments: [encode_Int64(request_id)])
-        return try decode_Void(result)
+        let rivetResult = try await client.call("stop-stream", arguments: [encode_Int64(request_id)])
+        return try decode_Void(rivetResult)
     }
     public func summarize_text(text: String, mode: RivetTypes.SummarizeMode) async throws -> RivetTypes.StreamStart {
-        let result = try await client.call("summarize-text", arguments: [encode_String(text), encode_SummarizeMode(mode)])
-        return try decode_StreamStart(result)
+        let rivetResult = try await client.call("summarize-text", arguments: [encode_String(text), encode_SummarizeMode(mode)])
+        return try decode_StreamStart(rivetResult)
     }
     public func test_connection(base_url: String, api_key: String, model: String) async throws -> RivetTypes.TestResult {
-        let result = try await client.call("test-connection", arguments: [encode_String(base_url), encode_String(api_key), encode_String(model)])
-        return try decode_TestResult(result)
+        let rivetResult = try await client.call("test-connection", arguments: [encode_String(base_url), encode_String(api_key), encode_String(model)])
+        return try decode_TestResult(rivetResult)
     }
     public func translate_text(text: String, target: RivetTypes.TargetLanguage) async throws -> RivetTypes.StreamStart {
-        let result = try await client.call("translate-text", arguments: [encode_String(text), encode_TargetLanguage(target)])
-        return try decode_StreamStart(result)
+        let rivetResult = try await client.call("translate-text", arguments: [encode_String(text), encode_TargetLanguage(target)])
+        return try decode_StreamStart(rivetResult)
     }
     public func update_recents(path: String, page: Int64, scroll_ratio_scaled: Int64) async throws -> Void {
-        let result = try await client.call("update-recents", arguments: [encode_String(path), encode_Int64(page), encode_Int64(scroll_ratio_scaled)])
-        return try decode_Void(result)
+        let rivetResult = try await client.call("update-recents", arguments: [encode_String(path), encode_Int64(page), encode_Int64(scroll_ratio_scaled)])
+        return try decode_Void(rivetResult)
     }
     public func update_state() async throws -> Data {
-        let result = try await client.call("update-state", arguments: [])
-        return try decode_Bytes(result)
+        let rivetResult = try await client.call("update-state", arguments: [])
+        return try decode_Bytes(rivetResult)
     }
 
     // Shared state
     public func get_backend_locale() async throws -> String {
-        let result = try await client.getState("backend-locale")
-        return try decode_String(result)
+        let rivetResult = try await client.getState("backend-locale")
+        return try decode_String(rivetResult)
     }
     @discardableResult
     public func set_backend_locale(_ value: String) async throws -> String {
-        let result = try await client.setState("backend-locale", value: encode_String(value))
-        return try decode_String(result)
+        let rivetResult = try await client.setState("backend-locale", value: encode_String(value))
+        return try decode_String(rivetResult)
     }
 }
