@@ -42,7 +42,18 @@ if(PDFGIST_ENABLE_EPUB)
   # with "webkit/WebKit.h: No such file or directory". Explicit dirs cannot
   # silently drop.
   pkg_check_modules(WEBKIT REQUIRED webkitgtk-6.0)
-  set(PDFGIST_WEBKIT_INCLUDES ${WEBKIT_INCLUDE_DIRS})
+  message(STATUS "webkitgtk-6.0 Cflags: ${WEBKIT_CFLAGS}")
+  message(STATUS "webkitgtk-6.0 include dirs: ${WEBKIT_INCLUDE_DIRS}")
+  if(NOT WEBKIT_INCLUDE_DIRS)
+    # Some distro .pc files expose the headers only through their file list;
+    # fall back to the standard Debian/Ubuntu include root.
+    find_path(WEBKIT_HEADER_DIR webkit/WebKit.h
+      PATHS /usr/include/webkitgtk-6.0 /usr/local/include/webkitgtk-6.0
+      REQUIRED)
+    set(PDFGIST_WEBKIT_INCLUDES ${WEBKIT_HEADER_DIR})
+  else()
+    set(PDFGIST_WEBKIT_INCLUDES ${WEBKIT_INCLUDE_DIRS})
+  endif()
   set(PDFGIST_WEBKIT_LIBDIRS ${WEBKIT_LIBRARY_DIRS})
   set(PDFGIST_WEBKIT_LIBS ${WEBKIT_LIBRARIES})
 endif()
