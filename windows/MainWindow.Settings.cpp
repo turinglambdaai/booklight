@@ -95,10 +95,10 @@ void MainWindow::BuildSettingsPane() {
         if (auto window = weak.get()) {
           if (window->settings_ui_updating_) return;
           try {
-            auto const id = winrt::unbox_value<std::wstring>(
+            auto const id = std::wstring(winrt::unbox_value<winrt::hstring>(
                 window->settings_provider_.SelectedItem()
                     .as<muxc::ComboBoxItem>()
-                    .Tag());
+                    .Tag()));
             window->SwitchPreset(id);
           } catch (...) {
           }
@@ -401,8 +401,8 @@ std::wstring MainWindow::SelectedProviderId() const {
   try {
     auto const selection = settings_provider_.SelectedItem();
     if (!selection) return {};
-    return winrt::unbox_value<std::wstring>(
-        selection.as<muxc::ComboBoxItem>().Tag());
+    return std::wstring(winrt::unbox_value<winrt::hstring>(
+        selection.as<muxc::ComboBoxItem>().Tag()));
   } catch (...) {
     return {};
   }
