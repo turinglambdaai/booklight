@@ -5,6 +5,7 @@
 #include <gtk/gtk.h>
 
 #include "host.hpp"
+#include "i18n.h"
 
 #include <algorithm>
 #include <exception>
@@ -79,12 +80,13 @@ AiPanel::AiPanel(PanelContext* ctx) : ctx_(ctx) {
   gtk_stack_set_hhomogeneous(GTK_STACK(stack_), FALSE);
   gtk_stack_set_vhomogeneous(GTK_STACK(stack_), FALSE);
   gtk_stack_add_titled(GTK_STACK(stack_), make_translate_tab(), "translate",
-                       "Translate");
+                       Tr("ui.tab.translate").c_str());
   gtk_stack_add_titled(GTK_STACK(stack_), make_summarize_tab(), "summarize",
-                       "Summarize");
-  gtk_stack_add_titled(GTK_STACK(stack_), make_chat_tab(), "chat", "Chat");
+                       Tr("ui.tab.summarize").c_str());
+  gtk_stack_add_titled(GTK_STACK(stack_), make_chat_tab(), "chat",
+                       Tr("ui.tab.chat").c_str());
   gtk_stack_add_titled(GTK_STACK(stack_), make_settings_tab(), "settings",
-                       "Settings");
+                       Tr("ui.tab.settings").c_str());
   gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(switcher),
                                GTK_STACK(stack_));
   auto* switcher_wrap = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
@@ -104,8 +106,8 @@ GtkWidget* AiPanel::make_translate_tab() {
   gtk_widget_set_margin_end(root, 10);
 
   auto* actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-  auto* page = small_button("Translate Page");
-  auto* selection = small_button("Translate Selection");
+  auto* page = small_button(Tr("ui.translate.page").c_str());
+  auto* selection = small_button(Tr("ui.menu.translate").c_str());
   gtk_box_append(GTK_BOX(actions), page);
   gtk_box_append(GTK_BOX(actions), selection);
   gtk_box_append(GTK_BOX(root), actions);
@@ -139,13 +141,17 @@ GtkWidget* AiPanel::make_summarize_tab() {
 
   // op codes for the shared clicked callback
   auto* actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  // std::string copies: the array must own its labels, not borrow
+  // .c_str() from destroyed temporaries.
   struct Entry {
-    char const* label;
+    std::string label;
     int op;
   };
-  Entry const entries[] = {{"Page", 0}, {"Selection", 1}, {"Document", 2}};
+  Entry const entries[] = {{Tr("ui.summarize.page"), 0},
+                           {Tr("ui.summarize.selection"), 1},
+                           {Tr("ui.summarize.doc"), 2}};
   for (auto const& entry : entries) {
-    auto* button = small_button(entry.label);
+    auto* button = small_button(entry.label.c_str());
     g_object_set_data(G_OBJECT(button), "pdfgist-op",
                       GINT_TO_POINTER(entry.op));
     hook(
@@ -182,17 +188,20 @@ GtkWidget* AiPanel::make_chat_tab() {
   gtk_widget_set_margin_end(root, 10);
 
   auto* top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-  char const* scopes[] = {"Page context", "Selection context",
-                          "Document context"};
+  // std::string copies: own the labels instead of borrowing .c_str()
+  // from destroyed temporaries.
+  std::string const scopes[] = {Tr("ui.chat.scope.page"),
+                                Tr("ui.chat.scope.selection"),
+                                Tr("ui.chat.scope.doc")};
   auto* strings = gtk_string_list_new(nullptr);
-  for (auto* scope : scopes) {
-    gtk_string_list_append(GTK_STRING_LIST(strings), scope);
+  for (auto const& scope : scopes) {
+    gtk_string_list_append(GTK_STRING_LIST(strings), scope.c_str());
   }
   chat_scope_ =
       GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(strings), nullptr));
   gtk_widget_set_hexpand(GTK_WIDGET(chat_scope_), TRUE);
   gtk_box_append(GTK_BOX(top), GTK_WIDGET(chat_scope_));
-  chat_stop_ = GTK_BUTTON(small_button("Stop"));
+  chat_stop_ = GTK_BUTTON(small_button(Tr("ui.card.stop").c_str()));
   gtk_widget_set_sensitive(GTK_WIDGET(chat_stop_), FALSE);
   gtk_box_append(GTK_BOX(top), GTK_WIDGET(chat_stop_));
   gtk_box_append(GTK_BOX(root), top);
@@ -206,10 +215,11 @@ GtkWidget* AiPanel::make_chat_tab() {
 
   auto* input = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
   chat_entry_ = GTK_ENTRY(gtk_entry_new());
-  gtk_entry_set_placeholder_text(chat_entry_, "Ask about this document…");
+  gtk_entry_set_placeholder_text(chat_entry_,
+                                 Tr("ui.chat.placeholder").c_str());
   gtk_widget_set_hexpand(GTK_WIDGET(chat_entry_), TRUE);
   gtk_box_append(GTK_BOX(input), GTK_WIDGET(chat_entry_));
-  auto* send = small_button("Send");
+  auto* send = small_button(Tr("ui.chat.send").c_str());
   gtk_box_append(GTK_BOX(input), send);
   gtk_box_append(GTK_BOX(root), input);
 
@@ -246,7 +256,7 @@ GtkWidget* AiPanel::make_settings_tab() {
   gtk_widget_set_margin_end(root, 10);
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), root);
 
-  gtk_box_append(GTK_BOX(root), section_label("Provider preset"));
+  gtk_box_append(GTK_BOX(root), section_label(Tr("ui.settings.preset").c_str()));
   preset_dropdown_ = GTK_DROP_DOWN(gtk_drop_down_new(nullptr, nullptr));
   gtk_box_append(GTK_BOX(root), GTK_WIDGET(preset_dropdown_));
   hook(
@@ -256,12 +266,13 @@ GtkWidget* AiPanel::make_settings_tab() {
       },
       this);
 
-  gtk_box_append(GTK_BOX(root), section_label("Base URL"));
+  gtk_box_append(GTK_BOX(root),
+                 section_label(Tr("ui.settings.base-url").c_str()));
   base_url_ = GTK_ENTRY(gtk_entry_new());
   gtk_entry_set_placeholder_text(base_url_, "https://…");
   gtk_box_append(GTK_BOX(root), GTK_WIDGET(base_url_));
 
-  gtk_box_append(GTK_BOX(root), section_label("Model"));
+  gtk_box_append(GTK_BOX(root), section_label(Tr("ui.settings.model").c_str()));
   model_entry_ = GTK_ENTRY(gtk_entry_new());
   gtk_box_append(GTK_BOX(root), GTK_WIDGET(model_entry_));
   model_suggestions_ = GTK_DROP_DOWN(gtk_drop_down_new(nullptr, nullptr));
@@ -283,13 +294,14 @@ GtkWidget* AiPanel::make_settings_tab() {
       },
       this);
 
-  gtk_box_append(GTK_BOX(root), section_label("API key"));
+  gtk_box_append(GTK_BOX(root),
+                 section_label(Tr("ui.settings.api-key").c_str()));
   auto* key_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
   api_key_ = GTK_ENTRY(gtk_entry_new());
   gtk_entry_set_visibility(api_key_, FALSE);
   gtk_widget_set_hexpand(GTK_WIDGET(api_key_), TRUE);
   gtk_box_append(GTK_BOX(key_row), GTK_WIDGET(api_key_));
-  auto* save_key = small_button("Save");
+  auto* save_key = small_button(Tr("ui.dialog.save").c_str());
   gtk_box_append(GTK_BOX(key_row), save_key);
   gtk_box_append(GTK_BOX(root), key_row);
   hook(save_key, "clicked",
@@ -299,8 +311,8 @@ GtkWidget* AiPanel::make_settings_tab() {
                    this);
 
   auto* test_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-  auto* fetch = small_button("Fetch Models");
-  auto* test = small_button("Test");
+  auto* fetch = small_button(Tr("ui.settings.fetch-models").c_str());
+  auto* test = small_button(Tr("ui.settings.test").c_str());
   gtk_box_append(GTK_BOX(test_row), fetch);
   gtk_box_append(GTK_BOX(test_row), test);
   gtk_box_append(GTK_BOX(root), test_row);
@@ -325,7 +337,7 @@ GtkWidget* AiPanel::make_settings_tab() {
   gtk_box_append(GTK_BOX(root),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
   gtk_box_append(GTK_BOX(root),
-                 section_label("Translation target language"));
+                 section_label(Tr("ui.settings.target-language").c_str()));
   char const* languages[] = {"中文", "繁體中文", "English", "日本語",
                              "한국어", "Français", "Deutsch", "Español"};
   auto* lang_model = gtk_string_list_new(nullptr);
@@ -336,20 +348,23 @@ GtkWidget* AiPanel::make_settings_tab() {
       GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(lang_model), nullptr));
   gtk_box_append(GTK_BOX(root), GTK_WIDGET(target_language_));
 
-  gtk_box_append(GTK_BOX(root), section_label("View mode"));
+  gtk_box_append(GTK_BOX(root),
+                 section_label(Tr("ui.settings.view-mode").c_str()));
   auto* mode_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-  view_single_ = GTK_CHECK_BUTTON(gtk_check_button_new_with_label("Single page"));
-  view_double_ = GTK_CHECK_BUTTON(gtk_check_button_new_with_label("Double page"));
+  view_single_ = GTK_CHECK_BUTTON(
+      gtk_check_button_new_with_label(Tr("ui.settings.view-single").c_str()));
+  view_double_ = GTK_CHECK_BUTTON(
+      gtk_check_button_new_with_label(Tr("ui.settings.view-double").c_str()));
   gtk_check_button_set_group(view_single_, view_double_);
   gtk_box_append(GTK_BOX(mode_row), GTK_WIDGET(view_single_));
   gtk_box_append(GTK_BOX(mode_row), GTK_WIDGET(view_double_));
   gtk_box_append(GTK_BOX(root), mode_row);
 
   sidecar_ = GTK_CHECK_BUTTON(gtk_check_button_new_with_label(
-      "Store annotations beside the document (.pdfgist.json)"));
+      Tr("ui.settings.sidecar").c_str()));
   gtk_box_append(GTK_BOX(root), GTK_WIDGET(sidecar_));
 
-  auto* save = small_button("Save Settings");
+  auto* save = small_button(Tr("ui.settings.save").c_str());
   gtk_box_append(GTK_BOX(root), save);
   hook(save, "clicked",
                    +[](GtkButton*, gpointer self) {
@@ -359,11 +374,16 @@ GtkWidget* AiPanel::make_settings_tab() {
 
   gtk_box_append(GTK_BOX(root),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-  gtk_box_append(GTK_BOX(root), section_label("Appearance"));
-  char const* themes[] = {"System", "Light", "Dark"};
+  gtk_box_append(GTK_BOX(root),
+                 section_label(Tr("ui.settings.appearance").c_str()));
+  // std::string copies: own the labels instead of borrowing .c_str()
+  // from destroyed temporaries.
+  std::string const themes[] = {Tr("ui.theme.system"),
+                                Tr("ui.toolbar.theme-light"),
+                                Tr("ui.toolbar.theme-dark")};
   auto* theme_model = gtk_string_list_new(nullptr);
-  for (auto* theme : themes) {
-    gtk_string_list_append(GTK_STRING_LIST(theme_model), theme);
+  for (auto const& theme : themes) {
+    gtk_string_list_append(GTK_STRING_LIST(theme_model), theme.c_str());
   }
   theme_dropdown_ =
       GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(theme_model), nullptr));
@@ -383,9 +403,7 @@ GtkWidget* AiPanel::make_settings_tab() {
 
   gtk_box_append(GTK_BOX(root),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-  auto* privacy = gtk_label_new(
-      "Documents stay on this machine. AI features send the text you "
-      "translate, summarize or ask about to the configured provider.");
+  auto* privacy = gtk_label_new(Tr("ui.settings.privacy").c_str());
   gtk_label_set_wrap(GTK_LABEL(privacy), TRUE);
   gtk_label_set_xalign(GTK_LABEL(privacy), 0.0f);
   gtk_widget_add_css_class(privacy, "caption");
@@ -445,8 +463,8 @@ void AiPanel::sync_settings() {
                               TRUE);
   gtk_check_button_set_active(sidecar_, s.annotation_sidecar);
   gtk_entry_buffer_set_text(gtk_entry_get_buffer(api_key_), "", -1);
-  gtk_entry_set_placeholder_text(api_key_,
-                                 s.has_api_key ? "Key saved" : "");
+  gtk_entry_set_placeholder_text(
+      api_key_, s.has_api_key ? Tr("ui.settings.api-key-saved").c_str() : "");
 }
 
 // --------------------------------------------------------------- cards ----
@@ -469,9 +487,9 @@ GtkWidget* AiPanel::make_card_row(StreamCard* card) {
   card->spinner = gtk_spinner_new();
   gtk_box_append(GTK_BOX(header), card->spinner);
   gtk_spinner_start(GTK_SPINNER(card->spinner));
-  card->stop_button = GTK_BUTTON(small_button("Stop"));
+  card->stop_button = GTK_BUTTON(small_button(Tr("ui.card.stop").c_str()));
   gtk_box_append(GTK_BOX(header), GTK_WIDGET(card->stop_button));
-  auto* copy = small_button("Copy");
+  auto* copy = small_button(Tr("ui.card.copy").c_str());
   gtk_box_append(GTK_BOX(header), copy);
   gtk_box_append(GTK_BOX(box), header);
   gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
@@ -540,10 +558,10 @@ void AiPanel::refresh_card(StreamCard* card) {
       }
       break;
     case StreamCard::Phase::empty_stopped:
-      body = "<small><i>(已停止)</i></small>";
+      body = "<small><i>" + Tr("backend.stream.stopped") + "</i></small>";
       break;
     case StreamCard::Phase::empty:
-      body = "<small><i>(无返回内容)</i></small>";
+      body = "<small><i>" + Tr("backend.stream.no-content") + "</i></small>";
       break;
     case StreamCard::Phase::error:
       body = "<span foreground=\"#c0392b\">" +
@@ -675,9 +693,7 @@ bool AiPanel::ensure_provider(GtkListBox* notice_list) {
                   (s.has_api_key || s.provider == "ollama");
   if (!ok) {
     open_settings_tab();
-    append_notice(notice_list,
-                  "AI provider is not configured — set base URL, model and "
-                  "API key in Settings first.");
+    append_notice(notice_list, Tr("ui.settings.need-config"));
   }
   return ok;
 }
@@ -702,11 +718,12 @@ void complete_stream_start(AiPanel* panel, StreamCard* card,
 void AiPanel::do_translate_selection() {
   std::string const text = trim(ctx_->selection_text());
   if (text.size() < 2) {
-    append_notice(translate_list_, "Select text in the document first.");
+    append_notice(translate_list_, Tr("ui.need.selection"));
     return;
   }
   auto const lang = language_name(ctx_->settings.target_language);
-  auto* card = new_card(translate_list_, "Translate", "→ " + lang, false);
+  auto* card =
+      new_card(translate_list_, Tr("ui.menu.translate"), "→ " + lang, false);
   card->source_text = text;
   auto const target = ctx_->settings.target_language;
   (void)ctx_->api->translate_text_async(
@@ -720,14 +737,17 @@ void AiPanel::do_translate_page() {
   if (!ensure_provider(translate_list_)) return;
   auto const source = ctx_->page_text();
   if (!source.has_value() || trim(source->text).empty()) {
-    append_notice(translate_list_, "Open a document with text first.");
+    append_notice(translate_list_, Tr("ui.need.document"));
     return;
   }
   auto const lang = language_name(ctx_->settings.target_language);
-  auto* card = new_card(translate_list_,
-                        "Translate · Page " + std::to_string(source->page),
-                        "→ " + lang, false);
+  auto* card = new_card(
+      translate_list_,
+      Trf("ui.translate.page-title", std::to_string(source->page)),
+      "→ " + lang, false);
   card->source_text = source->text;
+  // Model-facing prompt wrapper (windows hardcodes the same Chinese
+  // markers; the domain prompt expects them) — deliberately not localized.
   std::string const payload = "以下是 PDF 第 " +
                               std::to_string(source->page) +
                               " 页提取的文本：\n\n" + source->text;
@@ -743,13 +763,14 @@ void AiPanel::do_summarize_page() {
   if (!ensure_provider(summarize_list_)) return;
   auto const source = ctx_->page_text();
   if (!source.has_value() || trim(source->text).empty()) {
-    append_notice(summarize_list_, "Open a document with text first.");
+    append_notice(summarize_list_, Tr("ui.need.document"));
     return;
   }
   auto const lang = language_name(ctx_->settings.target_language);
-  auto* card = new_card(summarize_list_,
-                        "Summarize · Page " + std::to_string(source->page),
-                        lang, false);
+  auto* card = new_card(
+      summarize_list_,
+      Trf("ui.summarize.page-title", std::to_string(source->page)), lang,
+      false);
   card->source_text = source->text;
   (void)ctx_->api->summarize_text_async(
       source->text, rivet_app::SummarizeMode::page,
@@ -761,13 +782,13 @@ void AiPanel::do_summarize_page() {
 void AiPanel::do_summarize_selection() {
   std::string const text = trim(ctx_->selection_text());
   if (text.size() < 2) {
-    append_notice(summarize_list_, "Select text in the document first.");
+    append_notice(summarize_list_, Tr("ui.need.selection"));
     return;
   }
   if (!ensure_provider(summarize_list_)) return;
   auto const lang = language_name(ctx_->settings.target_language);
   auto* card =
-      new_card(summarize_list_, "Summarize · Selection", lang, false);
+      new_card(summarize_list_, Tr("ui.summarize.selection"), lang, false);
   card->source_text = text;
   (void)ctx_->api->summarize_text_async(
       text, rivet_app::SummarizeMode::selection,
@@ -780,13 +801,14 @@ void AiPanel::do_summarize_doc() {
   if (!ensure_provider(summarize_list_)) return;
   auto const source = ctx_->doc_text();
   if (!source.has_value() || trim(source->text).empty()) {
-    append_notice(summarize_list_, "Open a document with text first.");
+    append_notice(summarize_list_, Tr("ui.need.document"));
     return;
   }
   auto const lang = language_name(ctx_->settings.target_language);
   auto* card = new_card(
-      summarize_list_, "Summarize · Document",
-      lang + " · first " + std::to_string(source->page) + " pages", false);
+      summarize_list_, Tr("ui.summarize.doc"),
+      lang + " · " + Trf("ui.summarize.doc-meta", std::to_string(source->page)),
+      false);
   card->source_text = source->text;
   (void)ctx_->api->summarize_text_async(
       source->text, rivet_app::SummarizeMode::doc,
@@ -809,7 +831,8 @@ void AiPanel::finalize_chat(StreamCard* card) {
   // Empty stream: swap the bubble for the placeholder text (mac parity).
   bool const stopped = card->phase == StreamCard::Phase::empty_stopped;
   card->phase = StreamCard::Phase::notice;
-  card->content = stopped ? "(已停止)" : "(无返回内容)";
+  card->content = stopped ? Tr("backend.stream.stopped")
+                          : Tr("backend.stream.no-content");
   refresh_card(card);
 }
 
@@ -822,6 +845,9 @@ void AiPanel::do_send_chat() {
   std::string context_text;
   std::string context_label;
   bool have_context = false;
+  // The context labels + "第 N 页：" wrapper below are backend-facing (the
+  // windows host sends the same hardcoded Chinese strings; the domain prompt
+  // expects them) — deliberately not localized.
   if (scope == 1) {
     context_text = trim(ctx_->selection_text());
     context_label = "选区";
@@ -843,9 +869,8 @@ void AiPanel::do_send_chat() {
     }
   }
   if (!have_context) {
-    append_notice(nullptr, scope == 1
-                               ? "Select text in the document first."
-                               : "Open a document with text first.");
+    append_notice(nullptr, scope == 1 ? Tr("ui.need.selection")
+                                      : Tr("ui.need.document"));
     return;
   }
   {
@@ -854,17 +879,16 @@ void AiPanel::do_send_chat() {
                             (s.has_api_key || s.provider == "ollama");
     if (!configured) {
       open_settings_tab();
-      append_notice(nullptr,
-                    "AI provider is not configured — set base URL, model "
-                    "and API key in Settings first.");
+      append_notice(nullptr, Tr("ui.settings.need-config"));
       return;
     }
   }
 
   // user bubble
   auto* user_row = gtk_list_box_row_new();
-  auto* user_label =
-      gtk_label_new(("<b>You:</b> " + escape_markup(question)).c_str());
+  auto* user_label = gtk_label_new(
+      ("<b>" + Tr("ui.chat.you") + ":</b> " + escape_markup(question))
+          .c_str());
   gtk_label_set_use_markup(GTK_LABEL(user_label), TRUE);
   gtk_label_set_wrap(GTK_LABEL(user_label), TRUE);
   gtk_label_set_xalign(GTK_LABEL(user_label), 0.0f);
@@ -959,16 +983,17 @@ void AiPanel::settings_save_key() {
       gtk_entry_buffer_get_text(gtk_entry_get_buffer(api_key_)));
   if (key.empty()) return;
   busy_ = true;
-  set_settings_status("Saving key…", false);
+  set_settings_status(Tr("ui.settings.saving-key"), false);
   (void)ctx_->api->save_api_key_async(
       key, [this](rivet_app::Result<void> result) {
         host::dispatch_ui([this, result]() mutable {
           busy_ = false;
           if (result.succeeded()) {
-            set_settings_status("Key saved.", false);
+            set_settings_status(Tr("ui.settings.saved"), false);
           } else {
             set_settings_status(
-                "Save failed: " + describe_error(result.error), true);
+                Trf("ui.settings.save-failed", describe_error(result.error)),
+                true);
           }
           (void)ctx_->api->get_settings_async(
               [this](rivet_app::Result<rivet_app::SettingsView> view) {
@@ -993,12 +1018,11 @@ void AiPanel::settings_test() {
       gtk_entry_buffer_get_text(gtk_entry_get_buffer(api_key_)));
   if (base_url.empty() ||
       (model.empty() && !ctx_->settings.has_api_key)) {
-    set_settings_status("Enter a base URL (and a model, or a saved key).",
-                        true);
+    set_settings_status(Tr("ui.settings.need-input"), true);
     return;
   }
   busy_ = true;
-  set_settings_status("Fetching models…", false);
+  set_settings_status(Tr("ui.settings.fetching"), false);
   (void)ctx_->api->test_connection_async(
       base_url, key, model,
       [this](rivet_app::Result<rivet_app::TestResult> result) {
@@ -1015,14 +1039,13 @@ void AiPanel::settings_test() {
           }
           auto const& models = test.models;
           if (!models.has_value() || models->empty()) {
-            set_settings_status("Connection OK (no model list).", false);
+            set_settings_status(Tr("ui.settings.test-ok-no-list"), false);
             gtk_widget_set_visible(GTK_WIDGET(model_suggestions_), FALSE);
             return;
           }
-          set_settings_status("Connection OK · " +
-                                  std::to_string(models->size()) +
-                                  " models",
-                              false);
+          set_settings_status(
+              Trf("ui.settings.test-ok", std::to_string(models->size())),
+              false);
           GListStore* store = g_list_store_new(GTK_TYPE_STRING_OBJECT);
           for (auto const& model_name : *models) {
             g_list_store_append(store,
@@ -1075,12 +1098,13 @@ void AiPanel::settings_save() {
           busy_ = false;
           if (result.succeeded()) {
             ctx_->settings = result.get();
-            set_settings_status("Settings saved.", false);
+            set_settings_status(Tr("ui.settings.saved"), false);
             sync_settings();
             if (ctx_->apply_view_mode) ctx_->apply_view_mode();
           } else {
             set_settings_status(
-                "Save failed: " + describe_error(result.error), true);
+                Trf("ui.settings.save-failed", describe_error(result.error)),
+                true);
           }
         });
       });

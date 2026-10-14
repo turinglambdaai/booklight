@@ -52,5 +52,5 @@ raco test racket/          # 领域核心测试（275 项）
 ├── linux/              GTK4 宿主
 ├── design/             图标与品牌源文件
 ├── docs/               产品主页（GitHub Pages）
-└── scripts/            gen-swift-strings（i18n → Swift）、installer art
+└── scripts/            gen-swift-strings / gen-win-strings / gen-linux-strings（i18n → 各宿主）、installer art
 ```

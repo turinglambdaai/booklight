@@ -1,8 +1,9 @@
 // Shared host plumbing: UI dispatch, install shape, host-side prefs.
 //
 // The macOS host is the behavior spec (PDFGistModel.swift); this file holds
-// only what several Linux-host translation units share. UI copy is English
-// straight out (the family's first-party Linux hosts ship en strings).
+// only what several Linux-host translation units share. UI copy comes from
+// the shared i18n source via i18n.h (Tr/Trf); model/backend-facing strings
+// stay hardcoded by design (windows parity).
 #pragma once
 
 #include <glib.h>

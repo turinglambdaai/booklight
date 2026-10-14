@@ -35,6 +35,7 @@
 #include "GeneratedBackend.hpp"
 #include "epub.hpp"
 #include "host.hpp"
+#include "i18n.h"
 #include "panels.hpp"
 #include "pdfview.hpp"
 
@@ -64,6 +65,8 @@ using pdfgist::PanelContext;
 using pdfgist::PdfDocument;
 using pdfgist::PdfTab;
 using pdfgist::TextSource;
+using pdfgist::Tr;
+using pdfgist::Trf;
 
 // ---------------------------------------------------------------------------
 // host state
@@ -272,9 +275,9 @@ void refresh_header_title() {
     gtk_label_set_text(g_host.title_label,
                        g_host.epub->title().c_str());
     gtk_label_set_text(g_host.subtitle_label,
-                       ("EPUB · chapter " +
-                        std::to_string(g_host.epub->current_page()) + " / " +
-                        std::to_string(g_host.epub->chapters()))
+                       Trf("ui.viewer.epub-subtitle",
+                           std::to_string(g_host.epub->current_page()),
+                           std::to_string(g_host.epub->chapters()))
                            .c_str());
     gtk_widget_set_visible(g_host.header_toc_menu,
                            !g_host.epub->toc().empty());
@@ -298,8 +301,9 @@ void refresh_status() {
   if (g_host.epub_active()) {
     gtk_label_set_text(
         g_host.page_label,
-        ("Chapter " + std::to_string(g_host.epub->current_page()) + " / " +
-         std::to_string(g_host.epub->chapters()))
+        Trf("ui.viewer.chapter-status",
+            std::to_string(g_host.epub->current_page()),
+            std::to_string(g_host.epub->chapters()))
             .c_str());
     gtk_label_set_text(g_host.zoom_label, "");
     return;
@@ -307,8 +311,8 @@ void refresh_status() {
   if (tab != nullptr) {
     gtk_label_set_text(
         g_host.page_label,
-        ("Page " + std::to_string(tab->current_page()) + " / " +
-         std::to_string(tab->document()->page_count()))
+        Trf("ui.viewer.page-status", std::to_string(tab->current_page()),
+            std::to_string(tab->document()->page_count()))
             .c_str());
     gtk_label_set_text(g_host.zoom_label,
                        (std::to_string(tab->zoom_percent()) + "%").c_str());
@@ -350,6 +354,9 @@ std::optional<TextSource> current_page_text() {
 }
 
 std::optional<TextSource> doc_text() {
+  // The "--- 第 N 章/页 ---" separators are model-facing payload (the
+  // domain prompt expects the Chinese markers; windows hosts them the same
+  // way) — deliberately not localized.
   if (g_host.epub_active()) {
     auto* epub = g_host.epub;
     std::string joined;
@@ -492,13 +499,12 @@ void open_pdf_path(std::string const& path, int resume_page = 1) {
     }
   }
   if (!pdfium::load()) {
-    host_alert(std::string("PDF rendering is unavailable: ") +
-               pdfium::load_error());
+    host_alert(Trf("ui.pdfium.unavailable", std::string(pdfium::load_error())));
     return;
   }
   auto doc = PdfDocument::open_file(path, "", nullptr);
   if (doc == nullptr) {
-    host_alert("Could not open " + path);
+    host_alert(Trf("ui.open-failed", path));
     return;
   }
   std::string const title = path_title(path);
@@ -578,7 +584,7 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
     }
   };
   raw->on_load_failed = [](std::string const& message) {
-    host_alert("EPUB open failed: " + message);
+    host_alert(Trf("ui.epub.open-failed", message));
   };
   raw->load();
   if (resume_chapter > 1) raw->go_to_chapter(resume_chapter);
@@ -701,12 +707,12 @@ void run_find_now() {
     int const total = epub_find_run(query);
     gtk_label_set_text(g_host.find_count,
                        total > 0 ? ("1 / " + std::to_string(total)).c_str()
-                                 : "no results");
+                                 : Tr("ui.find.no-results").c_str());
     return;
   }
   auto* tab = g_host.active_pdf_only();
   if (tab == nullptr) {
-    gtk_label_set_text(g_host.find_count, "no document");
+    gtk_label_set_text(g_host.find_count, Tr("ui.find.no-document").c_str());
     return;
   }
   int const total = tab->run_find(query);
@@ -716,7 +722,7 @@ void run_find_now() {
                                 (tab->find_index() < 0 ? 0 : tab->find_index() + 1)) +
                             " / " + std::to_string(total))
                                .c_str()
-                         : "no results");
+                         : Tr("ui.find.no-results").c_str());
 }
 
 void find_step(int direction) {
@@ -757,10 +763,11 @@ void show_selection_menu() {
     g_selection_popover = nullptr;
   }
   auto* menu = g_menu_new();
-  auto* translate = g_menu_item_new("Translate", "win.translate-selection");
+  auto* translate =
+      g_menu_item_new(Tr("ui.menu.translate").c_str(), "win.translate-selection");
   g_menu_append_item(menu, translate);
   g_object_unref(translate);
-  g_menu_append(menu, "Copy", "win.copy-selection");
+  g_menu_append(menu, Tr("ui.menu.copy").c_str(), "win.copy-selection");
   g_selection_popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
   g_object_unref(menu);
   // Anchor to the scrolled view; the popover picks a pointing position at
@@ -930,7 +937,9 @@ void bootstrap() {
   auto* api = g_host.api.get();
   try {
     api->initialize().get();
-    api->set_locale("en").get();
+    // Mirror the UI language (detected before the window built) into the
+    // backend so backend-formatted text agrees with the host.
+    api->set_locale(pdfgist::UiLanguageCode()).get();
     auto settings = api->get_settings().get();
     auto presets = api->list_presets().get();
     auto recents = api->get_recents().get();
@@ -972,7 +981,7 @@ void bootstrap() {
     std::string const message = e.what();
     host::dispatch_ui([message] {
       gtk_label_set_text(g_host.status_label,
-                         ("Backend error: " + message).c_str());
+                         Trf("ui.backend.error", message).c_str());
     });
   }
 }
@@ -991,19 +1000,19 @@ int on_backend_finished(gpointer) {
     return G_SOURCE_REMOVE;
   }
   if (!error.empty()) {
-    gtk_label_set_text(g_host.status_label, ("Backend error: " + error).c_str());
+    gtk_label_set_text(g_host.status_label,
+                       Trf("ui.backend.error", error).c_str());
     return G_SOURCE_REMOVE;
   }
   if (backend == nullptr) {
-    gtk_label_set_text(g_host.status_label,
-                       "Backend error: startup completed without a backend");
+    gtk_label_set_text(g_host.status_label, Tr("ui.backend.no-instance").c_str());
     return G_SOURCE_REMOVE;
   }
   backend->set_event_handler(relay_event);
   g_host.backend = std::move(backend);
   g_host.api = std::make_unique<rivet_app::API>(*g_host.backend);
   g_host.panel_ctx.api = g_host.api.get();
-  gtk_label_set_text(g_host.status_label, "Starting the domain core…");
+  gtk_label_set_text(g_host.status_label, Tr("ui.backend-not-ready").c_str());
   std::thread(bootstrap).detach();
   return G_SOURCE_REMOVE;
 }
@@ -1075,7 +1084,7 @@ std::vector<std::int64_t> parse_page_ranges(std::string const& text,
 void reload_tab_from_bytes(PdfTab* tab, rivet::Bytes const& bytes) {
   auto doc = PdfDocument::open_memory(bytes, nullptr);
   if (doc == nullptr) {
-    host_alert("Page edit failed: unreadable result");
+    host_alert(Trf("ui.pages.edit-failed", std::string("unreadable result")));
     return;
   }
   tab->reload_document(std::move(doc));
@@ -1092,7 +1101,8 @@ void run_page_edit_rpc(PdfTab* tab, Launch&& launch) {
       if (result.succeeded()) {
         reload_tab_from_bytes(tab, result.get());
       } else {
-        host_alert("Page edit failed: " + AiPanel::describe_error(result.error));
+        host_alert(Trf("ui.pages.edit-failed",
+                       AiPanel::describe_error(result.error)));
       }
     });
   });
@@ -1141,10 +1151,10 @@ void page_merge_pick() {
   auto* tab = g_host.active_pdf_only();
   if (tab == nullptr) return;
   auto* chooser = gtk_file_chooser_native_new(
-      "Merge PDF", g_host.window, GTK_FILE_CHOOSER_ACTION_OPEN, "_Merge",
-      "_Cancel");
+      Tr("ui.pages.merge").c_str(), g_host.window, GTK_FILE_CHOOSER_ACTION_OPEN,
+      Tr("ui.dialog.merge").c_str(), Tr("ui.password.cancel").c_str());
   auto* filter = gtk_file_filter_new();
-  gtk_file_filter_set_name(filter, "PDF documents");
+  gtk_file_filter_set_name(filter, Tr("ui.filter.pdf").c_str());
   gtk_file_filter_add_mime_type(filter, "application/pdf");
   gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(chooser), filter);
   hook(
@@ -1170,10 +1180,11 @@ void page_extract_pick() {
   auto* tab = g_host.active_pdf_only();
   if (tab == nullptr || g_host.api == nullptr) return;
   auto* dialog = gtk_dialog_new_with_buttons(
-      "Extract pages", g_host.window,
+      Tr("ui.pages.extract").c_str(), g_host.window,
       static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
                                   GTK_DIALOG_DESTROY_WITH_PARENT),
-      "_Cancel", GTK_RESPONSE_CANCEL, "_Extract", GTK_RESPONSE_OK, nullptr);
+      Tr("ui.password.cancel").c_str(), GTK_RESPONSE_CANCEL,
+      Tr("ui.dialog.extract").c_str(), GTK_RESPONSE_OK, nullptr);
   auto* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
   auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   gtk_widget_set_margin_top(box, 12);
@@ -1184,8 +1195,8 @@ void page_extract_pick() {
   auto* label = gtk_label_new(nullptr);
   gtk_label_set_markup(
       GTK_LABEL(label),
-      ("Pages to extract (e.g. <b>1-3,5</b> · 1-" +
-       std::to_string(tab->document()->page_count()) + "):")
+      Trf("ui.pages.extract-prompt",
+          std::to_string(tab->document()->page_count()))
           .c_str());
   gtk_box_append(GTK_BOX(box), label);
   auto* entry = gtk_entry_new();
@@ -1208,11 +1219,11 @@ void page_extract_pick() {
             if (!pages.empty()) {
               (void)g_host.api->edit_extract_pages_async(
                   tab2->path(), pages,
-                  [tab2](rivet_app::Result<rivet::Bytes> result) {
+                    [tab2](rivet_app::Result<rivet::Bytes> result) {
                     host::dispatch_ui([tab2, result]() mutable {
                       if (!result.succeeded()) {
-                        host_alert("Page edit failed: " +
-                                   AiPanel::describe_error(result.error));
+                        host_alert(Trf("ui.pages.edit-failed",
+                                       AiPanel::describe_error(result.error)));
                         return;
                       }
                       // extract goes to a new file (mac parity)
@@ -1235,10 +1246,12 @@ void page_extract_save(PdfTab* tab, rivet::Bytes bytes) {
     title.erase(title.size() - 4);
   }
   auto* chooser = gtk_file_chooser_native_new(
-      "Save extracted pages", g_host.window, GTK_FILE_CHOOSER_ACTION_SAVE,
-      "_Save", "_Cancel");
-  gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(chooser),
-                                    (title + "-extract.pdf").c_str());
+      Tr("ui.pages.extract-save-title").c_str(), g_host.window,
+      GTK_FILE_CHOOSER_ACTION_SAVE, Tr("ui.dialog.save").c_str(),
+      Tr("ui.password.cancel").c_str());
+  gtk_file_chooser_set_current_name(
+      GTK_FILE_CHOOSER(chooser),
+      (title + Tr("ui.pages.extract-suffix") + ".pdf").c_str());
   auto* payload = new rivet::Bytes(std::move(bytes));
   hook(
       chooser, "response",
@@ -1268,7 +1281,7 @@ void page_extract_save(PdfTab* tab, rivet::Bytes bytes) {
                 }
                 host::dispatch_ui([target, error]() {
                   if (!error.empty()) {
-                    host_alert("Save failed: " + error);
+                    host_alert(Trf("ui.pages.save-failed", error));
                   }
                 });
               }).detach();
@@ -1287,10 +1300,11 @@ void page_watermark_pick() {
   auto* tab = g_host.active_pdf_only();
   if (tab == nullptr || g_host.api == nullptr) return;
   auto* dialog = gtk_dialog_new_with_buttons(
-      "Bake text (watermark)", g_host.window,
+      Tr("ui.pages.bake").c_str(), g_host.window,
       static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
                                   GTK_DIALOG_DESTROY_WITH_PARENT),
-      "_Cancel", GTK_RESPONSE_CANCEL, "_Bake", GTK_RESPONSE_OK, nullptr);
+      Tr("ui.password.cancel").c_str(), GTK_RESPONSE_CANCEL,
+      Tr("ui.dialog.bake").c_str(), GTK_RESPONSE_OK, nullptr);
   auto* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
   auto* grid = gtk_grid_new();
   gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
@@ -1306,13 +1320,13 @@ void page_watermark_pick() {
   };
   auto* text = gtk_entry_new();
   gtk_entry_set_placeholder_text(GTK_ENTRY(text), "CONFIDENTIAL");
-  attach(0, "Text", text);
+  attach(0, Tr("ui.pages.bake-text").c_str(), text);
   auto* size = gtk_spin_button_new_with_range(6, 200, 1);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(size), 48);
-  attach(1, "Size (pt)", size);
+  attach(1, Tr("ui.pages.bake-size-label").c_str(), size);
   auto* opacity = gtk_spin_button_new_with_range(0, 100, 1);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(opacity), 15);
-  attach(2, "Opacity (%)", opacity);
+  attach(2, Tr("ui.pages.bake-opacity").c_str(), opacity);
   hook(
       dialog, "response",
       +[](GtkDialog* dialog, int response, gpointer user_data) {
@@ -1336,8 +1350,8 @@ void page_watermark_pick() {
                     if (result.succeeded()) {
                       reload_tab_from_bytes(tab2, result.get());
                     } else {
-                      host_alert("Page edit failed: " +
-                                 AiPanel::describe_error(result.error));
+                      host_alert(Trf("ui.pages.edit-failed",
+                                     AiPanel::describe_error(result.error)));
                     }
                   });
                 });
@@ -1457,7 +1471,7 @@ void update_message_dialog(std::string const& title,
 }
 
 void show_update_error(std::string const& message) {
-  update_message_dialog("Update check failed", message);
+  update_message_dialog(Tr("ui.update.error"), message);
 }
 
 void stop_update_poll() {
@@ -1482,15 +1496,13 @@ void close_update_progress() {
 // next launch is the new version regardless.
 void show_appimage_restart_dialog() {
   auto* dialog = gtk_dialog_new_with_buttons(
-      "Update downloaded", g_host.window,
+      Tr("ui.update.downloaded").c_str(), g_host.window,
       static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
                                   GTK_DIALOG_DESTROY_WITH_PARENT),
-      "Restart and update", GTK_RESPONSE_ACCEPT, "_Cancel",
-      GTK_RESPONSE_CLOSE, nullptr);
+      Tr("ui.update.install-now").c_str(), GTK_RESPONSE_ACCEPT,
+      Tr("ui.password.cancel").c_str(), GTK_RESPONSE_CLOSE, nullptr);
   auto* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
-  auto* hint = gtk_label_new(
-      "The update is in place — restart PDFGist to switch to the new "
-      "version.");
+  auto* hint = gtk_label_new(Tr("ui.update.appimage-hint").c_str());
   gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
   gtk_label_set_max_width_chars(GTK_LABEL(hint), 60);
   gtk_widget_set_margin_top(hint, 12);
@@ -1519,9 +1531,8 @@ void show_appimage_restart_dialog() {
 // upgrade path and show where the downloaded archive sits.
 void show_package_manager_dialog(std::string const& path) {
   update_message_dialog(
-      "Update downloaded",
-      "This copy came from the system package manager — use it to upgrade "
-      "PDFGist." +
+      Tr("ui.update.downloaded"),
+      Tr("ui.update.package-downloaded") +
           (path.empty() ? "" : "\n\n" + path));
 }
 
@@ -1529,10 +1540,10 @@ void show_package_manager_dialog(std::string const& path) {
 // opens the folder.
 void show_downloaded_dialog(std::string const& path) {
   auto* dialog = gtk_dialog_new_with_buttons(
-      "Update downloaded", g_host.window,
+      Tr("ui.update.downloaded").c_str(), g_host.window,
       static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
                                   GTK_DIALOG_DESTROY_WITH_PARENT),
-      "_Close", GTK_RESPONSE_CLOSE, nullptr);
+      Tr("ui.update.close").c_str(), GTK_RESPONSE_CLOSE, nullptr);
   auto* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
   auto* content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
   gtk_widget_set_margin_top(content, 12);
@@ -1540,9 +1551,7 @@ void show_downloaded_dialog(std::string const& path) {
   gtk_widget_set_margin_start(content, 12);
   gtk_widget_set_margin_end(content, 12);
   gtk_box_append(GTK_BOX(area), content);
-  auto* hint = gtk_label_new(
-      "To install, extract the downloaded archive and replace the PDFGist "
-      "directory with the extracted one.");
+  auto* hint = gtk_label_new(Tr("ui.update.tarball-hint").c_str());
   gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
   gtk_label_set_max_width_chars(GTK_LABEL(hint), 60);
   gtk_box_append(GTK_BOX(content), hint);
@@ -1552,7 +1561,7 @@ void show_downloaded_dialog(std::string const& path) {
     gtk_label_set_wrap(GTK_LABEL(path_label), TRUE);
     gtk_label_set_max_width_chars(GTK_LABEL(path_label), 60);
     gtk_box_append(GTK_BOX(content), path_label);
-    auto* open = gtk_button_new_with_label("Open Folder");
+    auto* open = gtk_button_new_with_label(Tr("ui.update.open-folder").c_str());
     hook(
         open, "clicked",
         +[](GtkButton*, gpointer user_data) {
@@ -1600,7 +1609,8 @@ int on_update_poll_tick(gpointer) {
           if (g_host.update.label != nullptr) {
             gtk_label_set_text(
                 g_host.update.label,
-                ("Downloading update… " + std::to_string(percent) + "%")
+                (Tr("ui.update.downloading") + " " + std::to_string(percent) +
+                 "%")
                     .c_str());
           }
           if (state.phase != "downloaded" && state.phase != "error") return;
@@ -1632,10 +1642,10 @@ void start_update_download() {
   g_host.update.in_flight = true;
 
   auto* dialog = gtk_dialog_new_with_buttons(
-      "Downloading update…", g_host.window,
+      Tr("ui.update.downloading").c_str(), g_host.window,
       static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
                                   GTK_DIALOG_DESTROY_WITH_PARENT),
-      "_Cancel", GTK_RESPONSE_CANCEL, nullptr);
+      Tr("ui.password.cancel").c_str(), GTK_RESPONSE_CANCEL, nullptr);
   auto* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
   auto* content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
   gtk_widget_set_margin_top(content, 12);
@@ -1646,7 +1656,7 @@ void start_update_download() {
   auto* bar = gtk_progress_bar_new();
   gtk_widget_set_size_request(bar, 300, -1);
   gtk_box_append(GTK_BOX(content), bar);
-  auto* label = gtk_label_new("Downloading update… 0%");
+  auto* label = gtk_label_new((Tr("ui.update.downloading") + " 0%").c_str());
   gtk_box_append(GTK_BOX(content), label);
   // Cancel only detaches the progress UI — the backend keeps downloading
   // (family parity: there is no cancel RPC).
@@ -1692,29 +1702,27 @@ void show_update_consent(Host::UpdateCheckResult const& check) {
   if (host::install_shape() == "package") {
     // deb/rpm upgrade through the package manager; never download or exec.
     update_message_dialog(
-        "Update available",
-        "Version " +
-            (check.available_version.empty() ? std::string("?")
-                                             : check.available_version) +
-            " is available. This copy came from the system package manager "
-            "— use it to upgrade PDFGist.");
+        Tr("ui.update.available"),
+        Trf("ui.update.package-available",
+            check.available_version.empty() ? std::string("?")
+                                            : check.available_version));
     return;
   }
-  std::string body = "Version " +
-                     (check.available_version.empty()
-                          ? std::string("?")
-                          : check.available_version) +
-                     " is available";
+  std::string size_part;
   if (check.size_bytes > 0) {
-    body += " (" + host::human_size(check.size_bytes) + ")";
+    size_part = " (" + host::human_size(check.size_bytes) + ")";
   }
-  body += ". Download and install it now?";
+  std::string const body =
+      Trf("ui.update.consent-body",
+          check.available_version.empty() ? std::string("?")
+                                          : check.available_version,
+          size_part);
   auto* dialog = gtk_dialog_new_with_buttons(
-      "Update available", g_host.window,
+      Tr("ui.update.available").c_str(), g_host.window,
       static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
                                   GTK_DIALOG_DESTROY_WITH_PARENT),
-      "_Cancel", GTK_RESPONSE_CANCEL, "_Download", GTK_RESPONSE_ACCEPT,
-      nullptr);
+      Tr("ui.password.cancel").c_str(), GTK_RESPONSE_CANCEL,
+      Tr("ui.update.download").c_str(), GTK_RESPONSE_ACCEPT, nullptr);
   auto* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
   auto* text = gtk_label_new(body.c_str());
   gtk_label_set_wrap(GTK_LABEL(text), TRUE);
@@ -1743,9 +1751,8 @@ void handle_check_result(Host::UpdateCheckResult const& check,
   }
   if (!present) return;
   if (check.status == "up-to-date") {
-    update_message_dialog("Check for Updates",
-                          "PDFGist " + check.current_version +
-                              " is the latest version.");
+    update_message_dialog(Tr("ui.update.check-title"),
+                          Tr("ui.update.up-to-date"));
     return;
   }
   show_update_error(check.message.empty() ? "unknown failure"
@@ -1755,8 +1762,8 @@ void handle_check_result(Host::UpdateCheckResult const& check,
 void check_updates(bool manual) {
   if (g_host.api == nullptr || !g_host.ready) {
     if (manual) {
-      update_message_dialog("Check for Updates",
-                            "The backend is not ready yet.");
+      update_message_dialog(Tr("ui.update.check-title"),
+                            Tr("ui.backend-not-ready"));
     }
     return;
   }
@@ -1793,12 +1800,8 @@ void show_about() {
                                      "pdfgist.jrtx.site");
   gtk_about_dialog_set_license_type(GTK_ABOUT_DIALOG(dialog),
                                     GTK_LICENSE_AGPL_3_0);
-  gtk_about_dialog_set_comments(
-      GTK_ABOUT_DIALOG(dialog),
-      "PDF + EPUB reading with AI superpowers. Documents stay on your "
-      "machine; the AI features send only the text you translate, "
-      "summarize or ask about.\n\n"
-      "Bug reports: github.com/turinglambdaai/pdfgist/issues");
+  gtk_about_dialog_set_comments(GTK_ABOUT_DIALOG(dialog),
+                                Tr("ui.about.blurb").c_str());
   gtk_window_set_transient_for(GTK_WINDOW(dialog), g_host.window);
   gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), TRUE);
   hook(dialog, "response",
@@ -1920,10 +1923,10 @@ void copy_selection_ui() {
 
 void pick_and_open() {
   auto* chooser = gtk_file_chooser_native_new(
-      "Open document", g_host.window, GTK_FILE_CHOOSER_ACTION_OPEN, "_Open",
-      "_Cancel");
+      Tr("ui.open.dialog").c_str(), g_host.window, GTK_FILE_CHOOSER_ACTION_OPEN,
+      Tr("ui.dialog.open").c_str(), Tr("ui.password.cancel").c_str());
   auto* filter = gtk_file_filter_new();
-  gtk_file_filter_set_name(filter, "Documents (PDF, EPUB)");
+  gtk_file_filter_set_name(filter, Tr("ui.filter.documents").c_str());
   gtk_file_filter_add_mime_type(filter, "application/pdf");
   gtk_file_filter_add_mime_type(filter, "application/epub+zip");
   gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(chooser), filter);
@@ -2140,7 +2143,7 @@ void build_primary_menu() {
 
   // File
   auto* file = g_menu_new();
-  g_menu_append(file, "Open…", "app.open");
+  g_menu_append(file, Tr("ui.menu.open").c_str(), "app.open");
   auto* recents = g_menu_new();
   int shown = 0;
   for (auto const& recent : g_host.recents) {
@@ -2153,63 +2156,71 @@ void build_primary_menu() {
     ++shown;
   }
   if (shown > 0) {
-    g_menu_append_submenu(file, "Open Recent", G_MENU_MODEL(recents));
+    g_menu_append_submenu(file, Tr("ui.viewer.recents").c_str(),
+                          G_MENU_MODEL(recents));
   }
-  g_menu_append(file, "Close Tab", "app.close-tab");
+  g_menu_append(file, Tr("ui.menu.close-tab").c_str(), "app.close-tab");
   g_object_unref(recents);
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(file));
   g_object_unref(file);
 
   // View
   auto* view = g_menu_new();
-  g_menu_append(view, "Zoom In", "app.zoom-in");
-  g_menu_append(view, "Zoom Out", "app.zoom-out");
-  g_menu_append(view, "Reset Zoom", "app.zoom-reset");
-  g_menu_append(view, "Fit Width", "app.fit-width");
+  g_menu_append(view, Tr("ui.menu.zoom-in").c_str(), "app.zoom-in");
+  g_menu_append(view, Tr("ui.menu.zoom-out").c_str(), "app.zoom-out");
+  g_menu_append(view, Tr("ui.menu.zoom-reset").c_str(), "app.zoom-reset");
+  g_menu_append(view, Tr("ui.viewer.fit").c_str(), "app.fit-width");
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(view));
   g_object_unref(view);
   {
     auto* modes = g_menu_new();
-    g_menu_append(modes, "Single Page", "app.view-mode::single");
-    g_menu_append(modes, "Double Page", "app.view-mode::double");
+    g_menu_append(modes, Tr("ui.settings.view-single").c_str(),
+                  "app.view-mode::single");
+    g_menu_append(modes, Tr("ui.settings.view-double").c_str(),
+                  "app.view-mode::double");
     g_menu_append_section(menu, nullptr, G_MENU_MODEL(modes));
     g_object_unref(modes);
   }
   {
     auto* appearance = g_menu_new();
-    g_menu_append(appearance, "System Theme", "app.theme::system");
-    g_menu_append(appearance, "Light", "app.theme::light");
-    g_menu_append(appearance, "Dark", "app.theme::dark");
+    g_menu_append(appearance, Tr("ui.theme.system").c_str(),
+                  "app.theme::system");
+    g_menu_append(appearance, Tr("ui.toolbar.theme-light").c_str(),
+                  "app.theme::light");
+    g_menu_append(appearance, Tr("ui.toolbar.theme-dark").c_str(),
+                  "app.theme::dark");
     g_menu_append_section(menu, nullptr, G_MENU_MODEL(appearance));
     g_object_unref(appearance);
   }
 
   // AI
   auto* ai = g_menu_new();
-  g_menu_append(ai, "Translate Selection", "app.translate-selection");
-  g_menu_append(ai, "Translate Page", "app.translate-page");
-  g_menu_append(ai, "Summarize Page", "app.summarize-page");
-  g_menu_append(ai, "Summarize Selection", "app.summarize-selection");
-  g_menu_append(ai, "Summarize Document", "app.summarize-doc");
+  g_menu_append(ai, Tr("ui.menu.translate").c_str(),
+                "app.translate-selection");
+  g_menu_append(ai, Tr("ui.translate.page").c_str(), "app.translate-page");
+  g_menu_append(ai, Tr("ui.summarize.page").c_str(), "app.summarize-page");
+  g_menu_append(ai, Tr("ui.summarize.selection").c_str(),
+                "app.summarize-selection");
+  g_menu_append(ai, Tr("ui.summarize.doc").c_str(), "app.summarize-doc");
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(ai));
   g_object_unref(ai);
 
   // Page edit
   auto* pages = g_menu_new();
-  g_menu_append(pages, "Delete Current Page", "app.page-delete");
-  g_menu_append(pages, "Rotate Current Page 90°", "app.page-rotate");
-  g_menu_append(pages, "Insert Blank Page After Current",
-                "app.page-blank");
-  g_menu_append(pages, "Extract Pages…", "app.page-extract");
-  g_menu_append(pages, "Merge PDF…", "app.page-merge");
-  g_menu_append(pages, "Bake Text (Watermark)…", "app.page-watermark");
+  g_menu_append(pages, Tr("ui.pages.delete").c_str(), "app.page-delete");
+  g_menu_append(pages, Tr("ui.pages.rotate-90").c_str(), "app.page-rotate");
+  g_menu_append(pages, Tr("ui.pages.blank").c_str(), "app.page-blank");
+  g_menu_append(pages, Tr("ui.pages.extract").c_str(), "app.page-extract");
+  g_menu_append(pages, Tr("ui.pages.merge").c_str(), "app.page-merge");
+  g_menu_append(pages, Tr("ui.pages.bake").c_str(), "app.page-watermark");
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(pages));
   g_object_unref(pages);
 
   // Help
   auto* help = g_menu_new();
-  g_menu_append(help, "Check for Updates…", "app.check-updates");
-  g_menu_append(help, "About PDFGist", "app.about");
+  g_menu_append(help, Tr("ui.update.check-menu").c_str(),
+                "app.check-updates");
+  g_menu_append(help, Tr("ui.menu.about").c_str(), "app.about");
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(help));
   g_object_unref(help);
 
@@ -2223,16 +2234,15 @@ void build_primary_menu() {
 void build_page_edit_menu(GtkMenuButton* button) {
   auto* menu = g_menu_new();
   auto* section = g_menu_new();
-  g_menu_append(section, "Delete Current Page", "app.page-delete");
-  g_menu_append(section, "Rotate Current Page 90°", "app.page-rotate");
-  g_menu_append(section, "Insert Blank Page After Current",
-                "app.page-blank");
+  g_menu_append(section, Tr("ui.pages.delete").c_str(), "app.page-delete");
+  g_menu_append(section, Tr("ui.pages.rotate-90").c_str(), "app.page-rotate");
+  g_menu_append(section, Tr("ui.pages.blank").c_str(), "app.page-blank");
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(section));
   g_object_unref(section);
   auto* section2 = g_menu_new();
-  g_menu_append(section2, "Extract Pages…", "app.page-extract");
-  g_menu_append(section2, "Merge PDF…", "app.page-merge");
-  g_menu_append(section2, "Bake Text (Watermark)…", "app.page-watermark");
+  g_menu_append(section2, Tr("ui.pages.extract").c_str(), "app.page-extract");
+  g_menu_append(section2, Tr("ui.pages.merge").c_str(), "app.page-merge");
+  g_menu_append(section2, Tr("ui.pages.bake").c_str(), "app.page-watermark");
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(section2));
   g_object_unref(section2);
   gtk_menu_button_set_menu_model(button, G_MENU_MODEL(menu));
@@ -2298,7 +2308,7 @@ void on_activate(GtkApplication* app, gpointer) {
 
   auto* open_button = gtk_button_new_from_icon_name(
       "document-open-symbolic");
-  gtk_widget_set_tooltip_text(open_button, "Open document");
+  gtk_widget_set_tooltip_text(open_button, Tr("ui.tooltip.open").c_str());
   hook(open_button, "clicked",
                    +[](GtkButton*, gpointer) { pick_and_open(); },
                    nullptr);
@@ -2307,7 +2317,8 @@ void on_activate(GtkApplication* app, gpointer) {
   auto* edit_menu_button = GTK_MENU_BUTTON(gtk_menu_button_new());
   gtk_menu_button_set_icon_name(edit_menu_button,
                                 "document-edit-symbolic");
-  gtk_widget_set_tooltip_text(GTK_WIDGET(edit_menu_button), "Page edit");
+  gtk_widget_set_tooltip_text(GTK_WIDGET(edit_menu_button),
+                              Tr("ui.tooltip.page-edit").c_str());
   build_page_edit_menu(edit_menu_button);
   gtk_header_bar_pack_start(GTK_HEADER_BAR(header),
                             GTK_WIDGET(edit_menu_button));
@@ -2315,14 +2326,16 @@ void on_activate(GtkApplication* app, gpointer) {
 
   auto* toc_button = GTK_MENU_BUTTON(gtk_menu_button_new());
   gtk_menu_button_set_icon_name(toc_button, "view-list-symbolic");
-  gtk_widget_set_tooltip_text(GTK_WIDGET(toc_button), "Table of contents");
+  gtk_widget_set_tooltip_text(GTK_WIDGET(toc_button),
+                              Tr("ui.viewer.outline").c_str());
   gtk_header_bar_pack_end(GTK_HEADER_BAR(header), GTK_WIDGET(toc_button));
   g_host.header_toc_menu = GTK_WIDGET(toc_button);
   gtk_widget_set_visible(g_host.header_toc_menu, FALSE);
 
   auto* primary_button = GTK_MENU_BUTTON(gtk_menu_button_new());
   gtk_menu_button_set_icon_name(primary_button, "open-menu-symbolic");
-  gtk_widget_set_tooltip_text(GTK_WIDGET(primary_button), "Menu");
+  gtk_widget_set_tooltip_text(GTK_WIDGET(primary_button),
+                              Tr("ui.tooltip.menu").c_str());
   gtk_header_bar_pack_end(GTK_HEADER_BAR(header),
                           GTK_WIDGET(primary_button));
   g_host.primary_menu = primary_button;
@@ -2358,11 +2371,11 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_box_append(GTK_BOX(find_row), find_entry);
   auto* find_prev = gtk_button_new_from_icon_name(
       "go-up-symbolic");
-  gtk_widget_set_tooltip_text(find_prev, "Previous match");
+  gtk_widget_set_tooltip_text(find_prev, Tr("ui.find.previous").c_str());
   gtk_box_append(GTK_BOX(find_row), find_prev);
   auto* find_next = gtk_button_new_from_icon_name(
       "go-down-symbolic");
-  gtk_widget_set_tooltip_text(find_next, "Next match");
+  gtk_widget_set_tooltip_text(find_next, Tr("ui.find.next").c_str());
   gtk_box_append(GTK_BOX(find_row), find_next);
   g_host.find_count = GTK_LABEL(gtk_label_new(nullptr));
   gtk_box_append(GTK_BOX(find_row), GTK_WIDGET(g_host.find_count));
@@ -2413,12 +2426,13 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_label_set_markup(GTK_LABEL(welcome_title),
                        "<span size='x-large' weight='bold'>PDFGist"
                        "</span>");
-  auto* welcome_hint =
-      gtk_label_new("Open a PDF or EPUB to start reading.\n"
-                    "Drag a file here, or press Ctrl+O.");
+  auto* welcome_hint = gtk_label_new(
+      (Tr("ui.welcome.open-any") + "\n" + Tr("ui.welcome.linux-hint"))
+          .c_str());
   gtk_label_set_justify(GTK_LABEL(welcome_hint), GTK_JUSTIFY_CENTER);
   gtk_widget_add_css_class(welcome_hint, "dim-label");
-  auto* welcome_open = gtk_button_new_with_label("Open Document");
+  auto* welcome_open =
+      gtk_button_new_with_label(Tr("ui.welcome.open").c_str());
   gtk_widget_add_css_class(welcome_open, "pill");
   hook(welcome_open, "clicked",
                    +[](GtkButton*, gpointer) {
@@ -2453,7 +2467,7 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_flow_box_set_selection_mode(g_host.thumbs, GTK_SELECTION_SINGLE);
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(thumbs_scroll), thumbs);
   gtk_stack_add_titled(GTK_STACK(left_stack), thumbs_scroll, "thumbs",
-                       "Pages");
+                       Tr("ui.viewer.thumbs").c_str());
 
   auto* outline_scroll = gtk_scrolled_window_new();
   auto* outline = gtk_list_box_new();
@@ -2463,7 +2477,7 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(outline_scroll),
                                 outline);
   gtk_stack_add_titled(GTK_STACK(left_stack), outline_scroll, "outline",
-                       "Outline");
+                       Tr("ui.viewer.outline").c_str());
   hook(
       outline, "row-activated",
       +[](GtkListBox*, GtkListBoxRow* row, gpointer) {
@@ -2534,8 +2548,8 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_widget_set_margin_bottom(status, 4);
   gtk_widget_set_margin_start(status, 8);
   gtk_widget_set_margin_end(status, 8);
-  g_host.status_label = GTK_LABEL(gtk_label_new(
-      "Starting the embedded Racket CS core…"));
+  g_host.status_label =
+      GTK_LABEL(gtk_label_new(Tr("ui.backend-not-ready").c_str()));
   gtk_widget_add_css_class(GTK_WIDGET(g_host.status_label), "caption");
   gtk_widget_add_css_class(GTK_WIDGET(g_host.status_label), "dim-label");
   gtk_widget_set_halign(GTK_WIDGET(g_host.status_label), GTK_ALIGN_START);
@@ -2652,7 +2666,29 @@ void on_shutdown(GApplication*, gpointer) {
 
 }  // namespace
 
+// System UI language: the first of LC_ALL / LC_MESSAGES / LANG that names a
+// zh or en locale wins; anything else — including set locales for languages
+// the catalog doesn't ship — falls back to en. Runs before the window builds
+// so first paint is already in the right language; bootstrap mirrors the
+// choice into the backend via set-locale.
+std::string detect_ui_language() {
+  for (char const* name : {"LC_ALL", "LC_MESSAGES", "LANG"}) {
+    char const* value = getenv(name);
+    if (value == nullptr || *value == '\0') continue;
+    std::string locale = value;
+    std::transform(locale.begin(), locale.end(), locale.begin(),
+                   [](unsigned char c) {
+                     return static_cast<char>(std::tolower(c));
+                   });
+    if (locale.rfind("zh", 0) == 0) return "zh";
+    if (locale.rfind("en", 0) == 0) return "en";
+    break;
+  }
+  return "en";
+}
+
 int main(int argc, char** argv) {
+  pdfgist::SetUiLanguage(detect_ui_language());
   g_host.theme = host::pref_string("theme", "system");
 
   auto* app = gtk_application_new("site.jrtx.pdfgist",
