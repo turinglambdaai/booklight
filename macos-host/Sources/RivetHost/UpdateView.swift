@@ -81,6 +81,7 @@ struct UpdateView: View {
                 Text(model.updateState.message ?? "")
                     .font(.caption)
                     .foregroundStyle(Theme.textDim)
+                    .textSelection(.enabled)
                     .frame(maxWidth: 340)
                     .lineLimit(6)
                 HStack {

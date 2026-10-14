@@ -167,6 +167,18 @@ struct SettingsPane: View {
             Text("PDFGist \(RivetGeneratedConfig.version) · Rivet protocol v\(RivetGeneratedConfig.build)")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.textFaint)
+            // Support surface (the taskly About facts): a bug report starts
+            // one click away from the failure it describes.
+            HStack(spacing: 14) {
+                Link(L10n.t("ui.about.website"),
+                     destination: URL(string: "https://pdfgist.jrtx.site")!)
+                Link(L10n.t("ui.about.issue"),
+                     destination: URL(string: "https://github.com/turinglambdaai/pdfgist/issues")!)
+            }
+            .font(.system(size: 11))
+            Text(L10n.t("ui.about.license"))
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textFaint)
         }
     }
 
