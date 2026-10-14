@@ -17,9 +17,6 @@ namespace host {
 // Runs `run` on the main loop (thread-safe; g_idle_add from any thread).
 void dispatch_ui(std::function<void()> run);
 
-// True on the GTK main thread.
-bool on_ui_thread();
-
 std::filesystem::path executable_path();
 
 std::filesystem::path app_config_dir();  // ~/.config/site.jrtx.pdfgist

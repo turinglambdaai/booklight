@@ -53,10 +53,6 @@ void dispatch_ui(std::function<void()> run) {
   g_idle_add(run_ui_task, new UiTask{std::move(run)});
 }
 
-bool on_ui_thread() {
-  return g_main_context_is_owner(g_main_context_default()) != FALSE;
-}
-
 std::filesystem::path executable_path() {
   std::error_code ec;
   auto self = std::filesystem::read_symlink("/proc/self/exe", ec);
