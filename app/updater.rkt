@@ -373,12 +373,11 @@
                                  "expected" expected
                                  "actual" actual))
         ;; The replaced image must stay executable: rename carries the temp
-        ;; file's modes, so set them explicitly before the swap.
-        (file-or-directory-permissions
-         temporary
-         #(user-read user-write user-execute
-                     group-read group-execute
-                     other-read other-execute))
+        ;; file's modes, so set them explicitly before the swap. The setter
+        ;; only takes integer bits — the vector form is a contract violation
+        ;; (the same trap taskly 63c1f00 and movebit 2f5632f fixed; this is
+        ;; the fourth copy of the swap, so pin the portable form).
+        (file-or-directory-permissions temporary #o755)
         (rename-file-or-directory temporary self #t))
       (lambda () (close-input-port in))))
   self)
