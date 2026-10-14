@@ -263,7 +263,7 @@ void MainWindow::RunUpdateCheck(bool manual) {
                            failure = std::move(failure)]() mutable {
       auto window = weak.get();
       if (!window) return;
-      if (manual) SetStatus(true, L"");
+      if (manual) window->SetStatus(true, L"");
       if (!failure.empty()) {
         if (manual) {
           window->Alert(pdfgist::Trf("update.check_failed", to_wide(failure)));

@@ -34,6 +34,7 @@ constexpr wchar_t kAppTitle[] = L"PDFGist";
 constexpr double kZoomStep = 1.2;
 constexpr double kMinZoom = 0.4;
 constexpr double kMaxZoom = 4.0;
+constexpr double kMinSelectionPoints = 2.0;  // smaller drags are clicks
 
 }  // namespace
 
@@ -700,10 +701,11 @@ void MainWindow::OpenPath(std::wstring const& path, int resume_page) {
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   auto const path_copy = std::make_shared<std::wstring>(path);
+  auto const resume = std::make_shared<int>(resume_page);
 
   // File read + first open attempt off the UI thread (PDFium serializes on
   // its own mutex anyway).
-  std::thread([weak, dispatcher, bytes, path_copy]() mutable {
+  std::thread([weak, dispatcher, bytes, path_copy, resume]() mutable {
     PdfOpenError error = PdfOpenError::None;
     std::shared_ptr<pdfgist::PdfDocument> doc;
     try {
@@ -716,34 +718,33 @@ void MainWindow::OpenPath(std::wstring const& path, int resume_page) {
     } catch (...) {
       error = PdfOpenError::Invalid;
     }
-    dispatcher.TryEnqueue([weak, doc, error, bytes, path_copy]() mutable {
+    dispatcher.TryEnqueue([weak, doc, error, bytes, path_copy, resume]() mutable {
       if (auto window = weak.get()) {
-        window->OpenDocReady(*path_copy, doc, error, bytes, L"", false);
+        window->OpenDocReady(*path_copy, doc, error, bytes, L"", false, *resume);
       }
     });
   }).detach();
 }
 
 // UI-thread continuation of OpenPath; loops the password prompt.
-void MainWindow::OpenDocReady(std::wstring const& path,
-                              std::shared_ptr<pdfgist::PdfDocument> doc,
-                              pdfgist::PdfOpenError error,
-                              std::shared_ptr<std::vector<std::uint8_t>> bytes,
-                              std::wstring const& password, bool wrong_password) {
+void MainWindow::OpenDocReady(
+    std::wstring const& path, std::shared_ptr<pdfgist::PdfDocument> doc,
+    pdfgist::PdfOpenError error, std::shared_ptr<std::vector<std::uint8_t>> bytes,
+    std::wstring const& password, bool wrong_password, int resume_page) {
   if (error == PdfOpenError::NeedsPassword) {
     AskPassword(
-        [weak = get_weak(), path, bytes](std::wstring const& answer) {
+        [weak = get_weak(), path, bytes, resume_page](std::wstring const& answer) {
           if (auto window = weak.get()) {
             if (answer.empty()) return;
             window->OpenDocReady(path, nullptr, PdfOpenError::NeedsPassword,
-                                 bytes, answer, true);
+                                 bytes, answer, true, resume_page);
           }
         },
         wrong_password);
     return;
   }
   if (!doc) {
-    Alert(pdfgist::Trf("ui.open-failed", to_wide(path)));
+    Alert(pdfgist::Trf("ui.open-failed", path));
     return;
   }
   if (!password.empty()) {
@@ -753,10 +754,10 @@ void MainWindow::OpenDocReady(std::wstring const& path,
     if (!doc) {
       if (retry == PdfOpenError::NeedsPassword) {
         OpenDocReady(path, nullptr, PdfOpenError::NeedsPassword, bytes, L"",
-                     true);
+                     true, resume_page);
         return;
       }
-      Alert(pdfgist::Trf("ui.open-failed", to_wide(path)));
+      Alert(pdfgist::Trf("ui.open-failed", path));
       return;
     }
   }
@@ -841,8 +842,7 @@ void MainWindow::OpenDocReady(std::wstring const& path,
   }).detach();
 
   if (resume_page > 1 && resume_page <= tab->page_count) {
-    tab->current_page = resume_page;
-    UpdatePageBar();
+    ScrollToPage(*tab, resume_page);
   }
 }
 

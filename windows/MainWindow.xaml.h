@@ -193,7 +193,8 @@ struct MainWindow : MainWindowT<MainWindow> {
                     std::shared_ptr<pdfgist::PdfDocument> doc,
                     pdfgist::PdfOpenError error,
                     std::shared_ptr<std::vector<std::uint8_t>> bytes,
-                    std::wstring const& password, bool wrong_password);
+                    std::wstring const& password, bool wrong_password,
+                    int resume_page = 1);
   void AskPassword(std::function<void(std::wstring const&)> on_answer,
                    bool wrong);
   void OpenDroppedRaw(winrt::Microsoft::UI::Xaml::DragEventArgs const& args);
