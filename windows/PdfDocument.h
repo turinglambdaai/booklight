@@ -91,12 +91,39 @@ class PdfDocument {
   BoundedSelection SelectionInRect(int index, double left, double top,
                                    double right, double bottom) const;
 
+  // ---- AcroForm (lazily initialized; the 10s startup smoke never hits it) ----
+
+  struct FormField {
+    std::wstring name;
+    int kind = 0;  // 0 text / 1 checkbox / 2 choice
+    std::wstring value;
+    bool checked = false;
+    std::vector<std::wstring> options;  // choice fields only
+    int page = 0;                       // 1-based page of the first widget
+  };
+
+  // Creates the PDFium form-fill environment on first use (subsequent page
+  // renders paint filled values through FPDF_FFLDraw).
+  bool EnsureFormEnv() const;
+  std::vector<FormField> FormFields() const;
+
+  // Text/choice fill goes through the FORM_* interaction path (focus,
+  // select-all, replace, kill-focus) so PDFium regenerates appearances.
+  bool SetFormFieldText(std::wstring const& name, std::wstring const& value);
+  // Checkbox/radio via FPDFAnnot_SetChecked/SetUnchecked.
+  bool SetFormCheck(std::wstring const& name, bool checked);
+
+  // Full rewrite of the in-memory document (form values included) to bytes.
+  std::vector<std::uint8_t> SaveToBytes() const;
+
  private:
   PdfDocument() = default;
 
   std::vector<std::uint8_t> bytes_;
   void* document_ = nullptr;  // FPDF_DOCUMENT (opaque; keeps pdfium out of this header)
   std::vector<std::pair<double, double>> page_sizes_;  // points, rotation applied
+  mutable void* form_info_ = nullptr;  // FPDF_FORMFILLINFO (opaque)
+  mutable void* form_env_ = nullptr;   // FPDF_FORMHANDLE (opaque)
 };
 
 }  // namespace pdfgist

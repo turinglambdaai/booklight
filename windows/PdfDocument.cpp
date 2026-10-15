@@ -4,11 +4,15 @@
 
 #include <windows.h>
 
+#include "fpdf_annot.h"
 #include "fpdf_doc.h"
+#include "fpdf_formfill.h"
+#include "fpdf_save.h"
 #include "fpdf_text.h"
 #include "fpdfview.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <utility>
 
@@ -55,6 +59,65 @@ std::string utf16le_to_utf8(unsigned short const* data, int count) {
 
 double clamp_min(double value, double floor) {
   return value < floor ? floor : value;
+}
+
+// ---- form-fill environment callbacks (no-ops; the host drives no JS) ----
+
+void FPDF_CALLCONV ffi_release(struct _FPDF_FORMFILLINFO*) {}
+void FPDF_CALLCONV ffi_invalidate(struct _FPDF_FORMFILLINFO*, FPDF_PAGE, double,
+                                  double, double, double) {}
+void FPDF_CALLCONV ffi_output_selected_rect(struct _FPDF_FORMFILLINFO*,
+                                            FPDF_PAGE, double, double, double,
+                                            double) {}
+void FPDF_CALLCONV ffi_set_cursor(struct _FPDF_FORMFILLINFO*, int) {}
+int FPDF_CALLCONV ffi_set_timer(struct _FPDF_FORMFILLINFO*, int,
+                                TimerCallback) {
+  return 0;
+}
+void FPDF_CALLCONV ffi_kill_timer(struct _FPDF_FORMFILLINFO*, int) {}
+FPDF_SYSTEMTIME FPDF_CALLCONV ffi_get_local_time(struct _FPDF_FORMFILLINFO*) {
+  FPDF_SYSTEMTIME time{};
+  ::GetLocalTime(reinterpret_cast<LPSYSTEMTIME>(&time));
+  return time;
+}
+void FPDF_CALLCONV ffi_on_change(struct _FPDF_FORMFILLINFO*) {}
+FPDF_PAGE FPDF_CALLCONV ffi_get_page(struct _FPDF_FORMFILLINFO*, FPDF_DOCUMENT,
+                                     int) {
+  return nullptr;
+}
+FPDF_BOOL FPDF_CALLCONV ffi_get_rotation(struct _FPDF_FORMFILLINFO*,
+                                         FPDF_DOCUMENT, int, int* rotation) {
+  if (rotation != nullptr) *rotation = 0;
+  return 1;
+}
+void FPDF_CALLCONV ffi_execute_named_action(struct _FPDF_FORMFILLINFO*,
+                                            FPDF_WIDESTRING) {}
+void FPDF_CALLCONV ffi_set_text_field_focus(struct _FPDF_FORMFILLINFO*,
+                                            FPDF_WIDESTRING, FPDF_DWORD,
+                                            FPDF_BOOL) {}
+void FPDF_CALLCONV ffi_do_uri_action(struct _FPDF_FORMFILLINFO*,
+                                     FPDF_WIDESTRING) {}
+void FPDF_CALLCONV ffi_do_go_to_action(struct _FPDF_FORMFILLINFO*, int, int,
+                                       float*, float*) {}
+
+std::wstring form_utf16_to_wide(unsigned short const* data,
+                                unsigned long length) {
+  if (data == nullptr || length == 0) return {};
+  return std::wstring(reinterpret_cast<wchar_t const*>(data),
+                      static_cast<std::size_t>(length));
+}
+
+using FormFieldReader = unsigned long (FPDF_CALLCONV*)(
+    FPDF_FORMHANDLE, FPDF_ANNOTATION, FPDF_WCHAR*, unsigned long);
+
+std::wstring form_field_string(FPDF_FORMHANDLE handle, FPDF_ANNOTATION annot,
+                               FormFieldReader reader) {
+  unsigned long const length = reader(handle, annot, nullptr, 0);
+  if (length <= 1) return {};
+  std::vector<unsigned short> buffer(static_cast<std::size_t>(length));
+  unsigned long const written = reader(handle, annot, buffer.data(), length);
+  // PDFium answers the length including the null terminator.
+  return form_utf16_to_wide(buffer.data(), written > 0 ? written - 1 : 0);
 }
 
 }  // namespace
@@ -124,8 +187,233 @@ std::unique_ptr<PdfDocument> PdfDocument::OpenFromBytes(
 PdfDocument::~PdfDocument() {
   if (document_ != nullptr) {
     std::lock_guard<std::mutex> lock(pdfium_mutex());
+    if (form_env_ != nullptr) {
+      FPDFDOC_ExitFormFillEnvironment(
+          static_cast<FPDF_FORMHANDLE>(form_env_));
+      form_env_ = nullptr;
+    }
+    delete static_cast<FPDF_FORMFILLINFO*>(form_info_);
+    form_info_ = nullptr;
     FPDF_CloseDocument(static_cast<FPDF_DOCUMENT>(document_));
   }
+}
+
+bool PdfDocument::EnsureFormEnv() const {
+  std::lock_guard<std::mutex> lock(pdfium_mutex());
+  if (form_env_ != nullptr) return true;
+  auto info = new FPDF_FORMFILLINFO{};
+  info->version = 1;
+  info->Release = &ffi_release;
+  info->Invalidate = &ffi_invalidate;
+  info->OutputSelectedRect = &ffi_output_selected_rect;
+  info->SetCursor = &ffi_set_cursor;
+  info->SetTimer = &ffi_set_timer;
+  info->KillTimer = &ffi_kill_timer;
+  info->GetLocalTime = &ffi_get_local_time;
+  info->OnChange = &ffi_on_change;
+  info->GetPage = &ffi_get_page;
+  info->GetRotation = &ffi_get_rotation;
+  info->ExecuteNamedAction = &ffi_execute_named_action;
+  info->SetTextFieldFocus = &ffi_set_text_field_focus;
+  info->DoURIAction = &ffi_do_uri_action;
+  info->DoGoToAction = &ffi_do_go_to_action;
+  FPDF_FORMHANDLE handle = FPDFDOC_InitFormFillEnvironment(
+      static_cast<FPDF_DOCUMENT>(document_), info);
+  if (handle == nullptr) {
+    delete info;
+    return false;
+  }
+  form_info_ = info;
+  form_env_ = handle;
+  return true;
+}
+
+std::vector<PdfDocument::FormField> PdfDocument::FormFields() const {
+  std::vector<FormField> fields;
+  if (!EnsureFormEnv()) return fields;
+
+  std::lock_guard<std::mutex> lock(pdfium_mutex());
+  FPDF_FORMHANDLE handle = static_cast<FPDF_FORMHANDLE>(form_env_);
+  FPDF_DOCUMENT document = static_cast<FPDF_DOCUMENT>(document_);
+  int const pages = PageCount();
+  for (int index = 0; index < pages; ++index) {
+    FPDF_PAGE page = FPDF_LoadPage(document, index);
+    if (page == nullptr) continue;
+    FORM_OnAfterLoadPage(page, handle);
+    int const count = FPDFPage_GetAnnotCount(page);
+    for (int i = 0; i < count; ++i) {
+      FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, i);
+      if (annot == nullptr) continue;
+      int const type = FPDFAnnot_GetFormFieldType(handle, annot);
+      int kind = -1;
+      switch (type) {
+        case FORMFIELD_TEXTFIELD:
+          kind = 0;
+          break;
+        case FORMFIELD_CHECKBOX:
+        case FORMFIELD_RADIOBUTTON:
+          kind = 1;
+          break;
+        case FORMFIELD_COMBOBOX:
+        case FORMFIELD_LISTBOX:
+          kind = 2;
+          break;
+        default:
+          break;
+      }
+      if (kind >= 0) {
+        std::wstring const name = form_field_string(
+            handle, annot, &FPDFAnnot_GetFormFieldName);
+        if (!name.empty()) {
+          FormField* field = nullptr;
+          for (auto& candidate : fields) {
+            if (candidate.name == name) {
+              field = &candidate;
+              break;
+            }
+          }
+          if (field == nullptr) {
+            fields.push_back(FormField{});
+            field = &fields.back();
+            field->name = name;
+            field->kind = kind;
+            field->page = index + 1;
+          }
+          if (kind == 1) {
+            field->checked =
+                field->checked || FPDFAnnot_IsChecked(handle, annot) != 0;
+          } else if (field->value.empty()) {
+            field->value = form_field_string(
+                handle, annot, &FPDFAnnot_GetFormFieldValue);
+            if (kind == 2) {
+              int const options = FPDFAnnot_GetOptionCount(handle, annot);
+              for (int o = 0; o < options; ++o) {
+                unsigned long const length =
+                    FPDFAnnot_GetOptionLabel(handle, annot, o, nullptr, 0);
+                if (length <= 1) continue;
+                std::vector<unsigned short> label(
+                    static_cast<std::size_t>(length));
+                unsigned long const written = FPDFAnnot_GetOptionLabel(
+                    handle, annot, o, label.data(), length);
+                field->options.push_back(form_utf16_to_wide(
+                    label.data(), written > 0 ? written - 1 : 0));
+              }
+            }
+          }
+        }
+      }
+      FPDFPage_CloseAnnot(annot);
+    }
+    FORM_OnBeforeClosePage(page, handle);
+    FPDF_ClosePage(page);
+  }
+  return fields;
+}
+
+bool PdfDocument::SetFormFieldText(std::wstring const& name,
+                                   std::wstring const& value) {
+  if (!EnsureFormEnv()) return false;
+
+  std::lock_guard<std::mutex> lock(pdfium_mutex());
+  FPDF_FORMHANDLE handle = static_cast<FPDF_FORMHANDLE>(form_env_);
+  FPDF_DOCUMENT document = static_cast<FPDF_DOCUMENT>(document_);
+  bool updated = false;
+  int const pages = PageCount();
+  for (int index = 0; index < pages && !updated; ++index) {
+    FPDF_PAGE page = FPDF_LoadPage(document, index);
+    if (page == nullptr) continue;
+    FORM_OnAfterLoadPage(page, handle);
+    int const count = FPDFPage_GetAnnotCount(page);
+    for (int i = 0; i < count && !updated; ++i) {
+      FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, i);
+      if (annot == nullptr) continue;
+      int const type = FPDFAnnot_GetFormFieldType(handle, annot);
+      bool const fillable = type == FORMFIELD_TEXTFIELD ||
+                            type == FORMFIELD_COMBOBOX ||
+                            type == FORMFIELD_LISTBOX;
+      if (fillable) {
+        std::wstring const field_name = form_field_string(
+            handle, annot, &FPDFAnnot_GetFormFieldName);
+        if (field_name == name) {
+          if (FORM_SetFocusedAnnot(handle, page, annot)) {
+            FORM_SelectAllText(handle, page);
+            FORM_ReplaceSelection(
+                handle, page,
+                reinterpret_cast<FPDF_WIDESTRING>(value.c_str()));
+            FORM_ForceToKillFocus(handle);
+            updated = true;
+          } else if (FPDFAnnot_SetStringValue(
+                         annot, "V",
+                         reinterpret_cast<FPDF_WIDESTRING>(value.c_str()))) {
+            // Fallback: dictionary V value; appearance may be stale.
+            updated = true;
+          }
+        }
+      }
+      FPDFPage_CloseAnnot(annot);
+    }
+    FORM_OnBeforeClosePage(page, handle);
+    FPDF_ClosePage(page);
+  }
+  return updated;
+}
+
+bool PdfDocument::SetFormCheck(std::wstring const& name, bool checked) {
+  if (!EnsureFormEnv()) return false;
+
+  std::lock_guard<std::mutex> lock(pdfium_mutex());
+  FPDF_FORMHANDLE handle = static_cast<FPDF_FORMHANDLE>(form_env_);
+  FPDF_DOCUMENT document = static_cast<FPDF_DOCUMENT>(document_);
+  bool updated = false;
+  int const pages = PageCount();
+  for (int index = 0; index < pages; ++index) {
+    FPDF_PAGE page = FPDF_LoadPage(document, index);
+    if (page == nullptr) continue;
+    int const count = FPDFPage_GetAnnotCount(page);
+    for (int i = 0; i < count; ++i) {
+      FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, i);
+      if (annot == nullptr) continue;
+      int const type = FPDFAnnot_GetFormFieldType(handle, annot);
+      if (type == FORMFIELD_CHECKBOX || type == FORMFIELD_RADIOBUTTON) {
+        std::wstring const field_name = form_field_string(
+            handle, annot, &FPDFAnnot_GetFormFieldName);
+        if (field_name == name) {
+          if (checked) {
+            updated = FPDFAnnot_SetChecked(annot) != 0 || updated;
+          } else {
+            updated = FPDFAnnot_SetUnchecked(annot) != 0 || updated;
+          }
+        }
+      }
+      FPDFPage_CloseAnnot(annot);
+    }
+    FPDF_ClosePage(page);
+  }
+  return updated;
+}
+
+std::vector<std::uint8_t> PdfDocument::SaveToBytes() const {
+  std::lock_guard<std::mutex> lock(pdfium_mutex());
+  std::vector<std::uint8_t> out;
+
+  struct SaveContext {
+    std::vector<std::uint8_t>* out;
+    FPDF_FILEWRITE writer;
+  };
+  SaveContext context{&out, {}};
+  context.writer.version = 1;
+  context.writer.WriteBlock =
+      [](FPDF_FILEWRITE* writer, FPDF_CONST void* data,
+         unsigned long size) -> int {
+    auto* self = reinterpret_cast<SaveContext*>(
+        reinterpret_cast<std::uintptr_t>(writer) - offsetof(SaveContext, writer));
+    if (data == nullptr) return 0;
+    self->out->insert(self->out->end(), static_cast<std::uint8_t const*>(data),
+                      static_cast<std::uint8_t const*>(data) + size);
+    return 1;
+  };
+  FPDF_SaveAsCopy(static_cast<FPDF_DOCUMENT>(document_), &context.writer, 0);
+  return out;
 }
 
 void PdfDocument::PageSize(int index, double* width, double* height) const {
@@ -153,6 +441,10 @@ PdfDocument::RenderedPage PdfDocument::RenderPage(int index, double scale,
   std::lock_guard<std::mutex> lock(pdfium_mutex());
   FPDF_DOCUMENT document = static_cast<FPDF_DOCUMENT>(document_);
   if (FPDF_PAGE page = FPDF_LoadPage(document, index)) {
+    FPDF_FORMHANDLE const form =
+        form_env_ != nullptr ? static_cast<FPDF_FORMHANDLE>(form_env_)
+                             : nullptr;
+    if (form != nullptr) FORM_OnAfterLoadPage(page, form);
     // Opaque fill first: transparent margins would composite as black in the
     // WriteableBitmap and eat the page edges in dark mode.
     uint32_t const background = dark ? 0xFF141217u : 0xFFFFFFFFu;
@@ -160,8 +452,13 @@ PdfDocument::RenderedPage PdfDocument::RenderPage(int index, double scale,
             width, height, FPDFBitmap_BGRA, result.bgra.data(), stride)) {
       FPDFBitmap_FillRect(bitmap, 0, 0, width, height, background);
       FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, 0);
+      // Paint the live form-fill layer so filled values show without a save.
+      if (form != nullptr) {
+        FPDF_FFLDraw(form, bitmap, page, 0, 0, width, height, 0, 0);
+      }
       FPDFBitmap_Destroy(bitmap);
     }
+    if (form != nullptr) FORM_OnBeforeClosePage(page, form);
     FPDF_ClosePage(page);
   }
 
