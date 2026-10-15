@@ -27,9 +27,15 @@
                   select-update
                   sha256-file/hex
                   update-artifact
+                  update-artifact-size
                   update-candidate
+                  update-candidate-artifact
+                  update-candidate?
                   update-manifest
-                  updater-config)
+                  update-manifest-version
+                  updater-config
+                  verify-signed-manifest
+                  write-signed-manifest)
          racket/file
          racket/path
          racket/tcp
