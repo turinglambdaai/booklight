@@ -95,7 +95,7 @@ void FPDF_CALLCONV ffi_set_text_field_focus(struct _FPDF_FORMFILLINFO*,
                                             FPDF_WIDESTRING, FPDF_DWORD,
                                             FPDF_BOOL) {}
 void FPDF_CALLCONV ffi_do_uri_action(struct _FPDF_FORMFILLINFO*,
-                                     FPDF_WIDESTRING) {}
+                                     FPDF_BYTESTRING) {}
 void FPDF_CALLCONV ffi_do_go_to_action(struct _FPDF_FORMFILLINFO*, int, int,
                                        float*, int) {}
 
