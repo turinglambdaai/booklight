@@ -84,6 +84,7 @@ class AiPanel {
 
   // AI actions (menu items and the context menu route here).
   void do_translate_selection();
+  void do_translate_text(std::string const& text);  // notes-pane excerpt button
   void do_translate_page();
   void do_summarize_page();
   void do_summarize_selection();
