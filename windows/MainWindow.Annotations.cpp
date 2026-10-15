@@ -107,15 +107,15 @@ void json_append_string(std::string* out, std::wstring const& value) {
   int const size = ::WideCharToMultiByte(CP_UTF8, 0, escaped.data(),
                                          static_cast<int>(escaped.size()),
                                          nullptr, 0, nullptr, nullptr);
-  out += '"';
+  *out += '"';
   if (size > 0) {
     std::string narrow(static_cast<std::size_t>(size), '\0');
     ::WideCharToMultiByte(CP_UTF8, 0, escaped.data(),
                           static_cast<int>(escaped.size()), narrow.data(),
                           size, nullptr, nullptr);
-    out += narrow;
+    *out += narrow;
   }
-  out += '"';
+  *out += '"';
 }
 
 // ---- minimal JSON reader (schema-tolerant: unknown keys are ignored) ----
@@ -707,7 +707,7 @@ void MainWindow::BuildNotesPane(
     header.Orientation(muxc::Orientation::Horizontal);
     header.Spacing(6);
 
-    auto dot = muxc::Ellipse();
+    auto dot = shapes::Ellipse();
     dot.Width(9);
     dot.Height(9);
     dot.Fill(Solid(AnnotationColor(annotation.color)));
@@ -783,7 +783,7 @@ void MainWindow::BuildNotesPane(
       stack.Children().Append(note_label);
     }
 
-    card.Content(stack);
+    card.Child(stack);
     int const page = annotation.page;
     card.PointerPressed([weak, page](
                             winrt::Windows::Foundation::IInspectable const&,
@@ -883,7 +883,7 @@ void MainWindow::BuildNotesPane(
     });
     stack.Children().Append(delete_button);
 
-    row.Content(stack);
+    row.Child(stack);
     row.PointerPressed([weak, page](
                            winrt::Windows::Foundation::IInspectable const&,
                            mux::Input::PointerRoutedEventArgs const& args) {

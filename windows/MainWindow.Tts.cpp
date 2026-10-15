@@ -39,7 +39,7 @@ void MainWindow::ToggleTts() {
     }
     dispatcher.TryEnqueue([weak, raw = std::move(raw)]() mutable {
       if (auto window = weak.get()) {
-        window->TtsSpeak(winrt::to_hstring(raw));
+        window->TtsSpeak(to_wide(raw));
       }
     });
   }).detach();
@@ -129,12 +129,8 @@ void MainWindow::TtsStop() {
       tts_player_.Pause();
       tts_player_.Source(nullptr);
     }
-    if (tts_synth_ != nullptr) {
-      try {
-        tts_synth_.CancelAsync();
-      } catch (...) {
-      }
-    }
+    // Dropping the player source is the stop; a pending synthesis result is
+    // discarded by the completed handler's speaking-state guard.
   } catch (...) {
   }
   TtsSetSpeaking(false);

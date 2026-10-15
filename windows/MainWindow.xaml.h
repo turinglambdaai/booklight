@@ -24,6 +24,9 @@ struct PdfTab;
 struct EpubBook;
 struct StreamCardUi;
 
+// PdfDocument::FormField is a nested type; host code spells it FormField.
+using FormField = pdfgist::PdfDocument::FormField;
+
 // ---- annotation storage (JSON schema of racket/pdfgist/annotations.rkt) ------
 // Rects are PDF page space, origin BOTTOM-LEFT, y up (PDFKit page space on
 // mac). The Windows view flips PDFium's top-left rects on store and again on
@@ -448,7 +451,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void RebuildFormFieldsUi();
   void ApplyFormFieldText(std::wstring const& name);
   void ExportFilledPdf();
-  std::vector<pdfgist::FormField> form_fields_;
+  std::vector<FormField> form_fields_;
   std::map<std::wstring, std::wstring> form_text_values_;
   std::map<std::wstring, bool> form_check_values_;
   winrt::Microsoft::UI::Xaml::Controls::StackPanel forms_pane_{nullptr};

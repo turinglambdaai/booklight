@@ -1468,17 +1468,17 @@ void MainWindow::AttachCellHandlers(PdfTab& tab, PdfTab::Cell& cell,
 
   // annotation items; enabled only while a selection exists (flyout.Opening)
   struct AnnotationItem {
-    wchar_t const* label_key;
+    char const* label_key;
     wchar_t const* color;
     wchar_t const* kind;
   };
   AnnotationItem const annotation_items[] = {
-      {L"", L"yellow", L"highlight"},
-      {L"ui.menu.highlight-yellow", L"yellow", L"highlight"},
-      {L"ui.menu.highlight-green", L"green", L"highlight"},
-      {L"ui.menu.highlight-blue", L"blue", L"highlight"},
-      {L"ui.menu.underline", L"blue", L"underline"},
-      {L"ui.menu.strike", L"yellow", L"strike"},
+      {"", L"yellow", L"highlight"},
+      {"ui.menu.highlight-yellow", L"yellow", L"highlight"},
+      {"ui.menu.highlight-green", L"green", L"highlight"},
+      {"ui.menu.highlight-blue", L"blue", L"highlight"},
+      {"ui.menu.underline", L"blue", L"underline"},
+      {"ui.menu.strike", L"yellow", L"strike"},
   };
   std::vector<muxc::MenuFlyoutItem> annotation_menu_items;
   for (std::size_t i = 0; i < std::size(annotation_items); ++i) {

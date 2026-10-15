@@ -92,7 +92,7 @@ void MainWindow::RefreshFormFields() {
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   std::thread([weak, dispatcher, doc]() mutable {
-    std::vector<pdfgist::FormField> fields;
+    std::vector<FormField> fields;
     try {
       fields = doc->FormFields();
     } catch (...) {
@@ -215,7 +215,7 @@ void MainWindow::RebuildFormFieldsUi() {
       stack.Children().Append(input);
     }
 
-    card.Content(stack);
+    card.Child(stack);
     forms_list_.Children().Append(card);
   }
 }
