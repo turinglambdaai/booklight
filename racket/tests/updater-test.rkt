@@ -15,8 +15,27 @@
          json
          net/base64
          rackunit
-         (except-in rivet/distribution
-                    platform-symbol architecture-symbol installer-extension)
+         ;; Explicit only-in (see app/updater.rkt): rivet/distribution gained
+         ;; platform-symbol / architecture-symbol / installer-extension
+         ;; re-exports after the v0.11.0 pin — except-in of names an older
+         ;; rivet lacks fails to expand, and this file imports those three
+         ;; from ../../app/updater.rkt instead.
+         (only-in rivet/distribution
+                  base64-string->bytes
+                  download-update
+                  fetch-update-manifest
+                  select-update
+                  sha256-file/hex
+                  update-artifact
+                  update-artifact-size
+                  update-candidate
+                  update-candidate-artifact
+                  update-candidate?
+                  update-manifest
+                  update-manifest-version
+                  updater-config
+                  verify-signed-manifest
+                  write-signed-manifest)
          racket/file
          racket/path
          racket/tcp
