@@ -606,8 +606,11 @@ void on_password_dialog_response(GtkDialog* dialog, int response,
     gtk_window_present(GTK_WINDOW(dialog));
     return;
   }
+  // Non-password failure: destroy the dialog (frees ctx — copy what the
+  // alert still needs) and surface the generic open failure.
+  std::string const failed_path = ctx->path;
   gtk_window_destroy(GTK_WINDOW(dialog));
-  host_alert(Trf("ui.open-failed", ctx->path));
+  host_alert(Trf("ui.open-failed", failed_path));
 }
 
 void prompt_pdf_password(std::string const& path, int resume_page,

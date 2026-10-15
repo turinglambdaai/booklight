@@ -600,6 +600,11 @@ PdfTab::PdfTab(std::shared_ptr<PdfDocument> doc, std::string path,
 }
 
 PdfTab::~PdfTab() {
+  // A pending annotation-save debounce would fire on a dangling tab.
+  if (annotation_save_source != 0) {
+    g_source_remove(annotation_save_source);
+    annotation_save_source = 0;
+  }
   impl->clear_cache();
   for (auto& [page, texture] : impl->thumbs) {
     (void)page;
