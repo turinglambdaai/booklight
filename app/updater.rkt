@@ -30,8 +30,27 @@
          json
          net/base64
          net/url
-         (except-in rivet/distribution
-                    platform-symbol architecture-symbol installer-extension)
+         ;; Explicit only-in: rivet/distribution gained platform-symbol /
+         ;; architecture-symbol / installer-extension re-exports after v0.11.0
+         ;; (the CI pin). An except-in of names a rivet build does not export
+         ;; fails to expand, and a plain require collides with the local
+         ;; defines below on rivets that do export them — listing exactly what
+         ;; this module uses works on both.
+         (only-in rivet/distribution
+                  base64-string->bytes
+                  download-update
+                  fetch-update-manifest
+                  select-update
+                  sha256-file/hex
+                  update-artifact-installer
+                  update-artifact-size
+                  update-artifact-url
+                  update-candidate-artifact
+                  update-candidate-manifest
+                  update-manifest-build
+                  update-manifest-published-at
+                  update-manifest-version
+                  updater-config)
          racket/file
          racket/list
          racket/path
