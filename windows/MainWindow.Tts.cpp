@@ -2,6 +2,7 @@
 #include "MainWindow.xaml.h"
 #include "I18n.h"
 
+#include <algorithm>
 #include <cwctype>
 
 namespace winrt::RivetHost::implementation {

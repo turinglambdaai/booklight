@@ -4,6 +4,7 @@
 
 #include <commdlg.h>
 
+#include <algorithm>
 #include <cmath>
 #include <thread>
 
