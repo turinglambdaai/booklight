@@ -12,5 +12,7 @@
         (module . "backend")
         (entry . "start")
         (protocol . 1)
+        (macos-icon . "design/app-icon.icns")
+        (windows-icon . "design/app-icon.ico")
         (linux-icon . "design/app-icon.png")
         (linux-formats . ("deb" "rpm" "appimage")))
