@@ -244,6 +244,21 @@ inline constexpr struct LinuxStringEntry {
     {"ui.welcome.tagline", "接入自己大模型的 AI PDF 阅读器", "An AI PDF reader that brings your own model"},
     {"update.dev-copy", "当前是开发副本，自动更新不可用。", "This is a development copy — auto-update is unavailable."},
     {"update.msi-installed", "当前副本通过 MSI 安装，请到发布页下载新安装包完成升级。", "This copy was installed via the MSI — grab the new installer from the releases page."},
+    {"ui.menu.new-window", "新建窗口", "New Window"},
+    {"ui.menu.open-recent", "打开最近", "Open Recent"},
+    {"ui.menu.go", "前往", "Go"},
+    {"ui.menu.prev-page", "上一页", "Previous Page"},
+    {"ui.menu.next-page", "下一页", "Next Page"},
+    {"ui.menu.first-page", "第一页", "First Page"},
+    {"ui.menu.last-page", "最后一页", "Last Page"},
+    {"ui.menu.actual-size", "实际大小", "Actual Size"},
+    {"ui.menu.print", "打印", "Print"},
+    {"ui.menu.find", "搜索", "Find"},
+    {"ui.menu.bookmark", "书签当前页", "Bookmark This Page"},
+    {"ui.menu.tts", "朗读本页", "Read Aloud"},
+    {"ui.menu.single-page", "单页", "Single Pages"},
+    {"ui.menu.double-page", "双页", "Two Pages"},
+    {"ui.sidebar.annotations", "批注", "Annotations"},
 };
 
 }  // namespace pdfgist

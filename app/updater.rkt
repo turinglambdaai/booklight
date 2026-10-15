@@ -30,7 +30,8 @@
          json
          net/base64
          net/url
-         rivet/distribution
+         (except-in rivet/distribution
+                    platform-symbol architecture-symbol installer-extension)
          racket/file
          racket/list
          racket/path

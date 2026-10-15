@@ -152,7 +152,7 @@ enum MarkdownLite {
 // MARK: - stream card view
 
 struct StreamCardView: View {
-    @EnvironmentObject private var model: PDFGistModel
+    @EnvironmentObject private var model: ReaderModel
     @ObservedObject var card: StreamCard
     @State private var copied = false
 

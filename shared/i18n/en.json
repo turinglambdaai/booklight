@@ -230,5 +230,20 @@
   "ui.welcome.recent-meta": "page {0} · {1}/{2}",
   "ui.welcome.tagline": "An AI PDF reader that brings your own model",
   "update.dev-copy": "This is a development copy — auto-update is unavailable.",
-  "update.msi-installed": "This copy was installed via the MSI — grab the new installer from the releases page."
+  "update.msi-installed": "This copy was installed via the MSI — grab the new installer from the releases page.",
+  "ui.menu.new-window": "New Window",
+  "ui.menu.open-recent": "Open Recent",
+  "ui.menu.go": "Go",
+  "ui.menu.prev-page": "Previous Page",
+  "ui.menu.next-page": "Next Page",
+  "ui.menu.first-page": "First Page",
+  "ui.menu.last-page": "Last Page",
+  "ui.menu.actual-size": "Actual Size",
+  "ui.menu.print": "Print",
+  "ui.menu.find": "Find",
+  "ui.menu.bookmark": "Bookmark This Page",
+  "ui.menu.tts": "Read Aloud",
+  "ui.menu.single-page": "Single Pages",
+  "ui.menu.double-page": "Two Pages",
+  "ui.sidebar.annotations": "Annotations"
 }

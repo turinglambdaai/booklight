@@ -5,7 +5,7 @@ import AppKit
 /// base URL / API key / model, connection test, target language, storage and
 /// appearance options. Split into small sections to keep the type-checker sane.
 struct SettingsPane: View {
-    @EnvironmentObject private var model: PDFGistModel
+    @EnvironmentObject private var app: AppModel
 
     @State private var providerID = "deepseek"
     @State private var baseURL = ""
@@ -28,8 +28,6 @@ struct SettingsPane: View {
                 Divider().overlay(Theme.border)
                 readingSection
                 Divider().overlay(Theme.border)
-                appearanceSection
-                Divider().overlay(Theme.border)
                 privacyFooter
             }
             .padding(12)
@@ -45,7 +43,7 @@ struct SettingsPane: View {
             Picker("", selection: Binding(
                 get: { providerID },
                 set: { switchPreset($0) })) {
-                ForEach(model.presets, id: \.id) { preset in
+                ForEach(app.presets, id: \.id) { preset in
                     Text(preset.label).tag(preset.id)
                 }
             }
@@ -75,7 +73,7 @@ struct SettingsPane: View {
             settingLabel(L10n.t("ui.settings.api-key"))
             HStack(spacing: 6) {
                 SecureField(
-                    model.settings.has_api_key ? L10n.t("ui.settings.api-key-saved") : "",
+                    app.settings.has_api_key ? L10n.t("ui.settings.api-key-saved") : "",
                     text: $apiKey)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
@@ -144,20 +142,6 @@ struct SettingsPane: View {
         }
     }
 
-    private var appearanceSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            settingLabel(L10n.t("ui.toolbar.theme-light") + " / " + L10n.t("ui.toolbar.theme-dark"))
-            Picker("", selection: Binding(
-                get: { model.theme },
-                set: { model.setTheme($0) })) {
-                Text("System").tag("system")
-                Text(L10n.t("ui.toolbar.theme-light")).tag("light")
-                Text(L10n.t("ui.toolbar.theme-dark")).tag("dark")
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-        }
-    }
 
     private var privacyFooter: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -186,7 +170,7 @@ struct SettingsPane: View {
 
     private var canTest: Bool {
         !baseURL.trimmingCharacters(in: .whitespaces).isEmpty
-            && (!modelField.trimmingCharacters(in: .whitespaces).isEmpty || model.settings.has_api_key)
+            && (!modelField.trimmingCharacters(in: .whitespaces).isEmpty || app.settings.has_api_key)
     }
 
     private func settingLabel(_ text: String) -> some View {
@@ -208,17 +192,13 @@ struct SettingsPane: View {
         .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.border))
     }
 
-    private func languageName(_ code: RivetTypes.TargetLanguage) -> String {
-        model.languageName(code)
-    }
-
     private func loadFromSettings() {
-        providerID = model.settings.provider
-        baseURL = model.settings.base_url
-        modelField = model.settings.model
-        target = model.settings.target_language
-        viewMode = model.settings.view_mode == "double" ? "double" : "single"
-        sidecar = model.settings.annotation_sidecar
+        providerID = app.settings.provider
+        baseURL = app.settings.base_url
+        modelField = app.settings.model
+        target = app.settings.target_language
+        viewMode = app.settings.view_mode == "double" ? "double" : "single"
+        sidecar = app.settings.annotation_sidecar
     }
 
     /// v1 preset behavior: stash the edited URL/model under the old preset,
@@ -229,7 +209,7 @@ struct SettingsPane: View {
         if let stash = presetStash[newID] {
             baseURL = stash.url
             modelField = stash.model
-        } else if let preset = model.presets.first(where: { $0.id == newID }) {
+        } else if let preset = app.presets.first(where: { $0.id == newID }) {
             baseURL = preset.base_url
             modelField = preset.default_model
         } else {
@@ -243,7 +223,7 @@ struct SettingsPane: View {
     private func saveKey() async {
         busy = true
         defer { busy = false }
-        status = await model.saveApiKey(apiKey.trimmingCharacters(in: .whitespaces))
+        status = await app.saveApiKey(apiKey.trimmingCharacters(in: .whitespaces))
         statusIsError = !status.hasPrefix("✓")
         apiKey = ""
     }
@@ -253,7 +233,7 @@ struct SettingsPane: View {
         status = L10n.t("ui.settings.fetching")
         statusIsError = false
         defer { busy = false }
-        let result = await model.testConnection(
+        let result = await app.testConnection(
             baseURL: baseURL.trimmingCharacters(in: .whitespaces),
             apiKey: apiKey.trimmingCharacters(in: .whitespaces),
             model: modelField.trimmingCharacters(in: .whitespaces))
@@ -265,7 +245,7 @@ struct SettingsPane: View {
     private func save() async {
         busy = true
         defer { busy = false }
-        status = await model.saveSettings(
+        status = await app.saveSettings(
             provider: providerID,
             baseURL: baseURL.trimmingCharacters(in: .whitespaces),
             model: modelField.trimmingCharacters(in: .whitespaces),

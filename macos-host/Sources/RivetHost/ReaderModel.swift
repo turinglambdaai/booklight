@@ -3,148 +3,11 @@ import AppKit
 import AVFoundation
 import PDFKit
 import WebKit
-import UniformTypeIdentifiers
-import RivetEmbedding
 import RivetRuntime
 
-/// App-wide action hooks so the Commands menu and the ⌘W event monitor can
-/// reach the model without threading it through the scene graph.
-enum HostActions {
-    nonisolated(unsafe) static var open: (() -> Void)?
-    nonisolated(unsafe) static var find: (() -> Void)?
-    nonisolated(unsafe) static var toggleBookmark: (() -> Void)?
-    nonisolated(unsafe) static var closeTab: (() -> Bool)?
-    nonisolated(unsafe) static var zoomIn: (() -> Void)?
-    nonisolated(unsafe) static var zoomOut: (() -> Void)?
-    nonisolated(unsafe) static var printDocument: (() -> Void)?
-    nonisolated(unsafe) static var toggleTTS: (() -> Void)?
-    nonisolated(unsafe) static var pageEdit: ((PageEditOp) -> Void)?
-}
-
-/// v1 editor.ts operations. In-memory like v1: the source file on disk is
-/// never touched; extract/bake go through a save panel.
-enum PageEditOp {
-    case deleteCurrent
-    case rotateCurrent
-    case insertBlankAfterCurrent
-    case extract(pages: [Int64])
-    case merge(path: String)
-}
-
-// MARK: - annotation storage types (JSON schema of racket/pdfgist/annotations.rkt)
-
-struct AnnoRect: Codable, Equatable {
-    var x: Double
-    var y: Double
-    var width: Double
-    var height: Double
-
-    var nsRect: NSRect { NSRect(x: x, y: y, width: width, height: height) }
-    init(x: Double, y: Double, width: Double, height: Double) {
-        self.x = x; self.y = y; self.width = width; self.height = height
-    }
-    init(_ rect: NSRect) {
-        x = Double(rect.minX); y = Double(rect.minY)
-        width = Double(rect.width); height = Double(rect.height)
-    }
-}
-
-struct StoredAnnotation: Codable, Identifiable, Equatable {
-    var id: String
-    var page: Int
-    var rects: [AnnoRect]
-    var excerpt: String
-    var color: String
-    var kind: String
-    var note: String
-    var created: Int
-}
-
-struct StoredBookmark: Codable, Identifiable, Equatable {
-    var page: Int
-    var label: String
-    var created: Int
-    var id: Int { page }
-}
-
-struct DocData: Codable, Equatable {
-    var annotations: [StoredAnnotation]
-    var bookmarks: [StoredBookmark]
-    static let empty = DocData(annotations: [], bookmarks: [])
-}
-
-// MARK: - streaming card
-
-/// One AI stream: buffers reasoning/content per the v1 StreamBuffer semantics —
-/// reasoning accumulates until the first answer delta; a reasoning-only stream
-/// ends as dimmed reasoning; nothing at all becomes （已停止）/（无返回内容）.
-@MainActor
-final class StreamCard: ObservableObject, Identifiable {
-    enum Phase: Equatable {
-        case streaming
-        case done
-        case empty(stopped: Bool)
-        case error(String)
-        case notice(String)
-    }
-
-    let id = UUID()
-    var requestId: Int64
-    let title: String
-    let meta: String
-    let sourceText: String
-    @Published var reasoning = ""
-    @Published var content = ""
-    @Published var phase: Phase = .streaming
-
-    init(requestId: Int64 = -1, title: String, meta: String = "", sourceText: String = "") {
-        self.requestId = requestId
-        self.title = title
-        self.meta = meta
-        self.sourceText = sourceText
-    }
-
-    static func makeNotice(_ message: String) -> StreamCard {
-        let card = StreamCard(title: "")
-        card.phase = .notice(message)
-        return card
-    }
-
-    func push(_ delta: String, reasoning isReasoning: Bool) {
-        if isReasoning {
-            if content.isEmpty { reasoning += delta }
-        } else {
-            content += delta
-        }
-    }
-
-    func finish(stopped: Bool = false) {
-        if content.isEmpty && reasoning.isEmpty {
-            phase = .empty(stopped: stopped)
-        } else {
-            phase = .done
-        }
-    }
-
-    func fail(_ message: String) {
-        phase = .error(message)
-    }
-
-    var copyText: String {
-        if !content.isEmpty { return content }
-        return reasoning
-    }
-}
-
-// MARK: - PDF tab
-
-struct OutlineNode: Identifiable {
-    let id = UUID()
-    let label: String
-    let destination: PDFDestination?
-    let children: [OutlineNode]
-}
-
+/// One open PDF document inside one reader window. Owns exactly one PDFView
+/// (plus a split mirror) so selection, zoom and scroll survive for the
+/// window's lifetime; business actions live in ReaderModel.
 @MainActor
 final class PDFTab: ObservableObject, Identifiable {
     let id = UUID()
@@ -152,7 +15,7 @@ final class PDFTab: ObservableObject, Identifiable {
     let title: String
     let pdfView: GistPDFView
     let splitPdfView: GistPDFView
-    weak var model: PDFGistModel?
+    weak var reader: ReaderModel?
 
     @Published var pageCount = 0
     @Published var currentPage = 1
@@ -167,15 +30,15 @@ final class PDFTab: ObservableObject, Identifiable {
     var recentTask: Task<Void, Never>?
     var annoTask: Task<Void, Never>?
 
-    init(path: String, title: String, document: PDFDocument, model: PDFGistModel) {
+    init(path: String, title: String, document: PDFDocument, reader: ReaderModel) {
         self.path = path
         self.title = title
-        self.model = model
+        self.reader = reader
         let view = GistPDFView()
         view.minScaleFactor = 0.4
         view.maxScaleFactor = 4.0
         view.autoScales = false
-        view.displayMode = model.settings.view_mode == "double" ? .twoUp : .singlePage
+        view.displayMode = reader.app?.settings.view_mode == "double" ? .twoUp : .singlePage
         view.displaysPageBreaks = true
         view.document = document
         self.pdfView = view
@@ -204,7 +67,7 @@ final class PDFTab: ObservableObject, Identifiable {
     }
 
     func zoomIn() {
-        if let epub = model?.epubTab, model?.epubActive == true {
+        if let epub = reader?.epub, reader?.epubActive == true {
             epub.applyFontScale(min(2.0, epub.fontScale * 1.1))
             return
         }
@@ -212,7 +75,7 @@ final class PDFTab: ObservableObject, Identifiable {
     }
 
     func zoomOut() {
-        if let epub = model?.epubTab, model?.epubActive == true {
+        if let epub = reader?.epub, reader?.epubActive == true {
             epub.applyFontScale(max(0.7, epub.fontScale / 1.1))
             return
         }
@@ -245,7 +108,7 @@ final class PDFTab: ObservableObject, Identifiable {
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(BlockMenuItem(title: L10n.t("ui.menu.translate")) { [weak self] in
-            self?.model?.translateSelection()
+            self?.reader?.translateSelection()
         })
         menu.addItem(.separator())
         let highlightColors: [(String, String)] = [
@@ -255,14 +118,14 @@ final class PDFTab: ObservableObject, Identifiable {
         ]
         for (color, key) in highlightColors {
             menu.addItem(BlockMenuItem(title: L10n.t(key)) { [weak self] in
-                self?.model?.addAnnotationFromSelection(color: color, kind: "highlight")
+                self?.reader?.addAnnotationFromSelection(color: color, kind: "highlight")
             })
         }
         menu.addItem(BlockMenuItem(title: L10n.t("ui.menu.underline")) { [weak self] in
-            self?.model?.addAnnotationFromSelection(color: "blue", kind: "underline")
+            self?.reader?.addAnnotationFromSelection(color: "blue", kind: "underline")
         })
         menu.addItem(BlockMenuItem(title: L10n.t("ui.menu.strike")) { [weak self] in
-            self?.model?.addAnnotationFromSelection(color: "yellow", kind: "strike")
+            self?.reader?.addAnnotationFromSelection(color: "yellow", kind: "strike")
         })
         menu.addItem(.separator())
         let copy = NSMenuItem(
@@ -275,136 +138,23 @@ final class PDFTab: ObservableObject, Identifiable {
     }
 }
 
-/// NSMenuItem that fires a closure (no responder-chain plumbing).
+/// Per reader window: the open document (PDF or EPUB, or none = welcome
+/// state) plus everything the document commands — find, AI, annotations,
+/// page surgery, TTS, printing. The process-wide backend and settings live
+/// in the shared AppModel.
 @MainActor
-final class BlockMenuItem: NSMenuItem {
-    @MainActor private let handler: () -> Void
+final class ReaderModel: ObservableObject {
+    private(set) weak var app: AppModel?
 
-    init(title: String, handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(fire), keyEquivalent: "")
-        target = self
-    }
-
-    @available(*, unavailable)
-    required init(coder: NSCoder) {
-        fatalError("not supported")
-    }
-
-    @objc private func fire() { handler() }
-}
-
-/// PDFView subclass offering the annotation/translate context menu whenever a
-/// text selection exists.
-final class GistPDFView: PDFView {
-    weak var hostTab: PDFTab?
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        guard currentSelection != nil, let tab = hostTab else { return super.menu(for: event) }
-        return tab.selectionMenu()
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
-        if currentSelection == nil {
-            hostTab?.model?.selectionCleared()
-        }
-    }
-}
-
-// MARK: - main model
-
-enum AITab: String, CaseIterable, Identifiable {
-    case translate, summarize, chat, notes, forms, settings
-    var id: String { rawValue }
-}
-
-struct ChatBubble: Identifiable {
-    let id = UUID()
-    let isUser: Bool
-    var text: String
-    var dimmed: Bool
-    var card: StreamCard?
-
-    static func user(_ text: String) -> ChatBubble {
-        ChatBubble(isUser: true, text: text, dimmed: false, card: nil)
-    }
-}
-
-struct PasswordPrompt: Identifiable {
-    let id = UUID()
-    let wrong: Bool
-    let continuation: CheckedContinuation<String?, Never>
-}
-
-// @unchecked Sendable: newer SDKs infer the conformance for delegate
-// storage, older Swift 6.1 toolchains (Xcode 16.4, the Intel release
-// runner) demand it explicitly and then reject the mutable model
-// reference. Sound by construction — the delegate only touches the
-// model from @MainActor tasks.
-final class TTSDelegate: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
-    weak var model: PDFGistModel?
-
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor [weak self] in self?.model?.ttsSpeaking = false }
-    }
-
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor [weak self] in self?.model?.ttsSpeaking = false }
-    }
-}
-
-@MainActor
-final class PDFGistModel: ObservableObject {
-@MainActor
-private final class EventRelay {
-    weak var model: PDFGistModel?
-    init(_ model: PDFGistModel) { self.model = model }
-    func receive(_ event: RivetEvent) { model?.receive(event) }
-    func ready(settings: RivetTypes.SettingsView, presets: [RivetTypes.ProviderPreset], recents: [RivetTypes.RecentEntry]) {
-        model?.relayReady(settings: settings, presets: presets, recents: recents)
-    }
-    func fail(_ message: String) {
-        guard let model else { return }
-        model.ready = false
-        model.status = message
-    }
-}
-
-    @Published var ready = false
-    @Published var status = ""
-    @Published var settings = RivetTypes.SettingsView(
-        provider: "deepseek", base_url: "", model: "", target_language: .zh,
-        view_mode: "single", annotation_sidecar: false, has_api_key: false, recent: [])
-    @Published var presets: [RivetTypes.ProviderPreset] = []
-    @Published var recents: [RivetTypes.RecentEntry] = []
-
-    @Published var tabs: [PDFTab] = []
-    @Published var activeTabID: PDFTab.ID?
-    @Published var epubTab: EpubTab?
+    @Published var pdf: PDFTab?
+    @Published var epub: EpubTab?
     @Published var epubActive = false
-    @Published var epubTextReady = false
-    @Published var leftPanelVisible = false
-    @Published var leftPanelMode = 0  // 0 thumbs / 1 outline
-    @Published var aiVisible = true
+
+    /// Sidebar navigation (pure current-document: thumbs / outline / notes).
+    @Published var sidebarMode = 0  // 0 thumbs / 1 outline / 2 annotations
+
+    @Published var aiVisible = false
     @Published var aiTab: AITab = .translate
-    @Published var leftWidth: CGFloat
-    @Published var aiWidth: CGFloat
-    @Published var theme: String
-    @Published var showAlert = false
-    @Published var alertText = ""
-    @Published var passwordPrompt: PasswordPrompt?
-    @Published var dropActive = false
-    @Published var ttsSpeaking = false
-
-    // updater state (backend verifies/downloads; this model polls)
-    @Published var updateState: UpdateState = .idle
-    @Published var showUpdateSheet = false
-    /// metadata of the newest available update (version, size); shown in the sheet
-    @Published var updateInfo: UpdateCheckResult?
-    private var updatePollTimer: Timer?
-
-    // AI state
     @Published var translateCards: [StreamCard] = []
     @Published var summarizeCards: [StreamCard] = []
     @Published var chatBubbles: [ChatBubble] = []
@@ -414,12 +164,15 @@ private final class EventRelay {
     @Published var findQuery = ""
     @Published var findTotal = 0
     @Published var findIndex = 0
+    @Published var ttsSpeaking = false
+    @Published var showAlert = false
+    @Published var alertText = ""
+    @Published var passwordPrompt: PasswordPrompt?
 
     private var chatHistory: [[String]] = []
     private var chatLive: StreamCard?
     private var chatPendingQuestion = ""
     private var stoppingStreams: Set<Int64> = []
-    private var streamRegistry: [Int64: StreamCard] = [:]
     private var findTask: Task<Void, Never>?
     private var findHits: [PDFSelection] = []
     // EPUB whole-book search results (chapter, ordinal) — v1 EpubHit
@@ -427,198 +180,47 @@ private final class EventRelay {
     private var epubFindQuery = ""
     private var epubFindHitIndex = 0
 
-    private var backend: EmbeddedRacketBackend?
-    private var apiRef: RivetAPI?
+    private let synthesizer = AVSpeechSynthesizer()
+    private lazy var ttsDelegate = TTSDelegate()
 
-    var activeTab: PDFTab? { epubActive ? nil : tabs.first { $0.id == activeTabID } }
-
-    var resolvedColorScheme: ColorScheme? {
-        switch theme {
-        case "light": return .light
-        case "dark": return .dark
-        default: return nil
-        }
+    init(app: AppModel) {
+        self.app = app
     }
 
-    init() {
-        let defaults = UserDefaults.standard
-        let storedTheme = defaults.string(forKey: "pdfgist-theme") ?? "system"
-        let storedLeft = defaults.double(forKey: "pdfgist-left-w")
-        let storedAI = defaults.double(forKey: "pdfgist-sidebar-w")
-        leftWidth = min(max(storedLeft == 0 ? 232 : storedLeft, 160), 440)
-        aiWidth = min(max(storedAI == 0 ? 400 : storedAI, 280), 680)
-        theme = storedTheme
-        // v1 UI is Chinese-first; en.json exists, so follow the system locale.
-        L10n.language = Locale.preferredLanguages.first?.hasPrefix("zh") == false ? "en" : "zh"
+    var hasDocument: Bool { pdf != nil || epub != nil }
+
+    var documentPath: String? { epubActive ? epub?.path : pdf?.path }
+
+    var documentTitle: String? {
+        if epubActive, let epub { return epub.title }
+        return pdf?.title
     }
 
-    func persistPanelWidths() {
-        let defaults = UserDefaults.standard
-        defaults.set(Double(leftWidth), forKey: "pdfgist-left-w")
-        defaults.set(Double(aiWidth), forKey: "pdfgist-sidebar-w")
+    func alert(_ message: String) {
+        alertText = message
+        showAlert = true
     }
 
-    func setTheme(_ value: String) {
-        theme = value
-        UserDefaults.standard.set(value, forKey: "pdfgist-theme")
-    }
-
-    func toggleTheme() {
-        setTheme(resolvedColorScheme == .dark ? "light" : "dark")
-    }
-
-    // MARK: backend lifecycle
-
-    func start() {
-        guard backend == nil else { return }
-        installHostActions()
-        UpdaterInstaller.cleanupStaleBackup()
-
-        do {
-            let config = try EmbeddedRacketConfiguration.resolvedDefault(
-                moduleName: RivetGeneratedConfig.moduleName,
-                entryName: RivetGeneratedConfig.entryName)
-            let backend = EmbeddedRacketBackend(configuration: config)
-            let relay = EventRelay(self)
-            self.backend = backend
-            status = "Starting embedded Racket CS…"
-            // taskly-family start pattern: the embedded runtime handshake is
-            // quick, so start synchronously on the main actor and keep every
-            // use of self inside MainActor-isolated code — no detached-task
-            // captures for older Swift 6 toolchains (the Intel release
-            // runner's Xcode 16.4) to reject as data races.
-            try backend.start { [weak relay] name, value in
-                guard let event = try? RivetEvent.decode(name: name, value: value) else { return }
-                Task { @MainActor in relay?.receive(event) }
-            }
-            let api = RivetAPI(client: backend.client)
-            apiRef = api
-            Task { await bootstrap(api, relay: relay) }
-        } catch {
-            status = "Configuration error: \(error)"
-        }
-    }
-
-    /// Post-start initialization, all on the main actor: locale, the initial
-    /// settings/presets/recents fetches, and open-on-launch (stands in for
-    /// v1's file association via the PDFGIST_OPEN env var — the bare SwiftPM
-    /// binary creates no window when launched with a positional argument;
-    /// the Windows/Linux hosts wire their own launch/association
-    /// convention).
-    private func bootstrap(_ api: RivetAPI, relay: EventRelay) async {
-        do {
-            try await api.initialize()
-            // Backend error strings follow the host locale.
-            try? await api.set_locale(code: L10n.language)
-            async let settings = api.get_settings()
-            async let presets = api.list_presets()
-            async let recents = api.get_recents()
-            let (s, p, r) = try await (settings, presets, recents)
-            relay.ready(settings: s, presets: p, recents: r)
-            if let launch = ProcessInfo.processInfo.environment["PDFGIST_OPEN"],
-               ["pdf", "epub"].contains(
-                URL(fileURLWithPath: launch).pathExtension.lowercased()) {
-                await openPath(launch)
-            }
-        } catch {
-            relay.fail(String(describing: error))
-        }
-    }
-
-    private func installHostActions() {
-        HostActions.open = { [weak self] in self?.pickAndOpen() }
-        HostActions.find = { [weak self] in
-            guard let self else { return }
-            if self.epubActive {
-                if self.epubTab != nil { self.findVisible = true }
-                return
-            }
-            guard self.activeTab != nil else { return }
-            self.findVisible = true
-        }
-        HostActions.toggleBookmark = { [weak self] in self?.toggleBookmark() }
-        HostActions.closeTab = { [weak self] in self?.closeActiveReader() ?? false }
-        HostActions.printDocument = { [weak self] in self?.printActive() }
-        HostActions.toggleTTS = { [weak self] in self?.toggleTTS() }
-        HostActions.pageEdit = { [weak self] op in self?.runPageEdit(op) }
-        HostActions.zoomIn = { [weak self] in self?.activeTab?.zoomIn() }
-        HostActions.zoomOut = { [weak self] in self?.activeTab?.zoomOut() }
-    }
-
-    private func bootstrap(settings: RivetTypes.SettingsView, presets: [RivetTypes.ProviderPreset], recents: [RivetTypes.RecentEntry]) {
-        self.settings = settings
-        self.presets = presets
-        self.recents = recents
-        ready = true
-        status = ""
-    }
-
-    // MARK: events
-
-    private func receive(_ event: RivetEvent) {
-        switch event {
-        case .stream_chunk(let chunk):
-            streamRegistry[chunk.request_id]?.push(chunk.delta, reasoning: chunk.is_reasoning)
-        case .stream_done(let done):
-            finishStream(requestId: done.request_id, error: nil)
-        case .stream_error(let error):
-            finishStream(requestId: error.request_id, error: error.message)
-        }
-    }
-
-    private func finishStream(requestId: Int64, error: String?) {
-        guard let card = streamRegistry.removeValue(forKey: requestId) else { return }
-        let stopped = stoppingStreams.remove(requestId) != nil
-        if let error {
-            card.fail(error)
-        } else {
-            card.finish(stopped: stopped)
-        }
-        if chatLive === card {
-            finalizeChat(card)
-        }
-    }
-
-    // MARK: open / tabs
-
-    func pickAndOpen() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.pdf]
-        panel.message = L10n.t("ui.toolbar.open")
-        let handle: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            Task { await self?.openPath(url.path) }
-        }
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window, completionHandler: handle)
-        } else {
-            handle(panel.runModal())
-        }
-    }
+    // MARK: open
 
     func openDropped(_ urls: [URL]) {
         guard let url = urls.first(where: { ["pdf", "epub"].contains($0.pathExtension.lowercased()) }) else { return }
         Task { await openPath(url.path) }
     }
 
-    func openRecent(_ entry: RivetTypes.RecentEntry) {
-        Task { await openPath(entry.path, resumePage: Int(entry.page)) }
-    }
-
-    func openPath(_ path: String, resumePage: Int = 1) async {
+    /// Open into this window. The window only ever holds one document, so an
+    /// occupied window is either showing the same file (jump to the resume
+    /// page) or the caller should have opened a new window instead.
+    func openPath(_ path: String, resumePage: Int? = nil) async {
         if path.lowercased().hasSuffix(".epub") {
-            await openEpub(path, resumeChapter: resumePage)
+            await openEpub(path, resumeChapter: resumePage ?? app?.recentPage(path) ?? 1)
             return
         }
-        epubActive = false
-        if let existing = tabs.first(where: { $0.path == path }) {
-            activateTab(existing.id)
-            if resumePage > 1 { existing.goToPage(resumePage) }
+        if let existing = pdf, existing.path == path {
+            if let page = resumePage ?? app?.recentPage(path), page > 1 { existing.goToPage(page) }
             return
         }
+        guard pdf == nil && epub == nil else { return }
         guard let doc = PDFDocument(url: URL(fileURLWithPath: path)) else {
             alert(L10n.t("ui.open-failed", path))
             return
@@ -631,44 +233,37 @@ private final class EventRelay {
             if doc.unlock(withPassword: password) { break }
         }
         let title = URL(fileURLWithPath: path).lastPathComponent
-        let tab = PDFTab(path: path, title: title, document: doc, model: self)
-        tab.resumePage = max(resumePage, 1)
-        tabs.append(tab)
-        if tabs.count == 1 { leftPanelVisible = true }
-        activateTab(tab.id)
+        let tab = PDFTab(path: path, title: title, document: doc, reader: self)
+        tab.resumePage = max(resumePage ?? app?.recentPage(path) ?? 1, 1)
+        pdf = tab
+        epubActive = false
+        sidebarMode = 0
         loadDocData(tab)
         noteActivity(tab, immediate: true)
     }
 
-    func activateTab(_ id: PDFTab.ID) {
-        epubActive = false
-        activeTabID = id
-        findVisible = false
-        findQuery = ""
-        clearFindHighlights()
-    }
-
-    // MARK: EPUB tab lifecycle
+    // MARK: EPUB (one book per window)
 
     func openEpub(_ path: String, resumeChapter: Int = 1) async {
-        if let existing = epubTab, existing.path == path {
+        if let existing = epub, existing.path == path {
             epubActive = true
             if resumeChapter > 1 { existing.goToChapter(resumeChapter) }
             return
         }
-        guard let api = apiRef else {
+        guard pdf == nil && epub == nil else { return }
+        guard let api = app?.api else {
             alert(L10n.t("ui.backend-not-ready"))
             return
         }
-        // one EPUB tab at a time (v1 allowed a mixed tab bar; difference noted)
-        if let old = epubTab { old.teardown() }
         let title = URL(fileURLWithPath: path).lastPathComponent
         let config = WKWebViewConfiguration()
         let view = WKWebView(frame: .zero, configuration: config)
         view.setValue(false, forKey: "drawsBackground")
-        let tab = EpubTab(path: path, title: title, view: view, model: self)
-        epubTab = tab
+        let tab = EpubTab(path: path, title: title, view: view, reader: self)
+        epub = tab
         epubActive = true
+        pdf = nil
+        sidebarMode = 1
         findVisible = false
         tab.loadBook(api: api)
         if resumeChapter > 1 {
@@ -677,56 +272,71 @@ private final class EventRelay {
         noteEpubActivity(tab, immediate: true)
     }
 
-    func activateEpub() {
-        epubActive = true
-    }
-
-    func closeEpub() {
-        if let tab = epubTab {
-            tab.teardown()
-            saveEpubRecentNow(tab)
-        }
-        epubTab = nil
-        epubActive = false
-    }
-
     func noteEpubChapter(_ tab: EpubTab) {
         noteEpubActivity(tab)
     }
 
-    @discardableResult
-    func closeActiveReader() -> Bool {
-        if epubActive, epubTab != nil {
-            closeEpub()
-            return true
+    // MARK: window lifecycle
+
+    /// Called when the window closes: flush pending persistence, stop live
+    /// streams, tear the web view down.
+    func closeDocument() {
+        if let tab = pdf {
+            tab.recentTask?.cancel()
+            tab.annoTask?.cancel()
+            flushAnnotationSave(tab)
+            saveRecentNow(tab)
         }
-        if activeTabID != nil {
-            return closeActiveTab()
+        if let epub = epub {
+            epub.recentTask?.cancel()
+            saveEpubRecentNow(epub)
+            epub.teardown()
         }
-        return false
+        let live = (translateCards + summarizeCards + chatBubbles.compactMap { $0.card })
+            .map { $0.requestId }
+            .filter { $0 > 0 }
+        app?.stopStreams(live)
     }
 
-    @discardableResult
-    func closeTab(_ id: PDFTab.ID) -> Bool {
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
-        let tab = tabs.remove(at: index)
-        tab.recentTask?.cancel()
-        tab.annoTask?.cancel()
-        flushAnnotationSave(tab)
-        saveRecentNow(tab)
-        if activeTabID == id {
-            activeTabID = tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)].id
+    // MARK: page navigation (Go menu / toolbar)
+
+    func goPage(_ step: Int) {
+        if epubActive, let epub = epub {
+            epub.goToChapter(max(1, min(epub.currentPage + step, max(epub.chapters, 1))))
+            return
         }
-        return true
+        guard let tab = pdf else { return }
+        tab.goToPage(max(1, min(tab.currentPage + step, tab.pageCount)))
     }
 
-    func closeActiveTab() -> Bool {
-        guard let id = activeTabID else { return false }
-        return closeTab(id)
+    func goToEdgePage(last: Bool) {
+        if epubActive, let epub = epub {
+            epub.goToChapter(last ? max(epub.chapters, 1) : 1)
+            return
+        }
+        guard let tab = pdf else { return }
+        tab.goToPage(last ? tab.pageCount : 1)
     }
 
-    func printActive() {
-        guard let doc = activeTab?.document,
+    func toggleSplit() {
+        pdf?.splitOn.toggle()
+    }
+
+    func openFind() {
+        if epubActive {
+            if epub != nil { findVisible = true }
+            return
+        }
+        guard pdf != nil else { return }
+        findVisible = true
+    }
+
+    func selectionCleared() {}
+
+    // MARK: print
+
+    func printDocument() {
+        guard let doc = pdf?.document,
               let op = doc.printOperation(for: .shared, scalingMode: .pageScaleDownToFit, autoRotate: true)
         else { return }
         op.run()
@@ -739,7 +349,7 @@ private final class EventRelay {
     }
 
     private func runPageEditAsync(_ op: PageEditOp) async {
-        guard let tab = activeTab, let api = apiRef else { return }
+        guard let tab = pdf, let api = app?.api else { return }
         let page = Int64(tab.currentPage)
         do {
             let data: Data
@@ -805,36 +415,33 @@ private final class EventRelay {
 
     // MARK: TTS (read the current page aloud — v1 main.ts toggleTTS)
 
-    private let synthesizer = AVSpeechSynthesizer()
-    private lazy var ttsDelegate = TTSDelegate()
-
     func toggleTTS() {
         if ttsSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
             ttsSpeaking = false
             return
         }
-        if epubActive, let epub = epubTab {
+        if epubActive, let epub = epub {
             let raw = epubTextSync(epub) // cache-filled by prefetch
             guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 alert(L10n.t("ui.tts.empty"))
                 return
             }
-            synthesizer.delegate = ttsDelegate
-            let utterance = AVSpeechUtterance(string: String(raw.prefix(20000)))
-            utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
-            utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-            synthesizer.speak(utterance)
-            ttsSpeaking = true
+            speak(raw)
             return
         }
-        guard let page = activeTab?.pdfView.currentPage, let raw = page.string else { return }
+        guard let page = pdf?.pdfView.currentPage, let raw = page.string else { return }
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             alert(L10n.t("ui.tts.empty"))
             return
         }
+        speak(text)
+    }
+
+    private func speak(_ text: String) {
         synthesizer.delegate = ttsDelegate
+        ttsDelegate.reader = self
         let utterance = AVSpeechUtterance(string: String(text.prefix(20000)))
         utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
@@ -842,21 +449,19 @@ private final class EventRelay {
         ttsSpeaking = true
     }
 
+    // MARK: PDFKit callbacks (from PDFViewport coordinator)
+
     func pageChanged(_ tab: PDFTab) {
         if let page = tab.pdfView.currentPage, let doc = tab.pdfView.document {
             tab.currentPage = doc.index(for: page) + 1
         }
         tab.refreshBookmarkFlag()
-        if tab.id == activeTabID {
-            noteActivity(tab)
-        }
+        noteActivity(tab)
     }
 
     func scaleChanged(_ tab: PDFTab) {
         tab.scalePercent = Int(round(tab.pdfView.scaleFactor * 100))
     }
-
-    func selectionCleared() {}
 
     // MARK: recents
 
@@ -873,14 +478,8 @@ private final class EventRelay {
     }
 
     private func saveEpubRecent(_ tab: EpubTab) async {
-        guard ready else { return }
-        let pages = max(tab.chapters, 1)
-        let ratio = Int64((Double(tab.currentPage) / Double(pages) * 100_000).rounded())
-        _ = try? await apiRef?.update_recents(
-            path: tab.path, page: Int64(tab.currentPage), scroll_ratio_scaled: ratio)
-        if let recents = try? await apiRef?.get_recents() {
-            self.recents = recents
-        }
+        guard let app else { return }
+        await app.noteRecent(path: tab.path, page: tab.currentPage, of: tab.chapters)
     }
 
     private func saveEpubRecentNow(_ tab: EpubTab) {
@@ -900,15 +499,7 @@ private final class EventRelay {
     }
 
     private func saveRecent(_ tab: PDFTab) async {
-        guard ready else { return }
-        let pages = max(tab.pageCount, 1)
-        // Page-based scroll estimate; resume only uses the page number.
-        let ratio = Int64((Double(tab.currentPage) / Double(pages) * 100_000).rounded())
-        _ = try? await apiRef?.update_recents(
-            path: tab.path, page: Int64(tab.currentPage), scroll_ratio_scaled: ratio)
-        if let recents = try? await apiRef?.get_recents() {
-            self.recents = recents
-        }
+        await app?.noteRecent(path: tab.path, page: tab.currentPage, of: tab.pageCount)
     }
 
     private func saveRecentNow(_ tab: PDFTab) {
@@ -919,15 +510,15 @@ private final class EventRelay {
     // MARK: document data (annotations + bookmarks)
 
     private func loadDocData(_ tab: PDFTab) {
-        Task {
-            guard let api = apiRef else { return }
+        Task { [weak self] in
+            guard let self, let app = self.app, let api = app.api else { return }
             if let data = try? await api.get_annotations(
-                pdf_path: tab.path, sidecar: settings.annotation_sidecar),
+                pdf_path: tab.path, sidecar: app.settings.annotation_sidecar),
                let decoded = try? JSONDecoder().decode(DocData.self, from: data) {
                 tab.docData = decoded
-                applyStoredAnnotations(tab)
+                self.applyStoredAnnotations(tab)
                 tab.refreshBookmarkFlag()
-                rebuildOutline(tab)
+                self.rebuildOutline(tab)
             }
         }
     }
@@ -958,7 +549,7 @@ private final class EventRelay {
     }
 
     func addAnnotationFromSelection(color: String, kind: String) {
-        guard let tab = activeTab, let selection = tab.pdfView.currentSelection,
+        guard let tab = pdf, let selection = tab.pdfView.currentSelection,
               let text = selection.string?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty, let page = selection.pages.first,
               let doc = tab.document else { return }
@@ -978,7 +569,7 @@ private final class EventRelay {
     }
 
     func removeAnnotation(_ id: String) {
-        guard let tab = activeTab else { return }
+        guard let tab = pdf else { return }
         tab.docData.annotations.removeAll { $0.id == id }
         guard let doc = tab.document else { return }
         for index in 0..<doc.pageCount {
@@ -1006,14 +597,14 @@ private final class EventRelay {
     }
 
     private func storeAnnotationData(_ tab: PDFTab) async {
-        guard let api = apiRef else { return }
+        guard let app, let api = app.api else { return }
         guard let data = try? JSONEncoder().encode(tab.docData) else { return }
         try? await api.set_annotations(
-            pdf_path: tab.path, sidecar: settings.annotation_sidecar, data: data)
+            pdf_path: tab.path, sidecar: app.settings.annotation_sidecar, data: data)
     }
 
     func toggleBookmark() {
-        guard let tab = activeTab else { return }
+        guard let tab = pdf else { return }
         if let index = tab.docData.bookmarks.firstIndex(where: { $0.page == tab.currentPage }) {
             tab.docData.bookmarks.remove(at: index)
         } else {
@@ -1028,7 +619,7 @@ private final class EventRelay {
     }
 
     func removeBookmark(_ page: Int) {
-        guard let tab = activeTab else { return }
+        guard let tab = pdf else { return }
         tab.docData.bookmarks.removeAll { $0.page == page }
         tab.refreshBookmarkFlag()
         queueAnnotationSave(tab)
@@ -1053,7 +644,7 @@ private final class EventRelay {
     }
 
     func goToOutline(_ node: OutlineNode) {
-        guard let tab = activeTab, let destination = node.destination else { return }
+        guard let tab = pdf, let destination = node.destination else { return }
         tab.pdfView.go(to: destination)
     }
 
@@ -1077,11 +668,6 @@ private final class EventRelay {
         prompt.continuation.resume(returning: nil)
     }
 
-    func alert(_ message: String) {
-        alertText = message
-        showAlert = true
-    }
-
     // MARK: text sources (parity with the v1 sidebar TextSource)
 
     func pageText(_ tab: PDFTab, page: Int) -> String? {
@@ -1091,12 +677,12 @@ private final class EventRelay {
     }
 
     func selectionText() -> String? {
-        if epubActive, let epub = epubTab {
+        if epubActive, let epub = epub {
             let text = epub.pendingSelection?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return text.count > 1 ? text : nil
         }
-        guard let tab = activeTab, let selection = tab.pdfView.currentSelection else { return nil }
+        guard let tab = pdf, let selection = tab.pdfView.currentSelection else { return nil }
         let text = selection.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return text.count > 1 ? text : nil
     }
@@ -1104,7 +690,7 @@ private final class EventRelay {
     /// Whole-document context: first 12 pages, 3000 chars each, `--- 第 N 页 ---`
     /// markers — same payload the v1 viewer assembled.
     func docText(_ tab: PDFTab) -> (pages: Int, text: String)? {
-        if epubActive, let epub = epubTab {
+        if epubActive, let epub = epub {
             var parts: [String] = []
             var used = 0
             for i in 1...max(1, epub.chapters) {
@@ -1135,7 +721,7 @@ private final class EventRelay {
     }
 
     func currentPageText() -> (page: Int, text: String)? {
-        if epubActive, let epub = epubTab {
+        if epubActive, let epub = epub {
             let chapter = epub.currentPage
             var text = (epub.textCache[chapter] ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1145,7 +731,7 @@ private final class EventRelay {
             }
             return (chapter, text)
         }
-        guard let tab = activeTab else { return nil }
+        guard let tab = pdf else { return nil }
         let page = tab.currentPage
         guard var text = pageText(tab, page: page)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return nil }
@@ -1166,168 +752,33 @@ private final class EventRelay {
     /// whole-book search read from the cache without waiting. Concurrent
     /// epub RPCs stall on the embedded channel, so this must stay serial.
     func prefetchEpubText(_ epub: EpubTab) {
-        guard let api = apiRef else { return }
+        guard let api = app?.api else { return }
         Task { [weak self] in
             for i in 1...max(1, epub.chapters) {
                 if Task.isCancelled { return }
                 let text = (try? await api.epub_chapter_text(path: epub.path, index: Int64(i))) ?? ""
                 await MainActor.run { epub.textCache[i] = text }
             }
-            await MainActor.run { self?.epubTextReady = true }
+            await MainActor.run { epub.textReady = true }
         }
-    }
-
-    private func relayReady(settings: RivetTypes.SettingsView, presets: [RivetTypes.ProviderPreset], recents: [RivetTypes.RecentEntry]) {
-        self.settings = settings
-        self.presets = presets
-        self.recents = recents
-        ready = true
-        status = ""
-        autoCheckForUpdates()
-    }
-
-    // MARK: updates (payback family pattern: check → download → install)
-
-    /// Silent launch-time check, throttled server-side to once a day;
-    /// only an available update opens the sheet (a failure never nags).
-    private func autoCheckForUpdates() {
-        Task {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            checkUpdates(throttled: true, present: false)
-        }
-    }
-
-    func checkForUpdates() {
-        checkUpdates(throttled: false, present: true)
-    }
-
-    private func checkUpdates(throttled: Bool, present: Bool) {
-        guard let api = apiRef else {
-            if present {
-                updateState = .error(L10n.t("ui.backend-not-ready"))
-                showUpdateSheet = true
-            }
-            return
-        }
-        Task {
-            do {
-                let data = try await api.check_updates(force: !throttled)
-                let result = try JSONDecoder().decode(UpdateCheckResult.self, from: data)
-                if result.status == "available" && present {
-                    updateInfo = result
-                    updateState = .idle
-                    showUpdateSheet = true
-                } else if result.status == "up-to-date" && present {
-                    updateState = .upToDate
-                    showUpdateSheet = true
-                } else if result.status == "error" && present {
-                    updateState = .error(result.message ?? "unknown error")
-                    showUpdateSheet = true
-                }
-            } catch {
-                if present {
-                    updateState = .error("\(error)")
-                    showUpdateSheet = true
-                }
-            }
-        }
-    }
-
-    func startDownload() {
-        guard let api = apiRef else { return }
-        // optimistic: the first state poll (0.4s) confirms with real progress
-        updateState = UpdateState(phase: "downloading", percent: 0, message: nil,
-                                  downloadedPath: nil,
-                                  availableVersion: updateInfo?.availableVersion)
-        Task {
-            do {
-                _ = try await api.start_download()
-                startPolling()
-            } catch {
-                updateState = .error(Self.cleanError(error))
-                alert(Self.cleanError(error))
-            }
-        }
-    }
-
-    private func startPolling() {
-        updatePollTimer?.invalidate()
-        let timer = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.pollUpdateState() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        updatePollTimer = timer
-        pollUpdateState()
-    }
-
-    private func pollUpdateState() {
-        guard let api = apiRef else { return }
-        Task {
-            do {
-                let data = try await api.update_state()
-                let state = try JSONDecoder().decode(UpdateState.self, from: data)
-                updateState = state
-                if state.phase != "downloading" {
-                    updatePollTimer?.invalidate()
-                    updatePollTimer = nil
-                }
-            } catch {
-                updatePollTimer?.invalidate()
-                updatePollTimer = nil
-            }
-        }
-    }
-
-    func installUpdate() {
-        guard updateState.phase == "downloaded",
-              let path = updateState.downloadedPath else { return }
-        do {
-            try UpdaterInstaller.install(artifactAt: URL(fileURLWithPath: path))
-        } catch {
-            alert(L10n.t("ui.update.install-failed", "\(error)"))
-        }
-    }
-
-    /// RVT1 failures arrive as "...error: <message>"; keep the message.
-    static func cleanError(_ error: Error) -> String {
-        let text = "\(error)"
-        if let range = text.range(of: "error: ") {
-            return String(text[range.upperBound...])
-        }
-        return text
     }
 
     // MARK: AI streams
 
-    func languageName(_ code: RivetTypes.TargetLanguage) -> String {
-        switch code {
-        case .zh: return "中文"
-        case .zh_hant: return "繁體中文"
-        case .en: return "English"
-        case .ja: return "日本語"
-        case .ko: return "한국어"
-        case .fr: return "Français"
-        case .de: return "Deutsch"
-        case .es: return "Español"
-        }
-    }
-
-    /// v1 ensureProviderConfigured: no base URL/model/key (except local
-    /// Ollama) means the settings tab opens with a notice instead.
+    /// v1 ensureProviderConfigured: nothing configured means the settings
+    /// window opens with a notice instead of a doomed request.
     private func ensureProvider(
-        for keyPath: ReferenceWritableKeyPath<PDFGistModel, [StreamCard]>
+        for keyPath: ReferenceWritableKeyPath<ReaderModel, [StreamCard]>
     ) -> Bool {
-        let ok = !settings.base_url.isEmpty && !settings.model.isEmpty
-            && (settings.has_api_key || settings.provider == "ollama")
-        if !ok {
-            aiTab = .settings
-            self[keyPath: keyPath].insert(
-                StreamCard.makeNotice(L10n.t("ui.settings.need-config")), at: 0)
-        }
-        return ok
+        if app?.providerConfigured() == true { return true }
+        aiTab = .translate
+        app?.openSettings()
+        self[keyPath: keyPath].insert(
+            StreamCard.makeNotice(L10n.t("ui.settings.need-config")), at: 0)
+        return false
     }
 
-    private func prependNotice(_ message: String, to keyPath: ReferenceWritableKeyPath<PDFGistModel, [StreamCard]>) {
+    private func prependNotice(_ message: String, to keyPath: ReferenceWritableKeyPath<ReaderModel, [StreamCard]>) {
         self[keyPath: keyPath].insert(StreamCard.makeNotice(message), at: 0)
     }
 
@@ -1338,11 +789,11 @@ private final class EventRelay {
 
     private func startCardStream(
         card: StreamCard,
-        list: ReferenceWritableKeyPath<PDFGistModel, [StreamCard]>,
+        list: ReferenceWritableKeyPath<ReaderModel, [StreamCard]>,
         launch: @escaping @MainActor (RivetAPI) async throws -> RivetTypes.StreamStart
     ) {
         self[keyPath: list].insert(card, at: 0)
-        guard let api = apiRef else {
+        guard let api = app?.api else {
             card.fail("backend not ready")
             return
         }
@@ -1350,7 +801,7 @@ private final class EventRelay {
             do {
                 let start = try await launch(api)
                 card.requestId = start.request_id
-                streamRegistry[start.request_id] = card
+                app?.streamRegistry[start.request_id] = card
             } catch {
                 card.fail(String(describing: error))
             }
@@ -1368,42 +819,45 @@ private final class EventRelay {
     }
 
     func translateSelectionText(_ text: String) {
-        let lang = languageName(settings.target_language)
+        guard let app else { return }
+        let lang = languageName(app.settings.target_language)
         startCardStream(
             card: StreamCard(
                 title: L10n.t("ui.menu.translate"), meta: "→ \(lang)",
                 sourceText: text),
-            list: \.translateCards) { api in
-            try await api.translate_text(text: text, target: self.settings.target_language)
+            list: \.translateCards) { [weak app] api in
+            try await api.translate_text(text: text, target: app?.settings.target_language ?? .zh)
         }
     }
 
     func translateCurrentPage() {
+        guard let app else { return }
         guard ensureProvider(for: \.translateCards) else { return }
         guard let source = currentPageText() else {
             prependNotice(L10n.t("ui.need.document"), to: \.translateCards)
             return
         }
-        let lang = languageName(settings.target_language)
+        let lang = languageName(app.settings.target_language)
         let payload = "以下是 PDF 第 \(source.page) 页提取的文本：\n\n\(source.text)"
         startCardStream(
             card: StreamCard(
                 title: epubActive ? L10n.t("ui.epub.translate-title", "\(source.page)")
                                   : L10n.t("ui.translate.page-title", "\(source.page)"), meta: "→ \(lang)",
                 sourceText: source.text),
-            list: \.translateCards) { api in
-            try await api.translate_text(text: payload, target: self.settings.target_language)
+            list: \.translateCards) { [weak app] api in
+            try await api.translate_text(text: payload, target: app?.settings.target_language ?? .zh)
         }
     }
 
     // summarize ----------------------------------------------------------------
 
-    private func summarize(title: String, meta: String, text: String, mode: RivetTypes.SummarizeMode, list: ReferenceWritableKeyPath<PDFGistModel, [StreamCard]>) {
+    private func summarize(title: String, meta: String, text: String, mode: RivetTypes.SummarizeMode, list: ReferenceWritableKeyPath<ReaderModel, [StreamCard]>) {
+        guard let app else { return }
         guard ensureProvider(for: list) else { return }
-        let lang = languageName(settings.target_language)
+        let lang = languageName(app.settings.target_language)
         startCardStream(
             card: StreamCard(title: title, meta: meta.isEmpty ? lang : "\(lang) · \(meta)", sourceText: text),
-            list: list) { api in
+            list: list) { [weak app] api in
             try await api.summarize_text(text: text, mode: mode)
         }
     }
@@ -1428,7 +882,7 @@ private final class EventRelay {
     }
 
     func summarizeDoc() {
-        guard let tab = activeTab, let source = docText(tab), !source.text.isEmpty else {
+        guard let tab = pdf, let source = docText(tab), !source.text.isEmpty else {
             prependNotice(L10n.t("ui.need.document"), to: \.summarizeCards)
             return
         }
@@ -1446,10 +900,10 @@ private final class EventRelay {
             guard let text = selectionText() else { return nil }
             return (text, "选区")
         case 2:
-            guard let tab = activeTab, let source = docText(tab), !source.text.isEmpty else { return nil }
+            guard let tab = pdf, let source = docText(tab), !source.text.isEmpty else { return nil }
             return (source.text, "全文前 \(source.pages) 页")
         default:
-            guard let tab = activeTab, let page = currentPageText() else { return nil }
+            guard let page = currentPageText() else { return nil }
             return ("第 \(page.page) 页：\n\(page.text)", "第 \(page.page) 页")
         }
     }
@@ -1459,6 +913,7 @@ private final class EventRelay {
     }
 
     func sendChat(_ rawQuestion: String) {
+        guard let app else { return }
         let question = rawQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !chatBusy else { return }
         guard let context = chatContext() else {
@@ -1466,36 +921,39 @@ private final class EventRelay {
                 ? L10n.t("ui.chat.need-selection") : L10n.t("ui.need.document"))
             return
         }
-        if !settings.base_url.isEmpty && !settings.model.isEmpty
-            && (settings.has_api_key || settings.provider == "ollama") {
+        if app.providerConfigured() {
             // ok
         } else {
-            aiTab = .settings
+            aiTab = .chat
+            app.openSettings()
             appendAssistantText(L10n.t("ui.settings.need-config"))
             return
         }
         chatBubbles.append(ChatBubble.user(question))
-        let card = StreamCard(title: "chat", meta: languageName(settings.target_language))
+        let card = StreamCard(title: "chat", meta: languageName(app.settings.target_language))
         chatBubbles.append(ChatBubble(isUser: false, text: "", dimmed: false, card: card))
         chatLive = card
         chatPendingQuestion = question
         chatBusy = true
-        guard let api = apiRef else {
+        card.onFinish = { [weak self] finished in
+            MainActor.assumeIsolated { self?.finalizeChat(finished) }
+        }
+        guard let api = app.api else {
             card.fail("backend not ready")
             finalizeChat(card)
             return
         }
         let history = Array(chatHistory.suffix(12))
-        Task {
+        Task { [weak self] in
             do {
                 let start = try await api.chat(
                     context_text: context.text, context_label: context.label,
                     history: history, user_message: question)
                 card.requestId = start.request_id
-                streamRegistry[start.request_id] = card
+                self?.app?.streamRegistry[start.request_id] = card
             } catch {
                 card.fail(String(describing: error))
-                finalizeChat(card)
+                self?.finalizeChat(card)
             }
         }
     }
@@ -1533,7 +991,7 @@ private final class EventRelay {
             return
         }
         stoppingStreams.insert(card.requestId)
-        Task { try? await apiRef?.stop_stream(request_id: card.requestId) }
+        Task { [weak self] in try? await self?.app?.api?.stop_stream(request_id: card.requestId) }
     }
 
     func stopChat() {
@@ -1545,11 +1003,11 @@ private final class EventRelay {
     func runFind() {
         findTask?.cancel()
         let query = findQuery
-        if epubActive, let epub = epubTab {
+        if epubActive, let epub = epub {
             runEpubFind(query, epub)
             return
         }
-        guard let tab = activeTab, !query.isEmpty else {
+        guard let tab = pdf, !query.isEmpty else {
             findTotal = 0
             findIndex = 0
             clearFindHighlights()
@@ -1612,7 +1070,7 @@ private final class EventRelay {
     }
 
     private func navigateFind(_ step: Int) {
-        if epubActive, let epub = epubTab {
+        if epubActive, let epub = epub {
             guard !epubFindHits.isEmpty else { return }
             epubFindHitIndex = (epubFindHitIndex + step + epubFindHits.count) % epubFindHits.count
             let hit = epubFindHits[epubFindHitIndex]
@@ -1620,7 +1078,7 @@ private final class EventRelay {
             epub.highlightHit(chapter: hit.chapter, ordinal: hit.ordinal, query: epubFindQuery)
             return
         }
-        guard let tab = activeTab, !findHits.isEmpty else { return }
+        guard let tab = pdf, !findHits.isEmpty else { return }
         findIndex = (findIndex + step + findHits.count) % findHits.count
         tab.pdfView.go(to: findHits[findIndex])
     }
@@ -1631,61 +1089,12 @@ private final class EventRelay {
         findTotal = 0
         epubFindHits = []
         epubFindHitIndex = 0
-        epubTab?.clearHighlights()
+        epub?.clearHighlights()
         clearFindHighlights()
     }
 
     private func clearFindHighlights() {
         findHits = []
-        activeTab?.pdfView.highlightedSelections = nil
-    }
-
-    // MARK: settings actions
-
-    func saveApiKey(_ key: String) async -> String {
-        guard let api = apiRef else { return "backend not ready" }
-        do {
-            try await api.save_api_key(key: key)
-            settings = try await api.get_settings()
-            return L10n.t("ui.settings.saved")
-        } catch {
-            return L10n.t("ui.settings.save-failed", String(describing: error))
-        }
-    }
-
-    func testConnection(baseURL: String, apiKey: String, model: String) async -> (message: String, models: [String]) {
-        guard let api = apiRef else { return ("backend not ready", []) }
-        do {
-            let result = try await api.test_connection(base_url: baseURL, api_key: apiKey, model: model)
-            if result.ok {
-                let models = result.models ?? []
-                let message = models.isEmpty
-                    ? L10n.t("ui.settings.test-ok-no-list")
-                    : L10n.t("ui.settings.test-ok", "\(models.count)")
-                return (message, models)
-            }
-            return (result.error ?? "unknown error", [])
-        } catch {
-            return (String(describing: error), [])
-        }
-    }
-
-    func saveSettings(
-        provider: String, baseURL: String, model: String,
-        target: RivetTypes.TargetLanguage, viewMode: String, sidecar: Bool
-    ) async -> String {
-        guard let api = apiRef else { return "backend not ready" }
-        let update = RivetTypes.SettingsUpdate(
-            provider: provider, base_url: baseURL, model: model,
-            target_language: target, view_mode: viewMode, annotation_sidecar: sidecar)
-        do {
-            let saved = try await api.save_settings(update: update)
-            settings = saved
-            let double = viewMode == "double"
-            for tab in tabs { tab.setDisplayMode(double: double) }
-            return L10n.t("ui.settings.saved")
-        } catch {
-            return L10n.t("ui.settings.save-failed", String(describing: error))
-        }
+        pdf?.pdfView.highlightedSelections = nil
     }
 }

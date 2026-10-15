@@ -35,7 +35,7 @@ struct UpdateState: Codable {
 }
 
 struct UpdateView: View {
-    @EnvironmentObject private var model: PDFGistModel
+    @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {

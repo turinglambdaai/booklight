@@ -11,13 +11,15 @@ final class EpubTab: ObservableObject, Identifiable {
     let id = UUID()
     let path: String
     let title: String
-    weak var model: PDFGistModel?
+    weak var reader: ReaderModel?
 
     @Published var chapters: Int = 0
     @Published var currentPage: Int = 1        // chapter, kept for recents
     @Published var fontScale: Double = 1.0
     @Published var toc: [RivetTypes.EpubTocItem] = []
     @Published var loaded = false
+    /// all chapter texts prefetched (AI / TTS / whole-book search can read)
+    @Published var textReady = false
 
     var recentTask: Task<Void, Never>?
 
@@ -29,14 +31,18 @@ final class EpubTab: ObservableObject, Identifiable {
     var textCache: [Int: String] = [:]
     var searchHits: [(chapter: Int, range: Range<String.Index>)] = []
 
+    /// last theme pushed into the page ("light"/"dark") so the view layer
+    /// only re-applies on system appearance changes
+    var appliedTheme: String = ""
+
     let webView: WKWebView
     var navDelegate: WKNavigationDelegate?
 
-    init(path: String, title: String, view: WKWebView, model: PDFGistModel) {
+    init(path: String, title: String, view: WKWebView, reader: ReaderModel) {
         self.path = path
         self.title = title
         self.webView = view
-        self.model = model
+        self.reader = reader
     }
 
     /// Strong ownership: WKWebView's delegate property is weak and a
@@ -69,14 +75,14 @@ final class EpubTab: ObservableObject, Identifiable {
                         self.textCache[Int(i)] = (try? await api.epub_chapter_text(path: path, index: Int64(i))) ?? ""
                     }
                 }
-                await MainActor.run { self.model?.epubTextReady = true }
-                let html = Self.pageHTML(sections: sections, theme: model?.theme ?? "system")
+                await MainActor.run { self.textReady = true }
+                let html = Self.pageHTML(sections: sections, theme: Self.systemTheme())
                 self.installDelegates()
                 self.webView.loadHTMLString(html, baseURL: nil)
             } catch let e as ClientError {
-                model?.alert(L10n.t("ui.pages.edit-failed", Self.describe(e)))
+                reader?.alert(L10n.t("ui.pages.edit-failed", Self.describe(e)))
             } catch {
-                model?.alert(L10n.t("ui.pages.edit-failed", String(describing: error)))
+                reader?.alert(L10n.t("ui.pages.edit-failed", String(describing: error)))
             }
         }
     }
@@ -84,6 +90,13 @@ final class EpubTab: ObservableObject, Identifiable {
     static func describe(_ e: ClientError) -> String {
         if case .backend(let message) = e { return message }
         return String(describing: e)
+    }
+
+    /// The reading page follows the system appearance (no in-app theme
+    /// toggle — Apple form); the reader re-applies this on view updates.
+    static func systemTheme() -> String {
+        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? "dark" : "light"
     }
 
     // MARK: presentation state pushed into the page
@@ -248,7 +261,7 @@ extension EpubTab {
 }
 
 /// Hosts the tab's long-lived WKWebView. The representable only re-attaches
-/// the view; all state flows through EpubTab.
+/// the view and keeps the page theme in step with the system appearance.
 struct EpubViewport: NSViewRepresentable {
     @ObservedObject var tab: EpubTab
 
@@ -256,7 +269,13 @@ struct EpubViewport: NSViewRepresentable {
         tab.webView
     }
 
-    func updateNSView(_ view: WKWebView, context: Context) {}
+    func updateNSView(_ view: WKWebView, context: Context) {
+        let theme = EpubTab.systemTheme()
+        if theme != tab.appliedTheme {
+            tab.appliedTheme = theme
+            tab.applyTheme(theme)
+        }
+    }
 }
 
 extension EpubTab {
@@ -282,7 +301,7 @@ extension EpubTab {
                 case "chapter":
                     if let ch = obj["chapter"] as? Int {
                         tab.currentPage = ch
-                        tab.model?.noteEpubChapter(tab)
+                        tab.reader?.noteEpubChapter(tab)
                     }
                 default:
                     break

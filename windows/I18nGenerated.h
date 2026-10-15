@@ -243,6 +243,21 @@ inline constexpr struct WinStringEntry {
     {"ui.welcome.tagline", L"接入自己大模型的 AI PDF 阅读器", L"An AI PDF reader that brings your own model"},
     {"update.dev-copy", L"当前是开发副本，自动更新不可用。", L"This is a development copy — auto-update is unavailable."},
     {"update.msi-installed", L"当前副本通过 MSI 安装，请到发布页下载新安装包完成升级。", L"This copy was installed via the MSI — grab the new installer from the releases page."},
+    {"ui.menu.new-window", L"新建窗口", L"New Window"},
+    {"ui.menu.open-recent", L"打开最近", L"Open Recent"},
+    {"ui.menu.go", L"前往", L"Go"},
+    {"ui.menu.prev-page", L"上一页", L"Previous Page"},
+    {"ui.menu.next-page", L"下一页", L"Next Page"},
+    {"ui.menu.first-page", L"第一页", L"First Page"},
+    {"ui.menu.last-page", L"最后一页", L"Last Page"},
+    {"ui.menu.actual-size", L"实际大小", L"Actual Size"},
+    {"ui.menu.print", L"打印", L"Print"},
+    {"ui.menu.find", L"搜索", L"Find"},
+    {"ui.menu.bookmark", L"书签当前页", L"Bookmark This Page"},
+    {"ui.menu.tts", L"朗读本页", L"Read Aloud"},
+    {"ui.menu.single-page", L"单页", L"Single Pages"},
+    {"ui.menu.double-page", L"双页", L"Two Pages"},
+    {"ui.sidebar.annotations", L"批注", L"Annotations"},
 };
 
 }  // namespace pdfgist

@@ -1,58 +1,141 @@
 import SwiftUI
 import AppKit
-import PDFKit
 
 @main
 struct PDFGistApp: App {
-    @StateObject private var model = PDFGistModel()
+    @StateObject private var app = AppModel()
 
     var body: some Scene {
-        WindowGroup(RivetGeneratedConfig.displayName) {
-            ContentView()
-                .environmentObject(model)
-                .frame(minWidth: 960, minHeight: 620)
+        // One document per window, Preview-style: native window tabs
+        // (Window > Merge All Windows), a nil value shows the welcome state
+        // and a path opens straight into the document.
+        WindowGroup(id: "reader", for: String.self) { $path in
+            DocumentWindowView(path: path)
+                .environmentObject(app)
+                .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1280, height: 820)
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                Button(L10n.t("ui.toolbar.open")) { HostActions.open?() }
-                    .keyboardShortcut("o")
-            }
-            CommandGroup(after: .newItem) {
-                Button(L10n.t("ui.update.check-menu")) { model.checkForUpdates() }
-                    .keyboardShortcut("u", modifiers: .command)
-            }
-            CommandMenu(L10n.t("ui.menu.document")) {
-                Button(L10n.t("ui.toolbar.find")) { HostActions.find?() }
-                    .keyboardShortcut("f")
-                Button(L10n.t("ui.toolbar.bookmark")) { HostActions.toggleBookmark?() }
-                    .keyboardShortcut("b")
-                Button(L10n.t("ui.toolbar.print")) { HostActions.printDocument?() }
-                    .keyboardShortcut("p")
-                Divider()
-                Button(L10n.t("ui.toolbar.tab-close")) {
-                    if HostActions.closeTab?() == true {} // ⌘W itself is handled by the event monitor
-                }
-            }
+        .windowToolbarStyle(.unified)
+        .commands { AppCommands(app: app) }
+
+        Settings {
+            SettingsSceneView()
+                .environmentObject(app)
         }
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var keyMonitor: Any?
+/// Menu bar following the Preview layout: File (new/open/open recent/print),
+/// Edit (find), View (display modes, zoom, split, bookmark, TTS), Go (pages).
+struct AppCommands: Commands {
+    let app: AppModel
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // ⌘W must close the current document tab, not the window (v1 parity).
-        // The system Close command keeps working once every tab is closed.
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.numericPad) == .command,
-                  event.charactersIgnoringModifiers == "w" else { return event }
-            let handled = MainActor.assumeIsolated { HostActions.closeTab?() ?? false }
-            return handled ? nil : event
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button(L10n.t("ui.menu.new-window")) {
+                app.openWindow?(nil)
+            }
+            .keyboardShortcut("n")
+
+            Button(L10n.t("ui.menu.open")) {
+                HostActions.open?()
+            }
+            .keyboardShortcut("o")
+
+            openRecentMenu
+
+            Divider()
+
+            Button(L10n.t("ui.menu.print")) {
+                HostActions.printDocument?()
+            }
+            .keyboardShortcut("p")
+        }
+
+        CommandGroup(after: .appInfo) {
+            Button(L10n.t("ui.update.check-menu")) {
+                app.checkForUpdates()
+            }
+            .keyboardShortcut("u")
+        }
+
+        CommandGroup(after: .textEditing) {
+            Button(L10n.t("ui.menu.find")) {
+                HostActions.find?()
+            }
+            .keyboardShortcut("f")
+        }
+
+        CommandMenu(L10n.t("ui.menu.view")) {
+            Button(L10n.t("ui.menu.single-page")) {
+                HostActions.setDisplayMode?(false)
+            }
+            .keyboardShortcut("1")
+            Button(L10n.t("ui.menu.double-page")) {
+                HostActions.setDisplayMode?(true)
+            }
+            .keyboardShortcut("2")
+            Divider()
+            Button(L10n.t("ui.menu.zoom-in")) {
+                HostActions.zoomIn?()
+            }
+            .keyboardShortcut("=")
+            Button(L10n.t("ui.menu.zoom-out")) {
+                HostActions.zoomOut?()
+            }
+            .keyboardShortcut("-")
+            Button(L10n.t("ui.menu.actual-size")) {
+                HostActions.zoomReset?()
+            }
+            .keyboardShortcut("0")
+            Button(L10n.t("ui.viewer.fit")) {
+                HostActions.fitWidth?()
+            }
+            Divider()
+            Toggle(L10n.t("ui.toolbar.split"), isOn: Binding(
+                get: { app.activeReader?.pdf?.splitOn ?? false },
+                set: { _ in HostActions.toggleSplit?() }))
+            Divider()
+            Button(L10n.t("ui.menu.bookmark")) {
+                HostActions.toggleBookmark?()
+            }
+            .keyboardShortcut("b")
+            Button(L10n.t("ui.menu.tts")) {
+                HostActions.toggleTTS?()
+            }
+        }
+
+        CommandMenu(L10n.t("ui.menu.go")) {
+            Button(L10n.t("ui.menu.prev-page")) {
+                HostActions.page?(-1)
+            }
+            .keyboardShortcut(.leftArrow, modifiers: .command)
+            Button(L10n.t("ui.menu.next-page")) {
+                HostActions.page?(1)
+            }
+            .keyboardShortcut(.rightArrow, modifiers: .command)
+            Divider()
+            Button(L10n.t("ui.menu.first-page")) {
+                HostActions.firstPage?()
+            }
+            Button(L10n.t("ui.menu.last-page")) {
+                HostActions.lastPage?()
+            }
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
-        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+    /// Standard File > Open Recent, driven by the backend's recents list (it
+    /// keeps the resume page); mirroring into NSDocumentController keeps the
+    /// Dock's recent-files list in sync.
+    @ViewBuilder
+    private var openRecentMenu: some View {
+        Menu(L10n.t("ui.menu.open-recent")) {
+            ForEach(Array(app.recents.prefix(10).enumerated()), id: \.element.path) { _, entry in
+                Button((entry.path as NSString).lastPathComponent) {
+                    app.openWindow?(entry.path)
+                }
+            }
+        }
+        .disabled(app.recents.isEmpty)
     }
 }

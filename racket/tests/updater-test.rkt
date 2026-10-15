@@ -15,7 +15,8 @@
          json
          net/base64
          rackunit
-         rivet/distribution
+         (except-in rivet/distribution
+                    platform-symbol architecture-symbol installer-extension)
          racket/file
          racket/path
          racket/tcp

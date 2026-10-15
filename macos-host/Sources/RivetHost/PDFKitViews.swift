@@ -41,12 +41,12 @@ struct PDFViewport: NSViewRepresentable {
             observers.append(center.addObserver(
                 forName: .PDFViewPageChanged, object: tab.pdfView, queue: .main
             ) { _ in
-                MainActor.assumeIsolated { tab.model?.pageChanged(tab) }
+                MainActor.assumeIsolated { tab.reader?.pageChanged(tab) }
             })
             observers.append(center.addObserver(
                 forName: .PDFViewScaleChanged, object: tab.pdfView, queue: .main
             ) { _ in
-                MainActor.assumeIsolated { tab.model?.scaleChanged(tab) }
+                MainActor.assumeIsolated { tab.reader?.scaleChanged(tab) }
             })
         }
 
