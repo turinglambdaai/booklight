@@ -41,10 +41,42 @@
                 <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE700;" />
             </ToggleButton>
             <Button
+                x:Name="RecentsButton"
+                ToolTipService.ToolTip="最近打开">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE823;" />
+                <Button.Flyout>
+                    <MenuFlyout x:Name="RecentsFlyout" Opening="RecentsFlyout_Opening" Placement="Bottom" />
+                </Button.Flyout>
+            </Button>
+            <Button
                 x:Name="FindToggle"
                 Click="FindToggle_Click"
                 ToolTipService.ToolTip="搜索">
                 <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE721;" />
+            </Button>
+            <ToggleButton
+                x:Name="BookmarkToggle"
+                Click="Bookmark_Click"
+                ToolTipService.ToolTip="书签当前页">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE734;" />
+            </ToggleButton>
+            <ToggleButton
+                x:Name="SplitToggle"
+                Click="Split_Click"
+                ToolTipService.ToolTip="分屏视图">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE89A;" />
+            </ToggleButton>
+            <ToggleButton
+                x:Name="TtsButton"
+                Click="TtsButton_Click"
+                ToolTipService.ToolTip="朗读本页">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE720;" />
+            </ToggleButton>
+            <Button
+                x:Name="PrintButton"
+                Click="PrintButton_Click"
+                ToolTipService.ToolTip="打印">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE749;" />
             </Button>
             <ToggleButton
                 x:Name="AiToggle"
@@ -67,7 +99,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <!-- left panel: recents / thumbnails / outline / page ops -->
+            <!-- left panel: thumbnails / outline / notes / page ops -->
             <Grid
                 Grid.Column="0"
                 x:Name="LeftPanel"
@@ -92,14 +124,20 @@
                     <ToggleButton
                         x:Name="ThumbsMode"
                         Click="ThumbsMode_Click"
-                        MinWidth="104">
+                        MinWidth="64">
                         <TextBlock x:Name="ThumbsModeLabel" Text="缩略图" FontSize="12" />
                     </ToggleButton>
                     <ToggleButton
                         x:Name="OutlineMode"
                         Click="OutlineMode_Click"
-                        MinWidth="104">
+                        MinWidth="64">
                         <TextBlock x:Name="OutlineModeLabel" Text="目录" FontSize="12" />
+                    </ToggleButton>
+                    <ToggleButton
+                        x:Name="NotesMode"
+                        Click="NotesMode_Click"
+                        MinWidth="64">
+                        <TextBlock x:Name="NotesModeLabel" Text="批注" FontSize="12" />
                     </ToggleButton>
                 </StackPanel>
 

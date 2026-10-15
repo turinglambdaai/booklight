@@ -24,6 +24,40 @@ struct PdfTab;
 struct EpubBook;
 struct StreamCardUi;
 
+// ---- annotation storage (JSON schema of racket/pdfgist/annotations.rkt) ------
+// Rects are PDF page space, origin BOTTOM-LEFT, y up (PDFKit page space on
+// mac). The Windows view flips PDFium's top-left rects on store and again on
+// draw — this contract is what keeps cross-app sidecars in sync.
+
+struct AnnoRectD {
+  double x = 0;
+  double y = 0;
+  double width = 0;
+  double height = 0;
+};
+
+struct StoredAnnotation {
+  std::wstring id;
+  int page = 1;
+  std::vector<AnnoRectD> rects;
+  std::wstring excerpt;
+  std::wstring color;  // yellow / green / blue
+  std::wstring kind;   // highlight / underline / strike
+  std::wstring note;
+  std::int64_t created = 0;
+};
+
+struct StoredBookmark {
+  int page = 1;
+  std::wstring label;
+  std::int64_t created = 0;
+};
+
+struct DocData {
+  std::vector<StoredAnnotation> annotations;
+  std::vector<StoredBookmark> bookmarks;
+};
+
 // ---- reading tab ---------------------------------------------------------------
 
 struct PdfTab {
@@ -40,11 +74,22 @@ struct PdfTab {
   winrt::Microsoft::UI::Xaml::Controls::ScrollViewer scroll{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::StackPanel rows{nullptr};
 
+  // split view (second read-only view of the same document; follows the main
+  // view's scroll ratio — mac SplitViewport semantics)
+  bool split_on = false;
+  winrt::Microsoft::UI::Xaml::Controls::Grid split_container{nullptr};
+  winrt::Microsoft::UI::Xaml::Controls::ScrollViewer split_scroll{nullptr};
+  winrt::Microsoft::UI::Xaml::Controls::StackPanel split_rows{nullptr};
+
   struct Cell {
     int page = 0;  // 1-based
     winrt::Microsoft::UI::Xaml::Controls::Grid grid{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::Canvas canvas{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::Image image{nullptr};
+    // split-view twins (built only while split is on)
+    winrt::Microsoft::UI::Xaml::Controls::Grid split_grid{nullptr};
+    winrt::Microsoft::UI::Xaml::Controls::Canvas split_canvas{nullptr};
+    winrt::Microsoft::UI::Xaml::Controls::Image split_image{nullptr};
     double width = 0;   // effective px at the current scale
     double height = 0;
     std::int64_t rendered_key = 0;  // (scale, raster, dark) stamp of the bitmap
@@ -55,6 +100,11 @@ struct PdfTab {
 
   // per-page find rectangles (top-left points), drawn under the selection
   std::map<int, std::vector<std::array<double, 4>>> find_rects;
+
+  // stored annotations + bookmarks (loaded via get-annotations)
+  DocData doc_data;
+  bool doc_data_loaded = false;
+  bool anno_dirty = false;
 
   // rubber-band selection state (top-left points)
   bool selecting = false;
@@ -133,6 +183,19 @@ struct MainWindow : MainWindowT<MainWindow> {
                         winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OutlineMode_Click(winrt::Windows::Foundation::IInspectable const&,
                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void NotesMode_Click(winrt::Windows::Foundation::IInspectable const&,
+                       winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void Bookmark_Click(winrt::Windows::Foundation::IInspectable const&,
+                      winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void Split_Click(winrt::Windows::Foundation::IInspectable const&,
+                   winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void TtsButton_Click(winrt::Windows::Foundation::IInspectable const&,
+                       winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void PrintButton_Click(winrt::Windows::Foundation::IInspectable const&,
+                         winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void RecentsFlyout_Opening(
+      winrt::Windows::Foundation::IInspectable const&,
+      winrt::Windows::Foundation::IInspectable const&);
   void DocTabs_SelectionChanged(winrt::Windows::Foundation::IInspectable const&,
                                 winrt::Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const&);
   void DocTabs_CloseRequested(winrt::Windows::Foundation::IInspectable const&,
@@ -237,6 +300,37 @@ struct MainWindow : MainWindowT<MainWindow> {
                              winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
   void FinishSelection(std::shared_ptr<PdfTab> tab);
   void ClearSelection(PdfTab& tab);
+
+  // annotations & bookmarks (MainWindow.Annotations.cpp)
+  void LoadDocData(std::shared_ptr<PdfTab> tab);
+  void QueueAnnotationSave();
+  void SaveDocDataNow(std::shared_ptr<PdfTab> tab);
+  void AddAnnotationFromSelection(std::wstring const& color,
+                                  std::wstring const& kind);
+  void RemoveAnnotation(std::wstring const& id);
+  void ToggleBookmark();
+  void UpdateBookmarkToggle();
+  void BuildNotesPane(winrt::Microsoft::UI::Xaml::Controls::StackPanel const& content);
+  void DrawStoredOverlays(PdfTab::Cell& cell, PdfTab const& tab);
+  std::string SerializeDocData(DocData const& data);
+  bool ParseDocData(std::string const& json, DocData* out);
+
+  // split view (MainWindow.xaml.cpp)
+  void ApplySplitLayout(PdfTab& tab);
+  void SyncSplitView(PdfTab& tab);
+  void ToggleSplit();
+
+  // TTS (MainWindow.Tts.cpp)
+  void ToggleTts();
+  void TtsSpeak(std::wstring const& text);
+  void TtsStop();
+  void TtsSetSpeaking(bool speaking);
+  winrt::Windows::Media::SpeechSynthesis::SpeechSynthesizer tts_synth_{nullptr};
+  winrt::Windows::Media::Playback::MediaPlayer tts_player_{nullptr};
+  bool tts_speaking_ = false;
+
+  // printing (MainWindow.Print.cpp)
+  void PrintDocument();
 
   // find
   void RunFind();
@@ -347,6 +441,21 @@ struct MainWindow : MainWindowT<MainWindow> {
   void RunBakeDialog();
   void PickPdfFile(std::function<void(std::wstring const&)> on_picked);
 
+  // ---- AcroForm pane (MainWindow.Forms.cpp) ----
+  void BuildFormsPane();
+  void ShowFormStatus(std::wstring const& text, bool is_error);
+  void RefreshFormFields();
+  void RebuildFormFieldsUi();
+  void ApplyFormFieldText(std::wstring const& name);
+  void ExportFilledPdf();
+  std::vector<pdfgist::FormField> form_fields_;
+  std::map<std::wstring, std::wstring> form_text_values_;
+  std::map<std::wstring, bool> form_check_values_;
+  winrt::Microsoft::UI::Xaml::Controls::StackPanel forms_pane_{nullptr};
+  winrt::Microsoft::UI::Xaml::Controls::StackPanel forms_list_{nullptr};
+  winrt::Microsoft::UI::Xaml::Controls::TextBlock forms_status_{nullptr};
+  bool forms_busy_ = false;
+
   // ---- keyboard (MainWindow.xaml.cpp) ----
   void BuildKeyboardAccelerators();
 
@@ -379,7 +488,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   bool epub_active_ = false;
 
   bool left_visible_ = false;
-  int left_mode_ = 0;  // 0 thumbnails / 1 outline
+  int left_mode_ = 0;  // 0 thumbnails / 1 outline / 2 notes
   bool ai_visible_ = true;
   int ai_pane_ = 0;
   std::string theme_ = "system";  // system | light | dark
@@ -414,7 +523,6 @@ struct MainWindow : MainWindowT<MainWindow> {
   bool settings_ui_updating_ = false;
 
   // dynamic content hosts
-  winrt::Microsoft::UI::Xaml::Controls::StackPanel recents_list_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::StackPanel translate_list_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::StackPanel summarize_list_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::StackPanel chat_list_{nullptr};
@@ -427,6 +535,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   // timers
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer find_timer_{nullptr};
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer recents_timer_{nullptr};
+  winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer anno_timer_{nullptr};
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer check_timer_{nullptr};
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer update_timer_{nullptr};
   bool update_downloading_ = false;

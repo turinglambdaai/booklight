@@ -397,20 +397,7 @@ void MainWindow::ClearEpubHighlights() {
 void MainWindow::RenderEpubToc(EpubBook& book) {
   auto const host = LeftContent();
 
-  // recents (same section the PDF panel builds)
-  recents_list_ = muxc::StackPanel();
-  recents_list_.Spacing(2);
-  auto left_top = muxc::StackPanel();
-  left_top.Spacing(4);
-  auto recents_header = muxc::TextBlock();
-  recents_header.Text(pdfgist::Tr("ui.viewer.recents"));
-  recents_header.FontSize(11);
-  recents_header.FontWeight(wut::FontWeights::SemiBold());
-  recents_header.Opacity(0.7);
-  left_top.Children().Append(recents_header);
-  left_top.Children().Append(recents_list_);
-  RefreshRecentsRows();
-
+  // recents stay in the welcome overlay + 打开最近 flyout — TOC only here
   auto content = muxc::StackPanel();
   content.Spacing(1);
   if (book.toc.empty()) {
@@ -461,7 +448,6 @@ void MainWindow::RenderEpubToc(EpubBook& book) {
   }
 
   host.Children().Clear();
-  host.Children().Append(left_top);
   host.Children().Append(content);
 }
 

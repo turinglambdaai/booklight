@@ -149,12 +149,18 @@ MainWindow::MainWindow() {
   };
   set_tip(OpenButton(), pdfgist::Tr("ui.toolbar.open"));
   set_tip(LeftToggle(), pdfgist::Tr("ui.toolbar.panel"));
+  set_tip(RecentsButton(), pdfgist::Tr("ui.viewer.recents"));
   set_tip(FindToggle(), pdfgist::Tr("ui.toolbar.find"));
+  set_tip(BookmarkToggle(), pdfgist::Winize(pdfgist::Tr("ui.toolbar.bookmark")));
+  set_tip(SplitToggle(), pdfgist::Tr("ui.toolbar.split"));
+  set_tip(TtsButton(), pdfgist::Tr("ui.toolbar.tts"));
+  set_tip(PrintButton(), pdfgist::Winize(pdfgist::Tr("ui.toolbar.print")));
   set_tip(AiToggle(), pdfgist::Tr("ui.toolbar.ai"));
   set_tip(ThemeButton(), pdfgist::Tr("ui.toolbar.theme-light") + L" / " +
                              pdfgist::Tr("ui.toolbar.theme-dark"));
   ThumbsModeLabel().Text(pdfgist::Tr("ui.viewer.thumbs"));
   OutlineModeLabel().Text(pdfgist::Tr("ui.viewer.outline"));
+  NotesModeLabel().Text(pdfgist::Tr("ui.sidebar.annotations"));
   WelcomeTitle().Text(pdfgist::Tr("app.name"));
   WelcomeTagline().Text(pdfgist::Tr("ui.welcome.tagline"));
   WelcomeFeature1().Text(pdfgist::Tr("ui.welcome.feature1"));
@@ -203,6 +209,17 @@ MainWindow::MainWindow() {
   recents_timer_.IsRepeating(false);
   recents_timer_.Tick([weak = get_weak()](auto&&, auto&&) {
     if (auto window = weak.get()) window->SaveRecentNow();
+  });
+
+  anno_timer_ = DispatcherQueue().CreateTimer();
+  anno_timer_.Interval(std::chrono::milliseconds{800});
+  anno_timer_.IsRepeating(false);
+  anno_timer_.Tick([weak = get_weak()](auto&&, auto&&) {
+    if (auto window = weak.get()) {
+      for (auto const& tab : window->tabs_) {
+        if (tab->anno_dirty) window->SaveDocDataNow(tab);
+      }
+    }
   });
 
   InitializeBackendAsync();
@@ -332,6 +349,7 @@ void MainWindow::Bootstrap() {
       window->SetStatus(true, L"");
       window->LoadSettingsIntoPane();
       window->RefreshLeftPanel();
+      window->RefreshRecentsRows();  // welcome overlay continue list
       window->HandleInstallMarkers();
       window->StartAutoUpdateCheck();
       // Stand-in for v1's file association (mac bootstrap parity).
@@ -560,17 +578,29 @@ void MainWindow::FindClose_Click(winrt::Windows::Foundation::IInspectable const&
 void MainWindow::ThumbsMode_Click(winrt::Windows::Foundation::IInspectable const&,
                                   mux::RoutedEventArgs const&) {
   left_mode_ = 0;
-  ThumbsMode().IsChecked(true);
-  OutlineMode().IsChecked(false);
   RefreshLeftPanel();
 }
 
 void MainWindow::OutlineMode_Click(winrt::Windows::Foundation::IInspectable const&,
                                    mux::RoutedEventArgs const&) {
   left_mode_ = 1;
-  OutlineMode().IsChecked(true);
-  ThumbsMode().IsChecked(false);
   RefreshLeftPanel();
+}
+
+void MainWindow::NotesMode_Click(winrt::Windows::Foundation::IInspectable const&,
+                                 mux::RoutedEventArgs const&) {
+  left_mode_ = 2;
+  RefreshLeftPanel();
+}
+
+void MainWindow::Bookmark_Click(winrt::Windows::Foundation::IInspectable const&,
+                                mux::RoutedEventArgs const&) {
+  ToggleBookmark();
+}
+
+void MainWindow::Split_Click(winrt::Windows::Foundation::IInspectable const&,
+                             mux::RoutedEventArgs const&) {
+  ToggleSplit();
 }
 
 // ---- tabs ---------------------------------------------------------------------------
@@ -596,9 +626,13 @@ void MainWindow::DocTabs_SelectionChanged(
   }
   CloseFind();
   if (auto tab = active_pdf_) {
+    ApplySplitLayout(*tab);
     LayoutTab(*tab);
     RequestVisibleRenders(*tab);
+    LoadDocData(tab);
   }
+  SplitToggle().IsChecked(active_pdf_ != nullptr && active_pdf_->split_on);
+  UpdateBookmarkToggle();
   RefreshLeftPanel();
   UpdateChrome();
   NoteActivity();
@@ -797,6 +831,7 @@ void MainWindow::OpenDocReady(
     if (window->active_pdf_.get() == shared.get()) {
       window->RequestVisibleRenders(*shared);
       window->TrackCurrentPage(*shared);
+      window->SyncSplitView(*shared);
     }
   });
   scroll.SizeChanged([weak_window, weak_tab](
@@ -812,10 +847,45 @@ void MainWindow::OpenDocReady(
     }
   });
 
-  item.Content(scroll);
+  // two-column container: main view | divider | split view
+  muxc::Grid container;
+  muxc::ColumnDefinition main_column;
+  main_column.Width({1, mux::GridUnitType::Star});
+  container.ColumnDefinitions().Append(main_column);
+  muxc::ColumnDefinition divider_column;
+  divider_column.Width({0, mux::GridUnitType::Pixel});
+  container.ColumnDefinitions().Append(divider_column);
+  muxc::ColumnDefinition split_column;
+  split_column.Width({0, mux::GridUnitType::Pixel});
+  container.ColumnDefinitions().Append(split_column);
+  container.Children().Append(scroll);
+  muxc::Grid::SetColumn(scroll, 0);
+
+  muxc::Border divider;
+  divider.Width(1);
+  divider.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
+  divider.Background(ThemeBorderBrush());
+  container.Children().Append(divider);
+  muxc::Grid::SetColumn(divider, 1);
+
+  muxc::ScrollViewer split_scroll;
+  muxc::StackPanel split_rows;
+  split_rows.Spacing(8);
+  split_rows.Padding({8, 16, 16, 32});
+  split_scroll.Content(split_rows);
+  split_scroll.VerticalScrollBarVisibility(muxc::ScrollBarVisibility::Auto);
+  split_scroll.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
+  split_scroll.Visibility(Visibility::Collapsed);
+  container.Children().Append(split_scroll);
+  muxc::Grid::SetColumn(split_scroll, 2);
+
+  item.Content(container);
   tab->tab_item = item;
   tab->scroll = scroll;
   tab->rows = rows;
+  tab->split_container = container;
+  tab->split_scroll = split_scroll;
+  tab->split_rows = split_rows;
 
   DocTabs().TabItems().Append(item);
   tabs_.push_back(tab);
@@ -826,6 +896,8 @@ void MainWindow::OpenDocReady(
     SaveHostPrefs();
   }
   ActivateTab(tab);
+  ApplySplitLayout(*tab);
+  UpdateBookmarkToggle();
 
   // outline loads in the background; the left panel picks it up
   auto const dispatcher = DispatcherQueue();
@@ -840,6 +912,9 @@ void MainWindow::OpenDocReady(
       }
     });
   }).detach();
+
+  // stored annotations + bookmarks ride the backend sidecar
+  LoadDocData(tab);
 
   if (resume_page > 1 && resume_page <= tab->page_count) {
     ScrollToPage(*tab, resume_page);
@@ -894,6 +969,7 @@ void MainWindow::CloseTab(PdfTab const* tab) {
     if (tabs_[i].get() == tab) {
       auto const shared = tabs_[i];
       auto const index = IndexOfTabItem(shared->tab_item);
+      if (shared->anno_dirty) SaveDocDataNow(shared);  // flush pending save
       if (index < DocTabs().TabItems().Size()) {
         DocTabs().TabItems().RemoveAt(index);
       }
@@ -974,14 +1050,20 @@ void MainWindow::LayoutTab(PdfTab& tab) {
   tab.rows.Children().Clear();
   tab.cells.clear();
   tab.rendering_.clear();
+  if (tab.split_rows) tab.split_rows.Children().Clear();
 
   bool const two_up = settings_.view_mode == "double";
+  bool const build_split = tab.split_on && tab.split_rows != nullptr;
   int page = 1;
   while (page <= tab.page_count) {
     auto row = muxc::StackPanel();
     row.Orientation(muxc::Orientation::Horizontal);
     row.Spacing(8);
     row.HorizontalAlignment(mux::HorizontalAlignment::Center);
+    auto split_row = muxc::StackPanel();
+    split_row.Orientation(muxc::Orientation::Horizontal);
+    split_row.Spacing(8);
+    split_row.HorizontalAlignment(mux::HorizontalAlignment::Center);
     int const second = two_up && page + 1 <= tab.page_count ? page + 1 : 0;
     for (int const p : {page, second}) {
       if (p == 0) break;
@@ -1014,10 +1096,35 @@ void MainWindow::LayoutTab(PdfTab& tab) {
       cell->grid = grid;
       cell->canvas = canvas;
       cell->image = image;
+
+      if (build_split) {
+        // read-only mirror: same bitmap, no input handling
+        auto split_grid = muxc::Grid();
+        split_grid.Width(cell->width);
+        split_grid.Height(cell->height);
+        split_grid.Background(Brush(dark ? wu::Color{0xFF, 0x1A, 0x17, 0x14}
+                                         : wu::Color{0xFF, 0xFF, 0xFF, 0xFF}));
+        auto split_image = muxc::Image();
+        split_image.Stretch(media::Stretch::Fill);
+        split_image.Width(cell->width);
+        split_image.Height(cell->height);
+        split_grid.Children().Append(split_image);
+        auto split_canvas = muxc::Canvas();
+        split_canvas.Width(cell->width);
+        split_canvas.Height(cell->height);
+        split_grid.Children().Append(split_canvas);
+        cell->split_grid = split_grid;
+        cell->split_canvas = split_canvas;
+        cell->split_image = split_image;
+        split_row.Children().Append(split_grid);
+      }
       tab.cells.push_back(cell);
       row.Children().Append(grid);
     }
     tab.rows.Children().Append(row);
+    if (build_split && split_row.Children().Size() > 0) {
+      tab.split_rows.Children().Append(split_row);
+    }
     page = second == 0 ? page + 1 : second + 1;
   }
   RequestVisibleRenders(tab);
@@ -1109,6 +1216,8 @@ void MainWindow::RenderCell(std::shared_ptr<PdfTab> tab,
           std::memcpy(data, rendered.bgra.data(), rendered.bgra.size());
           bitmap.Invalidate();
           cell->image.Source(bitmap);
+          // the split mirror shares the same ImageSource
+          if (cell->split_image) cell->split_image.Source(bitmap);
           cell->rendered_key = static_cast<std::int64_t>(scale * raster * 1000.0) *
                                (dark ? -1 : 1);
         } catch (...) {
@@ -1154,6 +1263,7 @@ void MainWindow::TrackCurrentPage(PdfTab& tab) {
   if (current != tab.current_page) {
     tab.current_page = current;
     UpdatePageBar();
+    UpdateBookmarkToggle();
     NoteActivity();
   }
 }
@@ -1240,6 +1350,60 @@ void MainWindow::FitWidth_Click(winrt::Windows::Foundation::IInspectable const&,
   RelayoutActive();
 }
 
+// ---- split view ------------------------------------------------------------------
+
+// Column widths follow the toggle; the split rows themselves are rebuilt by
+// LayoutTab on the relayout the viewport change triggers.
+void MainWindow::ApplySplitLayout(PdfTab& tab) {
+  if (!tab.split_container) return;
+  try {
+    auto const& columns = tab.split_container.ColumnDefinitions();
+    if (columns.Size() < 3) return;
+    // divider column stays 1px only while split is on
+    columns.GetAt(1).Width(tab.split_on ? mux::GridLength{1, mux::GridUnitType::Pixel}
+                                        : mux::GridLength{0, mux::GridUnitType::Pixel});
+    columns.GetAt(2).Width(tab.split_on
+                               ? mux::GridLength{1, mux::GridUnitType::Star}
+                               : mux::GridLength{0, mux::GridUnitType::Pixel});
+    if (tab.split_scroll) {
+      tab.split_scroll.Visibility(tab.split_on ? Visibility::Visible
+                                               : Visibility::Collapsed);
+    }
+  } catch (...) {
+  }
+}
+
+void MainWindow::ToggleSplit() {
+  auto tab = epub_active_ ? nullptr : active_pdf_.get();
+  if (!tab) return;
+  tab->split_on = !tab->split_on;
+  SplitToggle().IsChecked(tab->split_on);
+  ApplySplitLayout(*tab);
+  // force a relayout so the split rows exist at the new viewport
+  tab->layout_viewport_w = -1;
+  LayoutTab(*tab);
+  RequestVisibleRenders(*tab);
+  SyncSplitView(*tab);
+}
+
+void MainWindow::SyncSplitView(PdfTab& tab) {
+  if (!tab.split_on || !tab.split_scroll || !tab.scroll) return;
+  try {
+    double const main_extent = tab.scroll.ExtentHeight();
+    double const main_viewport = tab.scroll.ViewportHeight();
+    if (main_extent <= main_viewport + 1) return;
+    double const ratio =
+        std::clamp(tab.scroll.VerticalOffset() / (main_extent - main_viewport),
+                   0.0, 1.0);
+    double const split_extent = tab.split_scroll.ExtentHeight();
+    double const split_viewport = tab.split_scroll.ViewportHeight();
+    if (split_extent <= split_viewport + 1) return;
+    tab.split_scroll.ChangeView(nullptr, ratio * (split_extent - split_viewport),
+                                nullptr, true);
+  } catch (...) {
+  }
+}
+
 void MainWindow::PageInput_KeyDown(
     winrt::Windows::Foundation::IInspectable const&,
     mux::Input::KeyRoutedEventArgs const& args) {
@@ -1301,6 +1465,57 @@ void MainWindow::AttachCellHandlers(PdfTab& tab, PdfTab::Cell& cell,
     if (auto window = weak_window.get()) window->LaunchTranslateSelection();
   });
   flyout.Items().Append(translate_item);
+
+  // annotation items; enabled only while a selection exists (flyout.Opening)
+  struct AnnotationItem {
+    wchar_t const* label_key;
+    wchar_t const* color;
+    wchar_t const* kind;
+  };
+  AnnotationItem const annotation_items[] = {
+      {L"", L"yellow", L"highlight"},
+      {L"ui.menu.highlight-yellow", L"yellow", L"highlight"},
+      {L"ui.menu.highlight-green", L"green", L"highlight"},
+      {L"ui.menu.highlight-blue", L"blue", L"highlight"},
+      {L"ui.menu.underline", L"blue", L"underline"},
+      {L"ui.menu.strike", L"yellow", L"strike"},
+  };
+  std::vector<muxc::MenuFlyoutItem> annotation_menu_items;
+  for (std::size_t i = 0; i < std::size(annotation_items); ++i) {
+    auto const& spec = annotation_items[i];
+    if (i == 0) {
+      flyout.Items().Append(muxc::MenuFlyoutSeparator());
+      continue;
+    }
+    auto item = muxc::MenuFlyoutItem();
+    item.Text(pdfgist::Tr(spec.label_key));
+    std::wstring const color = spec.color;
+    std::wstring const kind = spec.kind;
+    item.Click([weak_window, color, kind](
+                   winrt::Windows::Foundation::IInspectable const&,
+                   mux::RoutedEventArgs const&) {
+      if (auto window = weak_window.get()) {
+        window->AddAnnotationFromSelection(color, kind);
+      }
+    });
+    annotation_menu_items.push_back(item);
+  }
+  for (auto const& item : annotation_menu_items) {
+    flyout.Items().Append(item);
+  }
+  flyout.Opening([weak_window, annotation_menu_items](
+                     winrt::Windows::Foundation::IInspectable const&,
+                     winrt::Windows::Foundation::IInspectable const&) {
+    auto window = weak_window.get();
+    if (!window) return;
+    auto const tab = window->epub_active_ ? nullptr : window->active_pdf_.get();
+    bool const has_selection =
+        tab != nullptr && !tab->selection_text.empty() &&
+        !tab->selection_rects.empty();
+    for (auto const& item : annotation_menu_items) {
+      item.IsEnabled(has_selection);
+    }
+  });
   muxc::MenuFlyoutItem copy_item;
   copy_item.Text(pdfgist::Tr("ui.menu.copy"));
   copy_item.Click([weak_window](winrt::Windows::Foundation::IInspectable const&,
@@ -1334,6 +1549,7 @@ void MainWindow::DrawCellOverlays(PdfTab::Cell& cell, PdfTab const& tab) {
   if (scale <= 0) return;
   try {
     cell.canvas.Children().Clear();
+    if (cell.split_canvas) cell.split_canvas.Children().Clear();
 
     auto add_rect = [&](std::array<double, 4> const& rect, wu::Color color) {
       double const left = rect[0] * scale;
@@ -1351,6 +1567,8 @@ void MainWindow::DrawCellOverlays(PdfTab::Cell& cell, PdfTab const& tab) {
       cell.canvas.Children().Append(shape);
     };
 
+    // stored annotations & bookmarks (under find + selection)
+    DrawStoredOverlays(cell, tab);
     // find highlights (page space → px)
     auto const finds = tab.find_rects.find(cell.page);
     if (finds != tab.find_rects.end()) {
@@ -1662,13 +1880,19 @@ void MainWindow::BuildKeyboardAccelerators() {
   add_accel(winrt::Windows::System::VirtualKey::F3, true, [weak = get_weak()] {
     if (auto window = weak.get()) window->NavigateFind(-1);
   });
+  add_accel(winrt::Windows::System::VirtualKey::B, false, [weak = get_weak()] {
+    if (auto window = weak.get()) window->ToggleBookmark();
+  });
+  add_accel(winrt::Windows::System::VirtualKey::P, false, [weak = get_weak()] {
+    if (auto window = weak.get()) window->PrintDocument();
+  });
 }
 
 
 // ---- left panel ------------------------------------------------------------------
 
 void MainWindow::RefreshLeftPanel() {
-  // (re)build: recents + mode row + content (thumbs / outline / TOC) + page ops
+  // (re)build: mode row content (thumbs / outline / notes) + page ops
   // The page-ops row is reused across rebuilds; an element can only have one
   // parent in XAML, so detach it from the panel of the previous build first.
   try {
@@ -1679,27 +1903,17 @@ void MainWindow::RefreshLeftPanel() {
   }
   auto const host = LeftContent();
 
-  // recents section
-  recents_list_ = muxc::StackPanel();
-  recents_list_.Spacing(2);
-  muxc::StackPanel left_top;
-  left_top.Spacing(4);
-  auto recents_header = muxc::TextBlock();
-  recents_header.Text(pdfgist::Tr("ui.viewer.recents"));
-  recents_header.FontSize(11);
-  recents_header.FontWeight(wut::FontWeights::SemiBold());
-  recents_header.Opacity(0.7);
-  left_top.Children().Append(recents_header);
-  left_top.Children().Append(recents_list_);
-  RefreshRecentsRows();
-
   // mode row: hide for EPUB (TOC only) and when nothing is open
   bool const epub_now = epub_active_ && epub_ != nullptr;
   bool const has_reader = epub_now || active_pdf_ != nullptr;
   LeftModeRow().Visibility(has_reader ? Visibility::Visible : Visibility::Collapsed);
   ThumbsMode().Visibility(epub_now ? Visibility::Collapsed : Visibility::Visible);
+  NotesMode().Visibility(epub_now ? Visibility::Collapsed : Visibility::Visible);
   ThumbsMode().IsChecked(!epub_now && left_mode_ == 0);
   OutlineMode().IsChecked(epub_now || left_mode_ == 1);
+  NotesMode().IsChecked(!epub_now && left_mode_ == 2);
+  // EPUB forces the TOC (mac sidebarMode parity)
+  int const effective_mode = epub_now ? 1 : left_mode_;
 
   // page ops row (PDF only — page surgery is a PDF concern)
   page_ops_row_.Visibility(!epub_now && active_pdf_ != nullptr
@@ -1713,7 +1927,7 @@ void MainWindow::RefreshLeftPanel() {
     return;  // RenderEpubToc assembles the whole panel itself
   }
   if (active_pdf_) {
-    if (left_mode_ == 0) {
+    if (effective_mode == 0) {
       // thumbnails (rendered lazily at thumbnail scale)
       auto strip = muxc::StackPanel();
       strip.Spacing(4);
@@ -1770,6 +1984,9 @@ void MainWindow::RefreshLeftPanel() {
       }
       content.Children().Append(strip);
       content.Children().Append(page_ops_row_);
+    } else if (effective_mode == 2) {
+      // notes (annotations + bookmarks)
+      BuildNotesPane(content);
     } else {
       // outline
       if (active_pdf_->outline.empty()) {
@@ -1819,69 +2036,72 @@ void MainWindow::RefreshLeftPanel() {
   }
 
   host.Children().Clear();
-  host.Children().Append(left_top);
   host.Children().Append(content);
 }
 
 void MainWindow::RefreshRecentsRows() {
+  // The recents live in the welcome overlay's continue list and the
+  // toolbar's 打开最近 flyout — the left panel is document-local only.
   try {
-    recents_list_.Children().Clear();
     WelcomeList().Children().Clear();
   } catch (...) {
     return;
   }
   auto const weak = get_weak();
-  int const shown = std::min<std::size_t>(5, recents_.size());
+  int const shown = std::min<std::size_t>(6, recents_.size());
   for (int i = 0; i < shown; ++i) {
     auto const& entry = recents_[static_cast<std::size_t>(i)];
-    auto button = muxc::Button();
-    button.Padding({4, 3, 4, 3});
-    button.MinWidth(0);
-    button.MinHeight(0);
-    button.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
-    auto row = muxc::StackPanel();
-    row.Orientation(muxc::Orientation::Horizontal);
-    row.Spacing(6);
-    muxc::TextBlock page_label;
-    page_label.Text(std::to_wstring(entry.page));
-    page_label.FontSize(10);
-    page_label.FontWeight(wut::FontWeights::SemiBold());
-    page_label.Foreground(Brush(AccentColor()));
-    muxc::TextBlock name_label;
-    name_label.Text(file_name(to_wide(entry.path)));
-    name_label.FontSize(11);
-    name_label.TextTrimming(
-        mux::TextTrimming::CharacterEllipsis);
-    row.Children().Append(page_label);
-    row.Children().Append(name_label);
-    button.Content(row);
+    auto row = muxc::Button();
+    row.Padding({10, 6, 10, 6});
+    row.MinWidth(0);
+    row.MinHeight(0);
+    row.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
+    muxc::TextBlock name_label2;
+    name_label2.Text(file_name(to_wide(entry.path)));
+    name_label2.FontSize(12);
+    row.Content(name_label2);
     rivet_app::RecentEntry const value = entry;
-    button.Click([weak, value](winrt::Windows::Foundation::IInspectable const&,
-                               mux::RoutedEventArgs const&) {
-      if (auto window = weak.get()) window->OpenPath(to_wide(value.path),
-                                                     static_cast<int>(value.page));
+    row.Click([weak, value](winrt::Windows::Foundation::IInspectable const&,
+                            mux::RoutedEventArgs const&) {
+      if (auto window = weak.get()) {
+        window->OpenPath(to_wide(value.path), static_cast<int>(value.page));
+      }
     });
-    recents_list_.Children().Append(button);
+    WelcomeList().Children().Append(row);
+  }
+}
 
-    // welcome-screen continue rows (first 6, like the mac welcome list)
-    if (i < 6) {
-      auto row = muxc::Button();
-      row.Padding({10, 6, 10, 6});
-      row.MinWidth(0);
-      row.MinHeight(0);
-      row.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
-      muxc::TextBlock name_label2;
-      name_label2.Text(file_name(to_wide(entry.path)));
-      name_label2.FontSize(12);
-      row.Content(name_label2);
-      row.Click([weak, value](winrt::Windows::Foundation::IInspectable const&,
-                              mux::RoutedEventArgs const&) {
-        if (auto window = weak.get()) {
-          window->OpenPath(to_wide(value.path), static_cast<int>(value.page));
-        }
-      });
-      WelcomeList().Children().Append(row);
-    }
+// ---- recents flyout ----------------------------------------------------------------
+
+void MainWindow::RecentsFlyout_Opening(
+    winrt::Windows::Foundation::IInspectable const&,
+    winrt::Windows::Foundation::IInspectable const&) {
+  try {
+    RecentsFlyout().Items().Clear();
+  } catch (...) {
+    return;
+  }
+  auto const weak = get_weak();
+  int const shown = std::min<std::size_t>(10, recents_.size());
+  if (shown == 0) {
+    muxc::MenuFlyoutItem empty;
+    empty.IsEnabled(false);
+    empty.Text(pdfgist::Tr("ui.viewer.recents"));
+    RecentsFlyout().Items().Append(empty);
+    return;
+  }
+  for (int i = 0; i < shown; ++i) {
+    auto const& entry = recents_[static_cast<std::size_t>(i)];
+    auto item = muxc::MenuFlyoutItem();
+    item.Text(file_name(to_wide(entry.path)));
+    rivet_app::RecentEntry const value = entry;
+    item.Click([weak, value](winrt::Windows::Foundation::IInspectable const&,
+                             mux::RoutedEventArgs const&) {
+      if (auto window = weak.get()) {
+        window->OpenPath(to_wide(value.path), static_cast<int>(value.page));
+      }
+    });
+    RecentsFlyout().Items().Append(item);
   }
 }
 

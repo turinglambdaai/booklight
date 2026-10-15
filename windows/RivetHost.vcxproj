@@ -81,7 +81,7 @@
       <RuntimeLibrary>$(RivetRuntimeLibrary)</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(RIVET_RACKET_INCLUDE);$(RIVET_ROOT)\runtime\include;$(RIVET_ROOT)\platform\windows\runtime;$(PDFIUM_ROOT)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
-    <Link><AdditionalDependencies>$(RIVET_RACKET_IMPORT_LIB);$(PDFIUM_ROOT)\lib\pdfium.dll.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><AdditionalDependencies>$(RIVET_RACKET_IMPORT_LIB);$(PDFIUM_ROOT)\lib\pdfium.dll.lib;shell32.lib;comdlg32.lib;gdi32.lib;user32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
@@ -124,6 +124,10 @@
     <ClCompile Include="MainWindow.Settings.cpp" />
     <ClCompile Include="MainWindow.Epub.cpp" />
     <ClCompile Include="MainWindow.Pages.cpp" />
+    <ClCompile Include="MainWindow.Annotations.cpp" />
+    <ClCompile Include="MainWindow.Tts.cpp" />
+    <ClCompile Include="MainWindow.Print.cpp" />
+    <ClCompile Include="MainWindow.Forms.cpp" />
     <ClCompile Include="MainWindow.Update.cpp" />
     <ClCompile Include="PdfDocument.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
