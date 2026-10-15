@@ -34,6 +34,9 @@ using FPDF_TEXTPAGE = void*;
 
 constexpr int kBitmapFormatBgra = 2;  // FPDFBitmap_BGRA
 
+// PDFium error codes (FPDF_GetLastError), the ones the host distinguishes.
+constexpr unsigned long kPdfErrorPassword = 4;  // FPDF_ERR_PASSWORD
+
 // ------------------------------------------------------------ conversion --
 
 std::string utf16_to_utf8(unsigned short const* text, std::size_t length);
@@ -43,6 +46,20 @@ std::vector<unsigned short> utf8_to_utf16(std::string const& text);
 
 class Page;
 class TextPage;
+
+// One AcroForm field (FPDF_FORMFIELD_TEXTFIELD / _CHECKBOX / _RADIOBUTTON /
+// _COMBOBOX / _LISTBOX mapped onto three kinds).
+struct FormFieldInfo {
+  enum class Kind { Text, Check, Choice };
+
+  int page = 0;         // 0-based
+  int annot_index = 0;  // widget index on the page (FPDFPage_GetAnnot)
+  Kind kind = Kind::Text;
+  std::string name;     // fully qualified field name
+  std::string value;    // committed value ("" = empty / unchecked)
+  bool checked = false; // checkbox / radio state
+  std::vector<std::string> options;  // choice option labels (in Opt order)
+};
 
 class Document {
  public:
@@ -77,17 +94,43 @@ class Document {
   cairo_surface_t* render_page(int index, double scale, bool dark,
                                int* out_width_px, int* out_height_px);
 
+  // ------------------------------------------------------------- forms --
+  // AcroForm surface. The form fill environment initializes lazily on the
+  // first call and lives until the document is destroyed (exit must precede
+  // FPDF_CloseDocument — the destructor owns that order). Values set here
+  // live in the in-memory document only.
+
+  // Fillable fields (text / checkbox / radio / choice), deduplicated by
+  // field name (one entry per field, like the mac host).
+  std::vector<FormFieldInfo> form_fields();
+
+  // Setters verify the committed value (FORM_* path first, annotation
+  // dictionary "V" as fallback) and return whether the verified document
+  // state matches the request.
+  bool form_set_text(int page, int annot_index, std::string const& value);
+  bool form_set_checked(int page, int annot_index, bool on);
+  bool form_set_choice(int page, int annot_index, std::string const& value);
+
+  // Writes the document (including committed form values) to `path`.
+  bool form_save(std::string const& path, std::string* error);
+
  private:
   Document() = default;
   void* handle_{nullptr};
   int page_count_{0};
   unsigned long last_error_{0};
+  struct FormState;
+  std::unique_ptr<FormState> form_state_;
+  void* ensure_form_env();  // FPDF_FORMHANDLE, lazily initialized
 };
 
 // ----------------------------------------------------------------- text --
 
-// One highlight rectangle in page space (points, top-left origin: y grows
-// downward, matching the rendered bitmap).
+// One highlight rectangle in PDF page (user) space: origin BOTTOM-LEFT,
+// y grows upward — `top` is the upper edge (top > bottom). This is the same
+// space the stored annotation rects use, so no conversion happens on the
+// way into the sidecar JSON; the VIEW layer flips into top-left origin with
+// `y_screen = page_height - top` when painting.
 struct TextRect {
   double left;
   double top;
