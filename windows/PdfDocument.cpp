@@ -97,7 +97,7 @@ void FPDF_CALLCONV ffi_set_text_field_focus(struct _FPDF_FORMFILLINFO*,
 void FPDF_CALLCONV ffi_do_uri_action(struct _FPDF_FORMFILLINFO*,
                                      FPDF_WIDESTRING) {}
 void FPDF_CALLCONV ffi_do_go_to_action(struct _FPDF_FORMFILLINFO*, int, int,
-                                       float*, float*) {}
+                                       float*, int) {}
 
 std::wstring form_utf16_to_wide(unsigned short const* data,
                                 unsigned long length) {
