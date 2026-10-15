@@ -5,7 +5,7 @@ All notable changes to PDFGist are documented here. Format follows
 The 1.x release era was retired in the version epoch reset below; its
 releases and tags were deleted and the history lives in git on `main`.
 
-## [0.2.0] - 2026-10-14
+## [0.2.0] - 2026-10-15
 
 ### Added
 - **Windows host.** PDFGist now ships a first-party WinUI 3 host
