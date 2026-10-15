@@ -88,18 +88,26 @@ FetchContent_MakeAvailable(pdfium)
 if(NOT EXISTS "${pdfium_SOURCE_DIR}/lib/libpdfium.so")
   message(FATAL_ERROR "the fetched pdfium archive has no lib/libpdfium.so")
 endif()
+# src/pdfium.cpp includes the vendored headers for TYPE DEFINITIONS only
+# (FPDF_FORMFILLINFO / FPDF_FILEWRITE / FS_RECTF layout); every function is
+# still dlsym'd, so nothing links against the archive.
+if(NOT EXISTS "${pdfium_SOURCE_DIR}/include/fpdf_formfill.h")
+  message(FATAL_ERROR "the fetched pdfium archive has no include/fpdf_formfill.h")
+endif()
 
 add_executable(RivetHost
   src/main.cpp
   src/host.cpp
   src/pdfium.cpp
   src/pdfview.cpp
+  src/annotations.cpp
   src/panels.cpp
   src/epub.cpp
 )
 
 target_include_directories(RivetHost PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
+  "${pdfium_SOURCE_DIR}/include"
 )
 
 target_include_directories(RivetHost SYSTEM PRIVATE

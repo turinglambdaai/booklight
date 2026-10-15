@@ -3,12 +3,23 @@
 
 #include <dlfcn.h>
 
+// The pinned pdfium-binaries archive ships the full public headers beside
+// lib/libpdfium.so (CMake adds include/ to the search path). They are used
+// for TYPE DEFINITIONS ONLY (FPDF_FORMFILLINFO, FPDF_FILEWRITE, FS_RECTF —
+// whose exact layout the library depends on); every function still arrives
+// through dlsym, so the executable keeps no DT_NEEDED on libpdfium.
+#include <fpdf_annot.h>
+#include <fpdf_formfill.h>
+#include <fpdf_save.h>
+
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <mutex>
+#include <set>
 #include <system_error>
 
 namespace pdfium {
@@ -100,6 +111,145 @@ Api g_api;
 std::once_flag g_once;
 std::string g_error;
 
+// ---- optional surface: AcroForm fill + save -----------------------------
+//
+// Bound only from the pinned archive; a libpdfium without these symbols
+// degrades to "no form support" instead of disabling rendering outright.
+// Signatures use the ::-qualified vendored-header types so they match the
+// library entry points exactly (the unqualified names resolve to this
+// file's void*-based aliases).
+
+using InitFormFillEnvFn = ::FPDF_FORMHANDLE (*)(::FPDF_DOCUMENT,
+                                                ::FPDF_FORMFILLINFO*);
+using ExitFormFillEnvFn = void (*)(::FPDF_FORMHANDLE);
+using FormAfterLoadPageFn = void (*)(::FPDF_PAGE, ::FPDF_FORMHANDLE);
+using FormBeforeClosePageFn = void (*)(::FPDF_PAGE, ::FPDF_FORMHANDLE);
+using FormSetFocusedAnnotFn = ::FPDF_BOOL (*)(::FPDF_FORMHANDLE,
+                                              ::FPDF_ANNOTATION);
+using FormForceToKillFocusFn = ::FPDF_BOOL (*)(::FPDF_FORMHANDLE);
+using FormSelectAllTextFn = ::FPDF_BOOL (*)(::FPDF_FORMHANDLE, ::FPDF_PAGE);
+using FormReplaceSelectionFn = void (*)(::FPDF_FORMHANDLE, ::FPDF_PAGE,
+                                        ::FPDF_WIDESTRING);
+using FormSetIndexSelectedFn = ::FPDF_BOOL (*)(::FPDF_FORMHANDLE, ::FPDF_PAGE,
+                                               int, ::FPDF_BOOL);
+using FormOnLButtonDownFn = ::FPDF_BOOL (*)(::FPDF_FORMHANDLE, ::FPDF_PAGE,
+                                            int, double, double);
+using FormOnLButtonUpFn = ::FPDF_BOOL (*)(::FPDF_FORMHANDLE, ::FPDF_PAGE, int,
+                                          double, double);
+using AnnotGetFormFieldNameFn = unsigned long (*)(::FPDF_FORMHANDLE,
+                                                  ::FPDF_ANNOTATION,
+                                                  ::FPDF_WCHAR*,
+                                                  unsigned long);
+using AnnotGetFormFieldTypeFn = int (*)(::FPDF_FORMHANDLE, ::FPDF_ANNOTATION);
+using AnnotGetFormFieldValueFn = unsigned long (*)(::FPDF_FORMHANDLE,
+                                                   ::FPDF_ANNOTATION,
+                                                   ::FPDF_WCHAR*,
+                                                   unsigned long);
+using AnnotGetOptionCountFn = int (*)(::FPDF_FORMHANDLE, ::FPDF_ANNOTATION);
+using AnnotGetOptionLabelFn = unsigned long (*)(::FPDF_FORMHANDLE,
+                                                ::FPDF_ANNOTATION, int,
+                                                ::FPDF_WCHAR*, unsigned long);
+using AnnotIsCheckedFn = ::FPDF_BOOL (*)(::FPDF_FORMHANDLE, ::FPDF_ANNOTATION);
+using AnnotGetExportValueFn = unsigned long (*)(::FPDF_FORMHANDLE,
+                                                ::FPDF_ANNOTATION,
+                                                ::FPDF_WCHAR*, unsigned long);
+using AnnotSetStringValueFn = ::FPDF_BOOL (*)(::FPDF_ANNOTATION,
+                                              ::FPDF_BYTESTRING,
+                                              ::FPDF_WIDESTRING);
+using AnnotGetRectFn = ::FPDF_BOOL (*)(::FPDF_ANNOTATION, ::FS_RECTF*);
+using PageGetAnnotCountFn = int (*)(::FPDF_PAGE);
+using PageGetAnnotFn = ::FPDF_ANNOTATION (*)(::FPDF_PAGE, int);
+using PageCloseAnnotFn = void (*)(::FPDF_ANNOTATION);
+using SaveAsCopyFn = ::FPDF_BOOL (*)(::FPDF_DOCUMENT, ::FPDF_FILEWRITE*,
+                                     ::FPDF_DWORD);
+
+struct FormApi {
+  InitFormFillEnvFn FPDFDOC_InitFormFillEnvironment{nullptr};
+  ExitFormFillEnvFn FPDFDOC_ExitFormFillEnvironment{nullptr};
+  FormAfterLoadPageFn FORM_OnAfterLoadPage{nullptr};
+  FormBeforeClosePageFn FORM_OnBeforeClosePage{nullptr};
+  FormSetFocusedAnnotFn FORM_SetFocusedAnnot{nullptr};
+  FormForceToKillFocusFn FORM_ForceToKillFocus{nullptr};
+  FormSelectAllTextFn FORM_SelectAllText{nullptr};
+  FormReplaceSelectionFn FORM_ReplaceSelection{nullptr};
+  FormSetIndexSelectedFn FORM_SetIndexSelected{nullptr};
+  FormOnLButtonDownFn FORM_OnLButtonDown{nullptr};
+  FormOnLButtonUpFn FORM_OnLButtonUp{nullptr};
+  AnnotGetFormFieldNameFn FPDFAnnot_GetFormFieldName{nullptr};
+  AnnotGetFormFieldTypeFn FPDFAnnot_GetFormFieldType{nullptr};
+  AnnotGetFormFieldValueFn FPDFAnnot_GetFormFieldValue{nullptr};
+  AnnotGetOptionCountFn FPDFAnnot_GetOptionCount{nullptr};
+  AnnotGetOptionLabelFn FPDFAnnot_GetOptionLabel{nullptr};
+  AnnotIsCheckedFn FPDFAnnot_IsChecked{nullptr};
+  AnnotGetExportValueFn FPDFAnnot_GetFormFieldExportValue{nullptr};
+  AnnotSetStringValueFn FPDFAnnot_SetStringValue{nullptr};
+  AnnotGetRectFn FPDFAnnot_GetRect{nullptr};
+  PageGetAnnotCountFn FPDFPage_GetAnnotCount{nullptr};
+  PageGetAnnotFn FPDFPage_GetAnnot{nullptr};
+  PageCloseAnnotFn FPDFPage_CloseAnnot{nullptr};
+  SaveAsCopyFn FPDF_SaveAsCopy{nullptr};
+  bool complete{false};
+};
+
+FormApi g_form;
+
+// dlsym without failing the whole binding: a missing symbol just leaves the
+// form surface unavailable.
+template <typename T>
+bool bind_optional(void* handle, T& fn, char const* name) {
+  void* symbol = dlsym(handle, name);
+  if (symbol == nullptr) return false;
+  fn = *reinterpret_cast<T*>(&symbol);
+  return true;
+}
+
+bool load_form_api(void* handle) {
+  return bind_optional(handle, g_form.FPDFDOC_InitFormFillEnvironment,
+                       "FPDFDOC_InitFormFillEnvironment") &&
+         bind_optional(handle, g_form.FPDFDOC_ExitFormFillEnvironment,
+                       "FPDFDOC_ExitFormFillEnvironment") &&
+         bind_optional(handle, g_form.FORM_OnAfterLoadPage,
+                       "FORM_OnAfterLoadPage") &&
+         bind_optional(handle, g_form.FORM_OnBeforeClosePage,
+                       "FORM_OnBeforeClosePage") &&
+         bind_optional(handle, g_form.FORM_SetFocusedAnnot,
+                       "FORM_SetFocusedAnnot") &&
+         bind_optional(handle, g_form.FORM_ForceToKillFocus,
+                       "FORM_ForceToKillFocus") &&
+         bind_optional(handle, g_form.FORM_SelectAllText,
+                       "FORM_SelectAllText") &&
+         bind_optional(handle, g_form.FORM_ReplaceSelection,
+                       "FORM_ReplaceSelection") &&
+         bind_optional(handle, g_form.FORM_SetIndexSelected,
+                       "FORM_SetIndexSelected") &&
+         bind_optional(handle, g_form.FORM_OnLButtonDown,
+                       "FORM_OnLButtonDown") &&
+         bind_optional(handle, g_form.FORM_OnLButtonUp, "FORM_OnLButtonUp") &&
+         bind_optional(handle, g_form.FPDFAnnot_GetFormFieldName,
+                       "FPDFAnnot_GetFormFieldName") &&
+         bind_optional(handle, g_form.FPDFAnnot_GetFormFieldType,
+                       "FPDFAnnot_GetFormFieldType") &&
+         bind_optional(handle, g_form.FPDFAnnot_GetFormFieldValue,
+                       "FPDFAnnot_GetFormFieldValue") &&
+         bind_optional(handle, g_form.FPDFAnnot_GetOptionCount,
+                       "FPDFAnnot_GetOptionCount") &&
+         bind_optional(handle, g_form.FPDFAnnot_GetOptionLabel,
+                       "FPDFAnnot_GetOptionLabel") &&
+         bind_optional(handle, g_form.FPDFAnnot_IsChecked,
+                       "FPDFAnnot_IsChecked") &&
+         bind_optional(handle, g_form.FPDFAnnot_GetFormFieldExportValue,
+                       "FPDFAnnot_GetFormFieldExportValue") &&
+         bind_optional(handle, g_form.FPDFAnnot_SetStringValue,
+                       "FPDFAnnot_SetStringValue") &&
+         bind_optional(handle, g_form.FPDFAnnot_GetRect, "FPDFAnnot_GetRect") &&
+         bind_optional(handle, g_form.FPDFPage_GetAnnotCount,
+                       "FPDFPage_GetAnnotCount") &&
+         bind_optional(handle, g_form.FPDFPage_GetAnnot, "FPDFPage_GetAnnot") &&
+         bind_optional(handle, g_form.FPDFPage_CloseAnnot,
+                       "FPDFPage_CloseAnnot") &&
+         bind_optional(handle, g_form.FPDF_SaveAsCopy, "FPDF_SaveAsCopy");
+}
+
 template <typename T>
 bool bind(void* handle, T& fn, char const* name) {
   void* symbol = dlsym(handle, name);
@@ -178,6 +328,9 @@ void load_once() {
   }
   g_api.complete = true;
   g_api.FPDF_InitLibrary(nullptr);
+  // The form/save surface is optional: older or trimmed libpdfium builds
+  // lose only AcroForm support, never rendering.
+  g_form.complete = load_form_api(handle);
 }
 
 }  // namespace
@@ -299,7 +452,23 @@ std::unique_ptr<Document> Document::open_memory(std::uint8_t const* data,
   return doc;
 }
 
+// Per-document form fill state (defined here so ~Document sees the complete
+// type). The FPDF_FORMFILLINFO must outlive the handle; ~Document exits the
+// environment before releasing this.
+struct Document::FormState {
+  ::FPDF_FORMFILLINFO info{};
+  ::FPDF_FORMHANDLE handle{nullptr};
+};
+
 Document::~Document() {
+  // The form fill environment must exit before the document closes and its
+  // FPDF_FORMFILLINFO (owned by form_state_) must outlive the handle.
+  if (form_state_ != nullptr && g_form.complete) {
+    if (form_state_->handle != nullptr) {
+      g_form.FPDFDOC_ExitFormFillEnvironment(form_state_->handle);
+    }
+    form_state_.reset();
+  }
   if (handle_ != nullptr) g_api.FPDF_CloseDocument(handle_);
 }
 
@@ -395,6 +564,319 @@ cairo_surface_t* Document::render_page(int index, double scale, bool dark,
   return surface;
 }
 
+// ----------------------------------------------------------------- forms --
+
+namespace {
+
+// Version-1 embedder surface. PDFium guards most callbacks per call site,
+// but the stable v1 members get real no-op bodies: the host fills fields
+// programmatically and never draws PWL widgets, so the only entries with
+// behavior are SetTimer (caret blink of a focused text field — a fake id
+// means no blink and no crash) and GetLocalTime (zeros; only JS reads it).
+// Types are the ::-qualified vendored-header spellings so every signature
+// matches the FPDF_FORMFILLINFO member pointer types exactly.
+void ffi_release(::FPDF_FORMFILLINFO*) {}
+void ffi_invalidate(::FPDF_FORMFILLINFO*, ::FPDF_PAGE, double, double, double,
+                    double) {}
+void ffi_output_selected_rect(::FPDF_FORMFILLINFO*, ::FPDF_PAGE, double,
+                              double, double, double) {}
+void ffi_set_cursor(::FPDF_FORMFILLINFO*, int) {}
+int ffi_set_timer(::FPDF_FORMFILLINFO*, int, ::TimerCallback) { return 1; }
+void ffi_kill_timer(::FPDF_FORMFILLINFO*, int) {}
+::FPDF_SYSTEMTIME ffi_get_local_time(::FPDF_FORMFILLINFO*) { return {}; }
+void ffi_on_change(::FPDF_FORMFILLINFO*) {}
+::FPDF_PAGE ffi_get_page(::FPDF_FORMFILLINFO*, ::FPDF_DOCUMENT, int) {
+  return nullptr;
+}
+::FPDF_PAGE ffi_get_current_page(::FPDF_FORMFILLINFO*, ::FPDF_DOCUMENT) {
+  return nullptr;
+}
+int ffi_get_rotation(::FPDF_FORMFILLINFO*, ::FPDF_PAGE) { return 0; }
+void ffi_execute_named_action(::FPDF_FORMFILLINFO*, ::FPDF_BYTESTRING) {}
+void ffi_set_text_field_focus(::FPDF_FORMFILLINFO*, ::FPDF_WIDESTRING,
+                              ::FPDF_DWORD, ::FPDF_BOOL) {}
+void ffi_do_uri_action(::FPDF_FORMFILLINFO*, ::FPDF_BYTESTRING) {}
+
+// Loads a page with the form fill notifications PDFium requires around form
+// operations (FORM_OnAfterLoadPage / FORM_OnBeforeClosePage). The page
+// handle crosses between the void*-based core Api and the header-typed form
+// Api, hence the two casts.
+struct FormPageScope {
+  FormPageScope(FPDF_DOCUMENT doc, ::FPDF_FORMHANDLE handle, int index)
+      : handle(handle) {
+    page = static_cast<::FPDF_PAGE>(g_api.FPDF_LoadPage(doc, index));
+    if (page != nullptr && handle != nullptr) {
+      g_form.FORM_OnAfterLoadPage(page, handle);
+    }
+  }
+  ~FormPageScope() {
+    if (page == nullptr) return;
+    if (handle != nullptr) g_form.FORM_OnBeforeClosePage(page, handle);
+    g_api.FPDF_ClosePage(page);
+  }
+  ::FPDF_FORMHANDLE handle;
+  ::FPDF_PAGE page{nullptr};
+};
+
+// -1 when the widget is not a fillable field (pushbuttons, signatures…).
+int classify_field_kind(int pdfium_type) {
+  switch (pdfium_type) {
+    case FPDF_FORMFIELD_TEXTFIELD:
+      return static_cast<int>(FormFieldInfo::Kind::Text);
+    case FPDF_FORMFIELD_CHECKBOX:
+    case FPDF_FORMFIELD_RADIOBUTTON:
+      return static_cast<int>(FormFieldInfo::Kind::Check);
+    case FPDF_FORMFIELD_COMBOBOX:
+    case FPDF_FORMFIELD_LISTBOX:
+      return static_cast<int>(FormFieldInfo::Kind::Choice);
+    default:
+      return -1;
+  }
+}
+
+// UTF-16LE getter with the PDFium size-then-fill protocol (length includes
+// the NUL; 0 = error, 2 = empty string).
+template <typename Getter>
+std::string utf16_via(Getter&& getter) {
+  unsigned long const needed = getter(nullptr, 0);
+  if (needed <= 2) return {};
+  std::vector<unsigned short> buffer(needed / 2 + 2, 0);
+  unsigned long const written =
+      getter(buffer.data(), static_cast<unsigned long>((buffer.size() - 1) * 2));
+  if (written <= 2) return {};
+  return utf16_to_utf8(buffer.data(), written / 2 - 1);
+}
+
+std::string committed_value(FPDF_FORMHANDLE handle, FPDF_ANNOTATION annot) {
+  return utf16_via([&](FPDF_WCHAR* buffer, unsigned long length) {
+    return g_form.FPDFAnnot_GetFormFieldValue(handle, annot, buffer, length);
+  });
+}
+
+std::string option_label(FPDF_FORMHANDLE handle, FPDF_ANNOTATION annot,
+                         int index) {
+  return utf16_via([&](FPDF_WCHAR* buffer, unsigned long length) {
+    return g_form.FPDFAnnot_GetOptionLabel(handle, annot, index, buffer,
+                                           length);
+  });
+}
+
+// Fallback writer for the annotation-dictionary path: sets the field value
+// "V" on the widget dictionary directly. Only works for merged widget/field
+// dictionaries; the caller verifies what actually committed.
+bool annot_set_value(FPDF_ANNOTATION annot, std::string const& value) {
+  auto wide = utf8_to_utf16(value);
+  wide.push_back(0);
+  return g_form.FPDFAnnot_SetStringValue(
+      annot, "V", reinterpret_cast<FPDF_WIDESTRING>(wide.data()));
+}
+
+}  // namespace
+
+void* Document::ensure_form_env() {
+  if (form_state_ != nullptr) return form_state_->handle;
+  if (!g_form.complete || handle_ == nullptr) return nullptr;
+  form_state_ = std::make_unique<FormState>();
+  form_state_->info.version = 1;
+  form_state_->info.Release = &ffi_release;
+  form_state_->info.FFI_Invalidate = &ffi_invalidate;
+  form_state_->info.FFI_OutputSelectedRect = &ffi_output_selected_rect;
+  form_state_->info.FFI_SetCursor = &ffi_set_cursor;
+  form_state_->info.FFI_SetTimer = &ffi_set_timer;
+  form_state_->info.FFI_KillTimer = &ffi_kill_timer;
+  form_state_->info.FFI_GetLocalTime = &ffi_get_local_time;
+  form_state_->info.FFI_OnChange = &ffi_on_change;
+  form_state_->info.FFI_GetPage = &ffi_get_page;
+  form_state_->info.FFI_GetCurrentPage = &ffi_get_current_page;
+  form_state_->info.FFI_GetRotation = &ffi_get_rotation;
+  form_state_->info.FFI_ExecuteNamedAction = &ffi_execute_named_action;
+  form_state_->info.FFI_SetTextFieldFocus = &ffi_set_text_field_focus;
+  form_state_->info.FFI_DoURIAction = &ffi_do_uri_action;
+  form_state_->handle = g_form.FPDFDOC_InitFormFillEnvironment(
+      static_cast<::FPDF_DOCUMENT>(handle_), &form_state_->info);
+  if (form_state_->handle == nullptr) {
+    form_state_.reset();
+    return nullptr;
+  }
+  return form_state_->handle;
+}
+
+std::vector<FormFieldInfo> Document::form_fields() {
+  std::vector<FormFieldInfo> out;
+  auto const handle = static_cast<FPDF_FORMHANDLE>(ensure_form_env());
+  if (handle == nullptr) return out;
+  std::set<std::string> seen;  // one entry per field name (mac parity)
+  for (int p = 0; p < page_count_; ++p) {
+    FormPageScope scope(handle_, handle, p);
+    if (scope.page == nullptr) continue;
+    int const count = g_form.FPDFPage_GetAnnotCount(scope.page);
+    for (int i = 0; i < count; ++i) {
+      FPDF_ANNOTATION annot = g_form.FPDFPage_GetAnnot(scope.page, i);
+      if (annot == nullptr) continue;
+      FormFieldInfo info;
+      info.page = p;
+      info.annot_index = i;
+      int const kind = classify_field_kind(
+          g_form.FPDFAnnot_GetFormFieldType(handle, annot));
+      if (kind < 0) {
+        g_form.FPDFPage_CloseAnnot(annot);
+        continue;
+      }
+      info.kind = static_cast<FormFieldInfo::Kind>(kind);
+      info.name = utf16_via([&](FPDF_WCHAR* buffer, unsigned long length) {
+        return g_form.FPDFAnnot_GetFormFieldName(handle, annot, buffer,
+                                                 length);
+      });
+      if (!info.name.empty() && seen.insert(info.name).second) {
+        info.value = committed_value(handle, annot);
+        info.checked = g_form.FPDFAnnot_IsChecked(handle, annot) != 0;
+        if (info.kind == FormFieldInfo::Kind::Choice) {
+          int const options = g_form.FPDFAnnot_GetOptionCount(handle, annot);
+          for (int o = 0; o < options; ++o) {
+            info.options.push_back(option_label(handle, annot, o));
+          }
+        }
+        out.push_back(std::move(info));
+      }
+      g_form.FPDFPage_CloseAnnot(annot);
+    }
+  }
+  return out;
+}
+
+bool Document::form_set_text(int page, int annot_index,
+                             std::string const& value) {
+  auto const handle = static_cast<FPDF_FORMHANDLE>(ensure_form_env());
+  if (handle == nullptr) return false;
+  FormPageScope scope(handle_, handle, page);
+  if (scope.page == nullptr) return false;
+  FPDF_ANNOTATION annot = g_form.FPDFPage_GetAnnot(scope.page, annot_index);
+  if (annot == nullptr) return false;
+  // Fill path: focus the widget, select all, replace, then commit by
+  // killing focus (PDFium writes the value into the field dictionary).
+  if (g_form.FORM_SetFocusedAnnot(handle, annot)) {
+    if (g_form.FORM_SelectAllText(handle, scope.page)) {
+      auto wide = utf8_to_utf16(value);
+      wide.push_back(0);
+      g_form.FORM_ReplaceSelection(handle, scope.page,
+                                   reinterpret_cast<FPDF_WIDESTRING>(
+                                       wide.data()));
+    }
+    g_form.FORM_ForceToKillFocus(handle);
+  }
+  bool ok = committed_value(handle, annot) == value;
+  if (!ok) {
+    // Fallback: write "V" on the widget dictionary (merged field/widget
+    // dictionaries only). Verified again — the report is honest about what
+    // actually committed.
+    annot_set_value(annot, value);
+    ok = committed_value(handle, annot) == value;
+  }
+  g_form.FPDFPage_CloseAnnot(annot);
+  return ok;
+}
+
+bool Document::form_set_checked(int page, int annot_index, bool on) {
+  auto const handle = static_cast<FPDF_FORMHANDLE>(ensure_form_env());
+  if (handle == nullptr) return false;
+  FormPageScope scope(handle_, handle, page);
+  if (scope.page == nullptr) return false;
+  FPDF_ANNOTATION annot = g_form.FPDFPage_GetAnnot(scope.page, annot_index);
+  if (annot == nullptr) return false;
+  auto const is_checked = [&] {
+    return g_form.FPDFAnnot_IsChecked(handle, annot) != 0;
+  };
+  if (is_checked() != on) {
+    // Click the widget center (PDF user space) — the mouse path is what
+    // radio groups and check boxes both commit through.
+    FS_RECTF rect{};
+    if (g_form.FPDFAnnot_GetRect(annot, &rect)) {
+      double const x = (rect.left + rect.right) / 2.0;
+      double const y = (rect.top + rect.bottom) / 2.0;
+      g_form.FORM_OnLButtonDown(handle, scope.page, 0, x, y);
+      g_form.FORM_OnLButtonUp(handle, scope.page, 0, x, y);
+      g_form.FORM_ForceToKillFocus(handle);
+    }
+  }
+  bool ok = is_checked() == on;
+  if (!ok) {
+    // Fallback: write the export ("on") state name, or "Off", into "V".
+    std::string const export_value = utf16_via(
+        [&](FPDF_WCHAR* buffer, unsigned long length) {
+          return g_form.FPDFAnnot_GetFormFieldExportValue(handle, annot,
+                                                          buffer, length);
+        });
+    annot_set_value(annot, on ? (export_value.empty() ? "Yes" : export_value)
+                              : "Off");
+    ok = is_checked() == on;
+  }
+  g_form.FPDFPage_CloseAnnot(annot);
+  return ok;
+}
+
+bool Document::form_set_choice(int page, int annot_index,
+                               std::string const& value) {
+  auto const handle = static_cast<FPDF_FORMHANDLE>(ensure_form_env());
+  if (handle == nullptr) return false;
+  FormPageScope scope(handle_, handle, page);
+  if (scope.page == nullptr) return false;
+  FPDF_ANNOTATION annot = g_form.FPDFPage_GetAnnot(scope.page, annot_index);
+  if (annot == nullptr) return false;
+  // Choice path: select the option whose label matches by index
+  // (FORM_SetIndexSelected works on the focused annotation).
+  int const options = g_form.FPDFAnnot_GetOptionCount(handle, annot);
+  int found = -1;
+  for (int o = 0; o < options; ++o) {
+    if (option_label(handle, annot, o) == value) {
+      found = o;
+      break;
+    }
+  }
+  if (found >= 0 && g_form.FORM_SetFocusedAnnot(handle, annot)) {
+    g_form.FORM_SetIndexSelected(handle, scope.page, found, 1);
+    g_form.FORM_ForceToKillFocus(handle);
+  }
+  bool ok = committed_value(handle, annot) == value;
+  if (!ok) {
+    annot_set_value(annot, value);
+    ok = committed_value(handle, annot) == value;
+  }
+  g_form.FPDFPage_CloseAnnot(annot);
+  return ok;
+}
+
+bool Document::form_save(std::string const& path, std::string* error) {
+  if (handle_ == nullptr || !g_form.complete) {
+    if (error != nullptr) *error = "form support unavailable";
+    return false;
+  }
+  (void)ensure_form_env();  // keep the environment alive across the save
+  struct FileWrite : FPDF_FILEWRITE {
+    FILE* file;
+  } file_write{};
+  file_write.version = 1;
+  file_write.file = std::fopen(path.c_str(), "wb");
+  if (file_write.file == nullptr) {
+    if (error != nullptr) *error = "cannot open the target file";
+    return false;
+  }
+  file_write.WriteBlock = +[](FPDF_FILEWRITE* self, void const* data,
+                              unsigned long size) -> int {
+    auto* writer = reinterpret_cast<FileWrite*>(self);
+    return std::fwrite(data, 1, size, writer->file) == size ? 1 : 0;
+  };
+  bool const ok = g_form.FPDF_SaveAsCopy(
+                      static_cast<::FPDF_DOCUMENT>(handle_), &file_write,
+                      0) != 0;
+  bool const flush_ok = std::fflush(file_write.file) == 0;
+  std::fclose(file_write.file);
+  if (!ok || !flush_ok) {
+    if (error != nullptr) *error = "FPDF_SaveAsCopy failed";
+    return false;
+  }
+  return true;
+}
+
 // ------------------------------------------------------------------ text --
 
 std::unique_ptr<TextPage> TextPage::load(void* doc, int page_index) {
@@ -465,7 +947,9 @@ std::vector<TextRect> TextPage::rects_of_chars(int start_char,
   for (int i = 0; i < rects; ++i) {
     double left = 0, top = 0, right = 0, bottom = 0;
     if (g_api.FPDFText_GetRect(handle_, i, &left, &top, &right, &bottom)) {
-      // Page space (bottom-left origin) → top-left origin.
+      // FPDFText_GetRect reports PDF user space (bottom-left origin, y-up,
+      // top > bottom) — kept as-is; the view layer flips into top-left
+      // origin with page_height when painting (see pdfview.cpp).
       out.push_back(TextRect{left, top, right, bottom});
     }
   }

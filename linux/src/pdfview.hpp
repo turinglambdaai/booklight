@@ -1,5 +1,5 @@
 // PDF reading core: document model, continuous scrolling page view,
-// selection, find, outline, thumbnails.
+// selection, find, outline, thumbnails, annotation overlay, split view.
 //
 // All PDFium calls run on the GTK main thread (PDFium has no per-document
 // thread-safety guarantees; the only background work in this host is RPC,
@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "annotations.hpp"
 #include "pdfium.hpp"
 
 namespace pdfgist {
@@ -43,15 +44,37 @@ class PdfDocument {
   void* handle() const { return impl_ != nullptr ? impl_->handle() : nullptr; }
 
   // Renders one page at `scale` device pixels per point into a fresh
-  // ARGB32 cairo surface (viewer + thumbnails; main thread only). With
-  // `dark`, painted pixels invert and margins take the dark page background
-  // so pages sit flush in dark mode.
+  // ARGB32 cairo surface (viewer + thumbnails + printing; main thread only).
+  // With `dark`, painted pixels invert and margins take the dark page
+  // background so pages sit flush in dark mode.
   cairo_surface_t* render(int index, double scale, bool dark,
                           int* out_width_px, int* out_height_px) {
     return impl_ != nullptr
                ? impl_->render_page(index, scale, dark, out_width_px,
                                     out_height_px)
                : nullptr;
+  }
+
+  // AcroForm surface (see pdfium::Document); empty vector when the document
+  // has no fillable fields or the form surface is unavailable.
+  std::vector<pdfium::FormFieldInfo> form_fields() {
+    return impl_ != nullptr ? impl_->form_fields()
+                            : std::vector<pdfium::FormFieldInfo>{};
+  }
+  bool form_set_text(int page, int annot_index, std::string const& value) {
+    return impl_ != nullptr &&
+           impl_->form_set_text(page, annot_index, value);
+  }
+  bool form_set_checked(int page, int annot_index, bool on) {
+    return impl_ != nullptr &&
+           impl_->form_set_checked(page, annot_index, on);
+  }
+  bool form_set_choice(int page, int annot_index, std::string const& value) {
+    return impl_ != nullptr &&
+           impl_->form_set_choice(page, annot_index, value);
+  }
+  bool form_save(std::string const& path, std::string* error) {
+    return impl_ != nullptr && impl_->form_save(path, error);
   }
 
  private:
@@ -99,8 +122,8 @@ class PdfTab {
   std::string const& title() const { return title_; }
   std::shared_ptr<PdfDocument> document() const { return doc_; }
 
-  // The scrolled container to put into the notebook.
-  GtkWidget* widget() const { return scrolled_; }
+  // The container to put into the notebook (the split view lives inside).
+  GtkWidget* widget() const { return paned_; }
 
   int current_page() const { return current_page_; }  // 1-based
   int zoom_percent() const {
@@ -111,6 +134,7 @@ class PdfTab {
   // Callbacks owned by main.cpp.
   std::function<void(int page)> on_page_changed;            // 1-based
   std::function<void(bool has_selection)> on_selection_changed;
+  std::function<void()> on_annotations_changed;
 
   void restore_page(int page);  // 1-based resume, before first show
   void go_to_page(int page);    // 1-based
@@ -142,6 +166,43 @@ class PdfTab {
   // Right-click on an existing selection (pdfview.cpp invokes it).
   std::function<void()> on_context_menu;
 
+  // ------------------------------------------------------ annotations --
+  // Stored sidecar data + overlay painting. The document data loads through
+  // main.cpp (get-annotations RPC); every mutation notifies
+  // on_annotations_changed so the host can persist (debounced) and rebuild
+  // the notes pane.
+
+  DocData const& doc_data() const { return doc_data_; }
+  void set_doc_data(DocData data);  // replace wholesale (load path)
+
+  // Creates an annotation covering the current selection's first page
+  // (mac addAnnotationFromSelection semantics, ids included). Returns the
+  // new annotation's id, or "" without a usable selection.
+  std::string add_annotation_from_selection(std::string const& color,
+                                            std::string const& kind);
+  void remove_annotation(std::string const& id);
+
+  bool is_bookmarked(int page) const;  // 1-based
+  void toggle_bookmark(int page);      // 1-based
+  void remove_bookmark(int page);      // 1-based
+
+  // Host-owned debounce timer id for set-annotations (removed on destroy so
+  // the callback never fires on a dead tab).
+  guint annotation_save_source{0};
+
+  // Drops the rendered-page cache and repaints (appearance streams changed
+  // underneath us — form fills, page edits).
+  void refresh_rendering();
+
+  // ------------------------------------------------------- split view --
+  // Second view of the same document (mac SplitViewport): no toolbar state
+  // of its own, only follows the main view's scroll ratio. The split tab
+  // shares the PdfDocument (render/text caches) but owns its own layout.
+
+  bool split_on() const { return split_tab_ != nullptr; }
+  void set_split(bool on);
+  PdfTab* split() const { return split_tab_.get(); }
+
  private:
   struct Impl;
   std::unique_ptr<Impl> impl;
@@ -149,10 +210,12 @@ class PdfTab {
   std::shared_ptr<PdfDocument> doc_;
   std::string path_;
   std::string title_;
-  GtkWidget* scrolled_{nullptr};
+  GtkWidget* paned_{nullptr};
   int current_page_{1};
   double zoom_{1.0};
   bool double_mode_{false};
+  DocData doc_data_;
+  std::unique_ptr<PdfTab> split_tab_;  // owned; never split recursively
 };
 
 // --------------------------------------------------------- outline -----

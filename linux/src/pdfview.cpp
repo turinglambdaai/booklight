@@ -5,8 +5,11 @@
 #include <glib-object.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <tuple>
+
+#include "i18n.h"
 
 namespace pdfgist {
 
@@ -309,24 +312,61 @@ struct PdfTab::Impl {
       cairo_paint(cr);
       cairo_restore(cr);
 
-      // selection overlay
+      // selection overlay — FPDFText_GetRect rects are in PDF user space
+      // (y-up): the screen (top-left) y of the upper edge is ph - top.
       auto rects = selection_rects_for(page);
       if (!rects.empty()) {
         cairo_save(cr);
         cairo_set_source_rgba(cr, 0.20, 0.47, 0.85, 0.35);
         for (auto const& r : rects) {
-          cairo_rectangle(cr, px + r.left * zoom, py + r.top * zoom,
+          cairo_rectangle(cr, px + r.left * zoom, py + (ph - r.top) * zoom,
                           (r.right - r.left) * zoom,
-                          (r.bottom - r.top) * zoom);
+                          (r.top - r.bottom) * zoom);
         }
         cairo_fill(cr);
         cairo_restore(cr);
       }
-      paint_find(cr, page, px, py, zoom);
+      paint_find(cr, page, px, py, ph, zoom);
+      paint_annotations(cr, page, px, py, ph, zoom);
     }
   }
 
-  void paint_find(cairo_t* cr, int page, double px, double py, double zoom) {
+  // Stored annotations of one page, painted in the stored PDF page space
+  // (bottom-left origin, y-up): screen y of a stored rect's top edge is
+  // ph - (y + height). Underline hugs the rect's bottom edge, strike runs
+  // through the vertical middle (mac PDFAnnotation semantics).
+  void paint_annotations(cairo_t* cr, int page, double px, double py,
+                         double ph, double zoom) {
+    for (auto const& annotation : tab->doc_data_.annotations) {
+      if (annotation.page != page + 1) continue;
+      double r = 0, g = 0, b = 0, a = 1;
+      annotation_rgba(annotation.color, &r, &g, &b, &a);
+      bool const underline = annotation.kind == "underline";
+      bool const strike = annotation.kind == "strike";
+      cairo_save(cr);
+      cairo_set_source_rgba(cr, r, g, b, a);
+      for (auto const& rect : annotation.rects) {
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        if (underline || strike) {
+          double const thickness = std::max(1.2, 0.012 * ph);
+          double const y =
+              strike ? ph - (rect.y + rect.height / 2.0) - thickness / 2.0
+                     : ph - rect.y - thickness;
+          cairo_rectangle(cr, px + rect.x * zoom, py + y * zoom,
+                          rect.width * zoom, thickness * zoom);
+        } else {
+          double const y = ph - (rect.y + rect.height);
+          cairo_rectangle(cr, px + rect.x * zoom, py + y * zoom,
+                          rect.width * zoom, rect.height * zoom);
+        }
+      }
+      cairo_fill(cr);
+      cairo_restore(cr);
+    }
+  }
+
+  void paint_find(cairo_t* cr, int page, double px, double py, double ph,
+                  double zoom) {
     for (std::size_t i = 0; i < find_hits.size(); ++i) {
       FindHit const& hit = find_hits[i];
       if (hit.page != page) continue;
@@ -338,9 +378,9 @@ struct PdfTab::Impl {
       cairo_save(cr);
       cairo_set_source_rgba(cr, 1.0, 0.83, 0.0, current ? 0.75 : 0.35);
       for (auto const& r : rects) {
-        cairo_rectangle(cr, px + r.left * zoom, py + r.top * zoom,
+        cairo_rectangle(cr, px + r.left * zoom, py + (ph - r.top) * zoom,
                         (r.right - r.left) * zoom,
-                        (r.bottom - r.top) * zoom);
+                        (r.top - r.bottom) * zoom);
       }
       cairo_fill(cr);
       cairo_restore(cr);
@@ -426,9 +466,26 @@ struct PdfTab::Impl {
     static_cast<Impl*>(user_data)->track_current_page();
   }
 
+  double scroll_ratio() const {
+    double const span = gtk_adjustment_get_upper(vadj) -
+                        gtk_adjustment_get_page_size(vadj);
+    if (span <= 0) return 0.0;
+    return std::clamp(gtk_adjustment_get_value(vadj) / span, 0.0, 1.0);
+  }
+
+  void set_scroll_ratio(double ratio) {
+    double const span = gtk_adjustment_get_upper(vadj) -
+                        gtk_adjustment_get_page_size(vadj);
+    gtk_adjustment_set_value(vadj, std::clamp(ratio, 0.0, 1.0) * span);
+  }
+
   void track_current_page() {
     if (!layout_valid) rebuild_layout();
     if (rows.empty()) return;
+    // Split view follows the main view's scroll by ratio (mac SplitViewport).
+    if (tab->split_tab_ != nullptr) {
+      tab->split_tab_->impl->set_scroll_ratio(scroll_ratio());
+    }
     double const y = gtk_adjustment_get_value(vadj) +
                      gtk_adjustment_get_page_size(vadj) * 0.35;
     std::size_t row = 0;
@@ -442,6 +499,20 @@ struct PdfTab::Impl {
     }
   }
 
+  // Notify the host that the stored document data changed: repaint here,
+  // persist + rebuild the notes pane over there. The split mirrors the data
+  // (mac: annotations live on the shared document, both views show them).
+  void notify_annotations_changed() {
+    if (tab->split_tab_ != nullptr) {
+      tab->split_tab_->doc_data_ = tab->doc_data_;
+      if (tab->split_tab_->impl->draw != nullptr) {
+        gtk_widget_queue_draw(tab->split_tab_->impl->draw);
+      }
+    }
+    if (draw != nullptr) gtk_widget_queue_draw(draw);
+    if (tab->on_annotations_changed) tab->on_annotations_changed();
+  }
+
 };
 
 // ------------------------------------------------------------ lifecycle --
@@ -452,19 +523,22 @@ PdfTab::PdfTab(std::shared_ptr<PdfDocument> doc, std::string path,
       doc_(std::move(doc)),
       path_(std::move(path)),
       title_(std::move(title)) {
-  scrolled_ = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_),
+  auto* scrolled = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
   impl->draw = gtk_drawing_area_new();
   gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(impl->draw),
                                  Impl::draw_func, impl.get(), nullptr);
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled_), impl->draw);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), impl->draw);
   impl->vadj =
-      gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled_));
+      gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
   impl->hadj =
-      gtk_scrolled_window_get_hadjustment(GTK_SCROLLED_WINDOW(scrolled_));
+      gtk_scrolled_window_get_hadjustment(GTK_SCROLLED_WINDOW(scrolled));
   hook(impl->vadj, "value-changed",
                    Impl::on_vadj_changed, impl.get());
+  paned_ = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_paned_set_wide_handle(GTK_PANED(paned_), TRUE);
+  gtk_paned_set_start_child(GTK_PANED(paned_), scrolled);
 
   // mouse: selection drag, double-click word, right-click context menu
   auto* click = gtk_gesture_click_new();
@@ -531,6 +605,9 @@ PdfTab::~PdfTab() {
     (void)page;
     g_object_unref(texture);
   }
+  // The split tab dies with its owner; its widgets were children of the
+  // paned already destroyed by the GTK hierarchy.
+  split_tab_.reset();
 }
 
 // --------------------------------------------------------------- zoom ----
@@ -558,12 +635,12 @@ void PdfTab::fit_width() {
 }
 
 void PdfTab::set_double_mode(bool on) {
-  if (double_mode_ == on) return;
   double_mode_ = on;
   impl->clear_cache();
   impl->invalidate_layout();
   impl->update_size_request();
   go_to_page(current_page_);
+  if (split_tab_ != nullptr) split_tab_->set_double_mode(on);
 }
 
 void PdfTab::set_dark(bool on) {
@@ -578,6 +655,7 @@ void PdfTab::set_dark(bool on) {
   }
   impl->thumbs.clear();
   if (impl->draw != nullptr) gtk_widget_queue_draw(impl->draw);
+  if (split_tab_ != nullptr) split_tab_->set_dark(on);
 }
 
 void PdfTab::go_to_page(int page) {
@@ -652,6 +730,18 @@ void PdfTab::reload_document(std::shared_ptr<PdfDocument> doc) {
   impl->invalidate_layout();
   impl->update_size_request();
   go_to_page(1);
+  // The split shares the document — reload it too (mac reloadTabDocument
+  // sets splitPdfView.document).
+  if (split_tab_ != nullptr) {
+    split_tab_->doc_ = doc_;
+    split_tab_->impl->sel = PdfSelection{};
+    split_tab_->impl->find_hits.clear();
+    split_tab_->impl->find_index_ = -1;
+    split_tab_->impl->clear_cache();
+    split_tab_->impl->invalidate_layout();
+    split_tab_->impl->update_size_request();
+    split_tab_->go_to_page(current_page_);
+  }
 }
 
 // ---------------------------------------------------------------- find ----
@@ -734,6 +824,165 @@ int PdfTab::find_total() const {
 }
 
 int PdfTab::find_index() const { return impl->find_index_; }
+
+// ------------------------------------------------------- annotations ----
+
+void PdfTab::set_doc_data(DocData data) {
+  doc_data_ = std::move(data);
+  impl->notify_annotations_changed();
+}
+
+std::string PdfTab::add_annotation_from_selection(std::string const& color,
+                                                  std::string const& kind) {
+  if (impl->sel.empty()) return {};
+  // Text must be non-whitespace (mac trims and rejects empties).
+  std::string text = selection_text();
+  while (!text.empty() && (text.front() == ' ' || text.front() == '\n' ||
+                           text.front() == '\r' || text.front() == '\t')) {
+    text.erase(text.begin());
+  }
+  while (!text.empty() && (text.back() == ' ' || text.back() == '\n' ||
+                           text.back() == '\r' || text.back() == '\t')) {
+    text.pop_back();
+  }
+  if (text.empty()) return {};
+
+  // One annotation on the first page of the selection (mac semantics): line
+  // rects come from the same per-char machinery as the live selection.
+  bool const forward = impl->sel.start_page < impl->sel.end_page ||
+                       (impl->sel.start_page == impl->sel.end_page &&
+                        impl->sel.start_char <= impl->sel.end_char);
+  int const page = forward ? impl->sel.start_page : impl->sel.end_page;
+  auto rects = impl->selection_rects_for(page);
+  if (rects.empty()) return {};
+
+  StoredAnnotation annotation;
+  annotation.id = make_annotation_id();
+  annotation.page = page + 1;
+  for (auto const& r : rects) {
+    // Stored space is PDF user space (bottom-left origin, y-up) — the same
+    // space FPDFText_GetRect reports; no flip happens here, only at paint.
+    if (r.right - r.left <= 0 || r.top - r.bottom <= 0) continue;
+    annotation.rects.push_back(
+        anno_rect_from_text_rect(r.left, r.top, r.right, r.bottom));
+  }
+  if (annotation.rects.empty()) return {};
+  if (text.size() > 800) {
+    // UTF-8 safe cut at a code point boundary.
+    std::size_t end = 800;
+    while (end > 0 &&
+           (static_cast<unsigned char>(text[end]) & 0xC0) == 0x80) {
+      --end;
+    }
+    text = text.substr(0, end);
+  }
+  annotation.excerpt = text;
+  annotation.color = color;
+  annotation.kind = kind;
+  annotation.created = std::chrono::duration_cast<std::chrono::seconds>(
+                           std::chrono::system_clock::now()
+                               .time_since_epoch())
+                           .count();
+  std::string const id = annotation.id;
+  doc_data_.annotations.push_back(std::move(annotation));
+  impl->notify_annotations_changed();
+  return id;
+}
+
+void PdfTab::remove_annotation(std::string const& id) {
+  auto& annotations = doc_data_.annotations;
+  annotations.erase(
+      std::remove_if(annotations.begin(), annotations.end(),
+                     [&](StoredAnnotation const& a) { return a.id == id; }),
+      annotations.end());
+  impl->notify_annotations_changed();
+}
+
+bool PdfTab::is_bookmarked(int page) const {
+  for (auto const& bookmark : doc_data_.bookmarks) {
+    if (bookmark.page == page) return true;
+  }
+  return false;
+}
+
+void PdfTab::toggle_bookmark(int page) {
+  auto& bookmarks = doc_data_.bookmarks;
+  auto it = std::find_if(bookmarks.begin(), bookmarks.end(),
+                         [&](StoredBookmark const& b) { return b.page == page; });
+  if (it != bookmarks.end()) {
+    bookmarks.erase(it);
+  } else {
+    StoredBookmark bookmark;
+    bookmark.page = page;
+    bookmark.label = Trf("ui.notes.page", std::to_string(page));
+    bookmark.created = std::chrono::duration_cast<std::chrono::seconds>(
+                           std::chrono::system_clock::now()
+                               .time_since_epoch())
+                           .count();
+    bookmarks.push_back(std::move(bookmark));
+  }
+  std::sort(bookmarks.begin(), bookmarks.end(),
+            [](StoredBookmark const& a, StoredBookmark const& b) {
+              return a.page != b.page ? a.page < b.page
+                                      : a.created < b.created;
+            });
+  impl->notify_annotations_changed();
+}
+
+void PdfTab::remove_bookmark(int page) {
+  auto& bookmarks = doc_data_.bookmarks;
+  bookmarks.erase(
+      std::remove_if(bookmarks.begin(), bookmarks.end(),
+                     [&](StoredBookmark const& b) { return b.page == page; }),
+      bookmarks.end());
+  impl->notify_annotations_changed();
+}
+
+void PdfTab::refresh_rendering() {
+  impl->clear_cache();
+  if (impl->draw != nullptr) gtk_widget_queue_draw(impl->draw);
+  if (split_tab_ != nullptr) split_tab_->refresh_rendering();
+}
+
+// ------------------------------------------------------------ split ----
+
+void PdfTab::set_split(bool on) {
+  if (on == (split_tab_ != nullptr)) return;
+  if (on) {
+    split_tab_ = std::make_unique<PdfTab>(doc_, path_, title_);
+    split_tab_->impl->dark_ = impl->dark_;
+    split_tab_->set_double_mode(double_mode_);
+    split_tab_->restore_page(current_page_);
+    split_tab_->go_to_page(current_page_);
+    gtk_paned_set_end_child(GTK_PANED(paned_), split_tab_->widget());
+    // Half/half once the paned has a real allocation (an early set_position
+    // gets clamped against the not-yet-known width).
+    struct Once {
+      GtkPaned* paned;
+      int tries;
+    };
+    auto* once = new Once{GTK_PANED(paned_), 0};
+    (void)g_timeout_add(
+        30,
+        +[](gpointer user_data) -> int {
+          auto* ctx = static_cast<Once*>(user_data);
+          if (!gtk_widget_get_mapped(GTK_WIDGET(ctx->paned)) &&
+              ++ctx->tries < 100) {
+            return G_SOURCE_CONTINUE;
+          }
+          int const width = gtk_widget_get_width(GTK_WIDGET(ctx->paned));
+          if (width > 0) gtk_paned_set_position(ctx->paned, width / 2);
+          delete ctx;
+          return G_SOURCE_REMOVE;
+        },
+        once);
+    split_tab_->impl->set_scroll_ratio(impl->scroll_ratio());
+  } else {
+    auto dying = std::move(split_tab_);
+    gtk_paned_set_end_child(GTK_PANED(paned_), nullptr);  // destroys widgets
+    dying.reset();
+  }
+}
 
 // ---------------------------------------------------------- thumbnails ----
 
