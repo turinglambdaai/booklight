@@ -15,4 +15,4 @@
         (macos-icon . "design/app-icon.icns")
         (windows-icon . "design/app-icon.ico")
         (linux-icon . "design/app-icon.png")
-        (linux-formats . ("deb" "rpm" "appimage")))
+        (linux-formats . ("deb" "rpm" "appimage")) (dmg-background . "design/dmg-background.png") (windows-installer-bitmaps . #hasheq((banner . "design/wizard-banner.bmp") (dialog . "design/wizard-dialog.bmp")))))
