@@ -1278,9 +1278,7 @@ void toggle_tts_ui() {
     trimmed = trimmed.substr(0, end);
   }
   if (!pdfgist::tts::toggle(trimmed)) {
-    // No shared i18n key for transport absence; host-side technical text.
-    host_alert("Text-to-speech is unavailable: the spd-say command "
-               "(speech-dispatcher) was not found.");
+    host_alert(Tr("ui.tts.unavailable"));
   }
 }
 

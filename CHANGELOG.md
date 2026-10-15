@@ -5,6 +5,43 @@ All notable changes to PDFGist are documented here. Format follows
 The 1.x release era was retired in the version epoch reset below; its
 releases and tags were deleted and the history lives in git on `main`.
 
+## [0.3.0] - 2026-10-16
+
+### Added
+- **macOS: the Apple-form reader.** The host was rebuilt on the macOS
+  document model: one document per window with native window tabs
+  (Window > Merge All Windows), a native unified toolbar (page
+  navigation, zoom, split, find, bookmark, TTS, print, AI inspector),
+  a sidebar that only navigates the current document (thumbnails /
+  outline / annotations), a standard File > Open Recent menu, window
+  titles that show the filename with a proxy icon, and Settings in the
+  system Settings scene. The hand-drawn toolbar, in-window tab chips,
+  bottom bar, sidebar recents and the in-app theme toggle are gone —
+  the app follows the system appearance.
+- **Windows: full feature parity.** Annotation highlights (three
+  colors), underline and strikeout with a notes/bookmarks pane and a
+  bookmark toggle; text-to-speech (Windows speech); document printing;
+  split view; AcroForm filling (text / checkbox / radio / choice) with
+  export of the filled copy. Recent files moved from the sidebar to an
+  Open Recent menu, matching the macOS information architecture.
+- **Linux: full feature parity.** The same feature set on GTK4:
+  annotation highlights with the notes/bookmarks pane, bookmarks,
+  text-to-speech via speech-dispatcher (`spd-say`), printing through
+  GtkPrintOperation, split view, and AcroForm filling with verified
+  write-back and export. Plus the missing P0 piece: password-protected
+  PDFs now prompt for a password with retry.
+- Annotations and bookmarks are byte-compatible across all three hosts
+  (same storage JSON, rects in PDF page space, bottom-left origin).
+
+### Fixed
+- Linux: selection and find highlights were painted vertically
+  mirrored (PDFium rects are top-left origin; the paint path now flips
+  into view space).
+- Linux: the selection context menu pointed at window actions that did
+  not exist; it now uses the registered application actions.
+- The updater requires platform-identity helpers from `rivet/distribution`
+  in a way that works both with and without rivet #258.
+
 ## [0.2.0] - 2026-10-15
 
 ### Added

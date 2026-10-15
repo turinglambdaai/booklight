@@ -258,6 +258,7 @@ inline constexpr struct WinStringEntry {
     {"ui.menu.single-page", L"单页", L"Single Pages"},
     {"ui.menu.double-page", L"双页", L"Two Pages"},
     {"ui.sidebar.annotations", L"批注", L"Annotations"},
+    {"ui.tts.unavailable", L"朗读不可用：未找到 spd-say 命令（speech-dispatcher）。", L"Text-to-speech is unavailable: the spd-say command (speech-dispatcher) was not found."},
 };
 
 }  // namespace pdfgist

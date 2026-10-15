@@ -252,6 +252,7 @@ enum L10n {
     "ui.menu.single-page": "单页",
     "ui.menu.double-page": "双页",
     "ui.sidebar.annotations": "批注",
+    "ui.tts.unavailable": "朗读不可用：未找到 spd-say 命令（speech-dispatcher）。",
     ]
 
     private static let en: [String: String] = [
@@ -502,6 +503,7 @@ enum L10n {
     "ui.menu.single-page": "Single Pages",
     "ui.menu.double-page": "Two Pages",
     "ui.sidebar.annotations": "Annotations",
+    "ui.tts.unavailable": "Text-to-speech is unavailable: the spd-say command (speech-dispatcher) was not found.",
     ]
 
     /// Look up a key in the active language, falling back to zh then the key

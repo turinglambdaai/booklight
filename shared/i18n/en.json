@@ -245,5 +245,6 @@
   "ui.menu.tts": "Read Aloud",
   "ui.menu.single-page": "Single Pages",
   "ui.menu.double-page": "Two Pages",
-  "ui.sidebar.annotations": "Annotations"
+  "ui.sidebar.annotations": "Annotations",
+  "ui.tts.unavailable": "Text-to-speech is unavailable: the spd-say command (speech-dispatcher) was not found."
 }

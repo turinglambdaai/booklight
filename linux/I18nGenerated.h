@@ -259,6 +259,7 @@ inline constexpr struct LinuxStringEntry {
     {"ui.menu.single-page", "单页", "Single Pages"},
     {"ui.menu.double-page", "双页", "Two Pages"},
     {"ui.sidebar.annotations", "批注", "Annotations"},
+    {"ui.tts.unavailable", "朗读不可用：未找到 spd-say 命令（speech-dispatcher）。", "Text-to-speech is unavailable: the spd-say command (speech-dispatcher) was not found."},
 };
 
 }  // namespace pdfgist
