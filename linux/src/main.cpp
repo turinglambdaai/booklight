@@ -158,6 +158,9 @@ struct Host {
   // tab (when open) is appended last at index tabs.size(). All mapping math
   // hangs off that.
   PdfTab* active_pdf() {
+    // Null during window assembly (the forms pane constructs before the
+    // notebook exists); GTK would only warn, but stay explicit.
+    if (notebook == nullptr) return nullptr;
     gint const index = gtk_notebook_get_current_page(notebook);
     if (index < 0 || static_cast<std::size_t>(index) >= tabs.size()) {
       return nullptr;
