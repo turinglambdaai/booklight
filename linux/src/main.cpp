@@ -33,11 +33,15 @@
 #include <vector>
 
 #include "GeneratedBackend.hpp"
+#include "annotations.hpp"
 #include "epub.hpp"
+#include "forms.hpp"
 #include "host.hpp"
 #include "i18n.h"
 #include "panels.hpp"
 #include "pdfview.hpp"
+#include "printing.hpp"
+#include "tts.hpp"
 
 namespace {
 
@@ -60,13 +64,17 @@ inline gulong hook(gpointer instance, gchar const* detailed_signal,
 }
 
 using pdfgist::AiPanel;
+using pdfgist::DocData;
 using pdfgist::EpubTab;
 using pdfgist::PanelContext;
 using pdfgist::PdfDocument;
 using pdfgist::PdfTab;
+using pdfgist::StoredAnnotation;
+using pdfgist::StoredBookmark;
 using pdfgist::TextSource;
 using pdfgist::Tr;
 using pdfgist::Trf;
+using pdfgist::forms::FormsPane;
 
 // ---------------------------------------------------------------------------
 // host state
@@ -80,6 +88,7 @@ struct Host {
   GtkWidget* right_sidebar{nullptr};
   GtkFlowBox* thumbs{nullptr};
   GtkListBox* outline_list{nullptr};
+  GtkListBox* notes_list{nullptr};
   GtkRevealer* find_revealer{nullptr};
   GtkSearchEntry* find_entry{nullptr};
   GtkLabel* find_count{nullptr};
@@ -92,7 +101,12 @@ struct Host {
   GtkButton* header_open{nullptr};
   GtkWidget* header_edit_menu{nullptr};
   GtkWidget* header_toc_menu{nullptr};
+  GtkWidget* header_bookmark{nullptr};
+  GtkWidget* header_split{nullptr};
+  GtkWidget* header_tts{nullptr};
+  GtkWidget* header_print{nullptr};
   GtkMenuButton* primary_menu{nullptr};
+  std::unique_ptr<FormsPane> forms_pane;
 
   std::unique_ptr<rivet::linux_runtime::Backend> backend;
   std::unique_ptr<rivet_app::API> api;
@@ -174,6 +188,12 @@ void host_alert(std::string const& message);
 void show_selection_menu();
 void build_epub_toc_menu();
 void populate_thumbs();
+void populate_notes();
+void refresh_bookmark_button();
+void refresh_forms_pane();
+void load_annotations_for_tab(PdfTab* tab);
+void schedule_annotation_save(PdfTab* tab);
+void store_annotations_now(PdfTab* tab);
 int epub_find_run(std::string const& query);
 int epub_find_step(int direction);
 int epub_find_total();
@@ -491,23 +511,13 @@ void connect_tab_label(GtkWidget* label, gint index) {
       nullptr);
 }
 
-void open_pdf_path(std::string const& path, int resume_page = 1) {
-  for (std::size_t i = 0; i < g_host.tabs.size(); ++i) {
-    if (g_host.tabs[i]->path() == path) {  // already open → activate
-      gtk_notebook_set_current_page(g_host.notebook, static_cast<gint>(i));
-      if (resume_page > 1) g_host.tabs[i]->go_to_page(resume_page);
-      return;
-    }
-  }
-  if (!pdfium::load()) {
-    host_alert(Trf("ui.pdfium.unavailable", std::string(pdfium::load_error())));
-    return;
-  }
-  auto doc = PdfDocument::open_file(path, "", nullptr);
-  if (doc == nullptr) {
-    host_alert(Trf("ui.open-failed", path));
-    return;
-  }
+// PDFium FPDF_ERR_PASSWORD: the document needs a (or a correct) password.
+constexpr unsigned long kPdfErrorPassword = 4;
+
+// Common tail of every successful open: tab creation, notebook wiring,
+// outline + annotation load (see load_annotations_for_tab).
+void finish_pdf_open(std::string const& path, int resume_page,
+                     std::shared_ptr<PdfDocument> doc) {
   std::string const title = path_title(path);
   auto tab = std::make_unique<PdfTab>(doc, path, title);
   PdfTab* raw = tab.get();
@@ -518,9 +528,15 @@ void open_pdf_path(std::string const& path, int resume_page = 1) {
     refresh_status();
     refresh_header_title();
     update_recents_debounced(raw->path(), page);
+    refresh_bookmark_button();
   };
   raw->on_selection_changed = [](bool) {};
   raw->on_context_menu = [] { show_selection_menu(); };
+  raw->on_annotations_changed = [raw] {
+    schedule_annotation_save(raw);
+    refresh_bookmark_button();
+    populate_notes();
+  };
   g_host.tabs.push_back(std::move(tab));
   gint index = gtk_notebook_append_page(g_host.notebook, raw->widget(),
                                         build_tab_label(title));
@@ -541,8 +557,118 @@ void open_pdf_path(std::string const& path, int resume_page = 1) {
   raw->restore_page(std::max(resume_page, 1));
   raw->go_to_page(std::max(resume_page, 1));
   build_outline_for(raw);
+  load_annotations_for_tab(raw);
+  refresh_bookmark_button();
+  populate_notes();
+  refresh_forms_pane();
   refresh_status();
   refresh_header_title();
+}
+
+// Modal password prompt with an in-place wrong-password retry loop (the
+// while-doc.isLocked semantics of the macOS ReaderModel.openPath; windows
+// OpenDocReady does the same). Empty input cancels the open entirely.
+struct PasswordCtx {
+  std::string path;
+  int resume_page;
+  GtkDialog* dialog{nullptr};
+  GtkLabel* message{nullptr};
+  GtkEntry* entry{nullptr};
+};
+
+void on_password_dialog_response(GtkDialog* dialog, int response,
+                                 gpointer user_data) {
+  auto* ctx = static_cast<PasswordCtx*>(user_data);
+  if (response != GTK_RESPONSE_OK) {
+    gtk_window_destroy(GTK_WINDOW(dialog));  // ctx freed on destroy
+    return;
+  }
+  std::string const password =
+      gtk_editable_get_text(GTK_EDITABLE(ctx->entry));
+  // mac parity: empty input aborts the open instead of retrying.
+  if (password.empty()) {
+    gtk_window_destroy(GTK_WINDOW(dialog));
+    return;
+  }
+  unsigned long error = 0;
+  auto doc = PdfDocument::open_file(ctx->path, password, &error);
+  if (doc != nullptr) {
+    std::string const path = ctx->path;
+    int const resume = ctx->resume_page;
+    gtk_window_destroy(GTK_WINDOW(dialog));
+    finish_pdf_open(path, resume, std::move(doc));
+    return;
+  }
+  if (error == kPdfErrorPassword) {
+    // wrong password: keep the dialog up and loop.
+    gtk_label_set_text(ctx->message, Tr("ui.password.wrong").c_str());
+    gtk_editable_set_text(GTK_EDITABLE(ctx->entry), "");
+    gtk_window_present(GTK_WINDOW(dialog));
+    return;
+  }
+  gtk_window_destroy(GTK_WINDOW(dialog));
+  host_alert(Trf("ui.open-failed", ctx->path));
+}
+
+void prompt_pdf_password(std::string const& path, int resume_page,
+                         bool wrong) {
+  auto* dialog = gtk_dialog_new_with_buttons(
+      Tr("ui.password.title").c_str(), g_host.window,
+      static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
+                                  GTK_DIALOG_DESTROY_WITH_PARENT),
+      Tr("ui.password.cancel").c_str(), GTK_RESPONSE_CANCEL,
+      Tr("ui.password.ok").c_str(), GTK_RESPONSE_OK, nullptr);
+  auto* ctx = new PasswordCtx{path, resume_page, GTK_DIALOG(dialog), nullptr,
+                              nullptr};
+  auto* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+  auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_set_margin_top(box, 12);
+  gtk_widget_set_margin_bottom(box, 6);
+  gtk_widget_set_margin_start(box, 12);
+  gtk_widget_set_margin_end(box, 12);
+  gtk_box_append(GTK_BOX(area), box);
+  auto* message = gtk_label_new(wrong ? Tr("ui.password.wrong").c_str()
+                                      : nullptr);
+  gtk_widget_set_visible(message, wrong);
+  gtk_widget_add_css_class(message, "warning");
+  ctx->message = GTK_LABEL(message);
+  gtk_box_append(GTK_BOX(box), message);
+  auto* entry = gtk_entry_new();
+  gtk_entry_set_visibility(GTK_ENTRY(entry), FALSE);
+  gtk_entry_set_activates_default(GTK_ENTRY(entry), TRUE);
+  ctx->entry = GTK_ENTRY(entry);
+  gtk_box_append(GTK_BOX(box), entry);
+  gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+  hook(
+      dialog, "response", on_password_dialog_response, ctx,
+      +[](gpointer data, GClosure*) { delete static_cast<PasswordCtx*>(data); },
+      static_cast<GConnectFlags>(0));
+  gtk_window_present(GTK_WINDOW(dialog));
+}
+
+void open_pdf_path(std::string const& path, int resume_page = 1) {
+  for (std::size_t i = 0; i < g_host.tabs.size(); ++i) {
+    if (g_host.tabs[i]->path() == path) {  // already open → activate
+      gtk_notebook_set_current_page(g_host.notebook, static_cast<gint>(i));
+      if (resume_page > 1) g_host.tabs[i]->go_to_page(resume_page);
+      return;
+    }
+  }
+  if (!pdfium::load()) {
+    host_alert(Trf("ui.pdfium.unavailable", std::string(pdfium::load_error())));
+    return;
+  }
+  unsigned long error = 0;
+  auto doc = PdfDocument::open_file(path, "", &error);
+  if (doc != nullptr) {
+    finish_pdf_open(path, resume_page, std::move(doc));
+    return;
+  }
+  if (error == kPdfErrorPassword) {
+    prompt_pdf_password(path, resume_page, false);
+    return;
+  }
+  host_alert(Trf("ui.open-failed", path));
 }
 
 void open_epub_path(std::string const& path, int resume_chapter = 1) {
@@ -621,6 +747,9 @@ void close_tab_index(gint index) {
   if (index < 0 || static_cast<std::size_t>(index) >= g_host.tabs.size()) {
     return;
   }
+  // mac closeDocument: flush pending annotation persistence before the tab
+  // dies (the debounce timer would otherwise fire on a dangling pointer).
+  store_annotations_now(g_host.tabs[static_cast<std::size_t>(index)].get());
   gtk_notebook_remove_page(g_host.notebook, index);
   g_host.tabs.erase(g_host.tabs.begin() + index);
   if (g_host.epub_tab_index > index) {
@@ -763,12 +892,39 @@ void show_selection_menu() {
     gtk_widget_unparent(g_selection_popover);
     g_selection_popover = nullptr;
   }
+  // Same shape as the mac selectionMenu: translate | highlights (3 colors)
+  // + underline + strike | copy.
   auto* menu = g_menu_new();
-  auto* translate =
-      g_menu_item_new(Tr("ui.menu.translate").c_str(), "win.translate-selection");
-  g_menu_append_item(menu, translate);
-  g_object_unref(translate);
-  g_menu_append(menu, Tr("ui.menu.copy").c_str(), "win.copy-selection");
+  {
+    auto* section = g_menu_new();
+    auto* translate =
+        g_menu_item_new(Tr("ui.menu.translate").c_str(), "app.translate-selection");
+    g_menu_append_item(section, translate);
+    g_object_unref(translate);
+    g_menu_append_section(menu, nullptr, G_MENU_MODEL(section));
+    g_object_unref(section);
+  }
+  {
+    auto* section = g_menu_new();
+    g_menu_append(section, Tr("ui.menu.highlight-yellow").c_str(),
+                  "app.annotate-highlight::yellow");
+    g_menu_append(section, Tr("ui.menu.highlight-green").c_str(),
+                  "app.annotate-highlight::green");
+    g_menu_append(section, Tr("ui.menu.highlight-blue").c_str(),
+                  "app.annotate-highlight::blue");
+    g_menu_append(section, Tr("ui.menu.underline").c_str(),
+                  "app.annotate-underline");
+    g_menu_append(section, Tr("ui.menu.strike").c_str(),
+                  "app.annotate-strike");
+    g_menu_append_section(menu, nullptr, G_MENU_MODEL(section));
+    g_object_unref(section);
+  }
+  {
+    auto* section = g_menu_new();
+    g_menu_append(section, Tr("ui.menu.copy").c_str(), "app.copy-selection");
+    g_menu_append_section(menu, nullptr, G_MENU_MODEL(section));
+    g_object_unref(section);
+  }
   g_selection_popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
   g_object_unref(menu);
   // Anchor to the scrolled view; the popover picks a pointing position at
@@ -778,6 +934,363 @@ void show_selection_menu() {
   gtk_widget_set_parent(g_selection_popover, GTK_WIDGET(tab->widget()));
   gtk_popover_set_pointing_to(GTK_POPOVER(g_selection_popover), &rect);
   gtk_popover_popup(GTK_POPOVER(g_selection_popover));
+}
+
+// ---------------------------------------------------------------------------
+// annotations: persistence + notes pane (left sidebar's third mode)
+// ---------------------------------------------------------------------------
+
+void store_annotations_now(PdfTab* tab) {
+  if (tab == nullptr || g_host.api == nullptr || !g_host.ready) return;
+  if (tab->annotation_save_source != 0) {
+    g_source_remove(tab->annotation_save_source);
+    tab->annotation_save_source = 0;
+  }
+  auto bytes = encode_doc_data(tab->doc_data());
+  (void)g_host.api->set_annotations_async(
+      tab->path(), g_host.settings.annotation_sidecar, std::move(bytes),
+      [](rivet_app::Result<void>&&) {});
+}
+
+void schedule_annotation_save(PdfTab* tab) {
+  if (tab->annotation_save_source != 0) {
+    g_source_remove(tab->annotation_save_source);
+  }
+  // mac queueAnnotationSave: 800 ms debounce, flush on tab close.
+  tab->annotation_save_source = g_timeout_add(
+      800,
+      +[](gpointer user_data) -> int {
+        auto* tab = static_cast<PdfTab*>(user_data);
+        tab->annotation_save_source = 0;
+        store_annotations_now(tab);
+        return G_SOURCE_REMOVE;
+      },
+      tab);
+}
+
+void load_annotations_for_tab(PdfTab* tab) {
+  if (g_host.api == nullptr || !g_host.ready || tab == nullptr) return;
+  (void)g_host.api->get_annotations_async(
+      tab->path(), g_host.settings.annotation_sidecar,
+      [tab](rivet_app::Result<rivet::Bytes> result) {
+        host::dispatch_ui([tab, result]() mutable {
+          if (!result.succeeded()) return;
+          DocData data = pdfgist::parse_doc_data(result.get());
+          tab->set_doc_data(std::move(data));
+        });
+      });
+}
+
+// One annotation card / bookmark row click target: stored id or page.
+void on_note_row_activated(GtkListBox*, GtkListBoxRow* row, gpointer) {
+  auto* tab = g_host.active_pdf_only();
+  if (tab == nullptr || row == nullptr) return;
+  auto const page = GPOINTER_TO_INT(
+      g_object_get_data(G_OBJECT(row), "pdfgist-note-page"));
+  if (page > 0) tab->go_to_page(page);
+}
+
+void populate_notes() {
+  auto* list = g_host.notes_list;
+  if (list == nullptr) return;
+  gtk_list_box_remove_all(list);
+  auto* tab = g_host.active_pdf_only();
+  if (tab == nullptr) {
+    // EPUB or no document: the pane is PDF-only (mac sidebar semantics).
+    auto* row = gtk_list_box_row_new();
+    auto* hint = gtk_label_new(
+        g_host.epub_active() ? Tr("ui.need.document").c_str()
+                             : Tr("ui.welcome.open-any").c_str());
+    gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
+    gtk_widget_add_css_class(hint, "dim-label");
+    gtk_widget_add_css_class(hint, "caption");
+    gtk_widget_set_margin_top(hint, 10);
+    gtk_widget_set_margin_start(hint, 10);
+    gtk_widget_set_margin_end(hint, 10);
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hint);
+    gtk_list_box_append(list, row);
+    gtk_widget_set_sensitive(GTK_WIDGET(row), FALSE);
+    return;
+  }
+
+  auto const& data = tab->doc_data();
+  if (data.annotations.empty()) {
+    auto* row = gtk_list_box_row_new();
+    auto* hint = gtk_label_new(Tr("ui.notes.empty").c_str());
+    gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
+    gtk_widget_add_css_class(hint, "dim-label");
+    gtk_widget_add_css_class(hint, "caption");
+    gtk_widget_set_margin_top(hint, 10);
+    gtk_widget_set_margin_start(hint, 10);
+    gtk_widget_set_margin_end(hint, 10);
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hint);
+    gtk_list_box_append(list, row);
+    gtk_widget_set_sensitive(GTK_WIDGET(row), FALSE);
+  }
+
+  // Annotation cards sorted by page then creation (mac NotesPane).
+  std::vector<StoredAnnotation const*> sorted;
+  sorted.reserve(data.annotations.size());
+  for (auto const& annotation : data.annotations) sorted.push_back(&annotation);
+  std::sort(sorted.begin(), sorted.end(),
+            [](auto const* a, auto const* b) {
+              return a->page != b->page ? a->page < b->page
+                                        : a->created < b->created;
+            });
+  for (auto const* annotation : sorted) {
+    auto* row = gtk_list_box_row_new();
+    gtk_widget_add_css_class(GTK_WIDGET(row), "card");
+    auto* card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_set_margin_top(card, 6);
+    gtk_widget_set_margin_bottom(card, 6);
+    gtk_widget_set_margin_start(card, 8);
+    gtk_widget_set_margin_end(card, 8);
+
+    auto* head = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    // color dot
+    auto* dot = gtk_drawing_area_new();
+    gtk_widget_set_size_request(dot, 9, 9);
+    gtk_widget_set_valign(dot, GTK_ALIGN_CENTER);
+    auto* color = new std::string(annotation->color);
+    gtk_drawing_area_set_draw_func(
+        GTK_DRAWING_AREA(dot),
+        +[](GtkDrawingArea* area, cairo_t* cr, int, int, gpointer user_data) {
+          auto const* color = static_cast<std::string const*>(user_data);
+          double r = 0, g = 0, b = 0, a = 1;
+          pdfgist::annotation_rgba(*color, &r, &g, &b, &a);
+          cairo_set_source_rgb(cr, r, g, b);
+          cairo_arc(cr, 4.5, 4.5, 4.0, 0, 2 * 3.14159265358979);
+          cairo_set_source_rgba(cr, r, g, b, a);
+          cairo_fill(cr);
+          (void)area;
+        },
+        color,
+        +[](gpointer user_data) { delete static_cast<std::string*>(user_data); });
+    gtk_box_append(GTK_BOX(head), dot);
+    auto* page_label = gtk_label_new(
+        Trf("ui.notes.page", std::to_string(annotation->page)).c_str());
+    gtk_widget_add_css_class(page_label, "caption");
+    gtk_widget_add_css_class(page_label, "dim-label");
+    gtk_box_append(GTK_BOX(head), page_label);
+    if (!annotation->kind.empty() && annotation->kind != "highlight") {
+      auto* kind = gtk_label_new(annotation->kind.c_str());
+      gtk_widget_add_css_class(kind, "caption");
+      gtk_widget_add_css_class(kind, "dim-label");
+      gtk_box_append(GTK_BOX(head), kind);
+    }
+    auto* spacer = gtk_label_new(nullptr);
+    gtk_widget_set_hexpand(spacer, TRUE);
+    gtk_box_append(GTK_BOX(head), spacer);
+    auto* translate_btn =
+        gtk_button_new_with_label(Tr("ui.notes.translate-btn").c_str());
+    gtk_widget_add_css_class(translate_btn, "flat");
+    gtk_widget_add_css_class(translate_btn, "caption");
+    auto* excerpt = new std::string(annotation->excerpt);
+    hook(
+        translate_btn, "clicked",
+        +[](GtkButton*, gpointer user_data) {
+          std::unique_ptr<std::string> excerpt(
+              static_cast<std::string*>(user_data));
+          g_host.ai_panel->do_translate_text(*excerpt);
+        },
+        excerpt,
+        +[](gpointer user_data, GClosure*) {
+          delete static_cast<std::string*>(user_data);
+        },
+        static_cast<GConnectFlags>(0));
+    gtk_box_append(GTK_BOX(head), translate_btn);
+    auto* delete_btn =
+        gtk_button_new_with_label(Tr("ui.notes.delete-btn").c_str());
+    gtk_widget_add_css_class(delete_btn, "flat");
+    gtk_widget_add_css_class(delete_btn, "caption");
+    auto* annotation_id = new std::string(annotation->id);
+    hook(
+        delete_btn, "clicked",
+        +[](GtkButton*, gpointer user_data) {
+          std::unique_ptr<std::string> id(static_cast<std::string*>(user_data));
+          if (auto* tab = g_host.active_pdf_only(); tab != nullptr) {
+            tab->remove_annotation(*id);
+          }
+        },
+        annotation_id,
+        +[](gpointer user_data, GClosure*) {
+          delete static_cast<std::string*>(user_data);
+        },
+        static_cast<GConnectFlags>(0));
+    gtk_box_append(GTK_BOX(head), delete_btn);
+    gtk_box_append(GTK_BOX(card), head);
+
+    auto* excerpt_label = gtk_label_new(annotation->excerpt.c_str());
+    gtk_label_set_wrap(GTK_LABEL(excerpt_label), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(excerpt_label), 0.0f);
+    gtk_label_set_ellipsize(GTK_LABEL(excerpt_label), PANGO_ELLIPSIZE_END);
+    gtk_label_set_lines(GTK_LABEL(excerpt_label), 4);
+    gtk_box_append(GTK_BOX(card), excerpt_label);
+    if (!annotation->note.empty()) {
+      auto* note = gtk_label_new(annotation->note.c_str());
+      gtk_label_set_wrap(GTK_LABEL(note), TRUE);
+      gtk_label_set_xalign(GTK_LABEL(note), 0.0f);
+      gtk_widget_add_css_class(note, "dim-label");
+      gtk_widget_add_css_class(note, "caption");
+      gtk_box_append(GTK_BOX(card), note);
+    }
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), card);
+    g_object_set_data(G_OBJECT(row), "pdfgist-note-page",
+                      GINT_TO_POINTER(annotation->page));
+    gtk_list_box_append(list, row);
+  }
+
+  // bookmarks
+  auto* bookmarks_header_row = gtk_list_box_row_new();
+  auto* bookmarks_header =
+      gtk_label_new(Tr("ui.notes.bookmarks").c_str());
+  gtk_label_set_xalign(GTK_LABEL(bookmarks_header), 0.0f);
+  gtk_widget_add_css_class(bookmarks_header, "caption");
+  gtk_widget_set_margin_top(bookmarks_header, 10);
+  gtk_widget_set_margin_start(bookmarks_header, 10);
+  gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(bookmarks_header_row),
+                             bookmarks_header);
+  gtk_widget_set_sensitive(GTK_WIDGET(bookmarks_header_row), FALSE);
+  gtk_list_box_append(list, bookmarks_header_row);
+
+  if (data.bookmarks.empty()) {
+    auto* row = gtk_list_box_row_new();
+    auto* hint = gtk_label_new(Tr("ui.notes.bookmark-empty").c_str());
+    gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
+    gtk_widget_add_css_class(hint, "dim-label");
+    gtk_widget_add_css_class(hint, "caption");
+    gtk_widget_set_margin_start(hint, 10);
+    gtk_widget_set_margin_end(hint, 10);
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hint);
+    gtk_list_box_append(list, row);
+    gtk_widget_set_sensitive(GTK_WIDGET(row), FALSE);
+  }
+  auto bookmarks = data.bookmarks;  // already page-sorted by the model
+  for (auto const& bookmark : bookmarks) {
+    auto* row = gtk_list_box_row_new();
+    auto* line = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_margin_top(line, 3);
+    gtk_widget_set_margin_bottom(line, 3);
+    gtk_widget_set_margin_start(line, 8);
+    gtk_widget_set_margin_end(line, 8);
+    auto* page = gtk_label_new(std::to_string(bookmark.page).c_str());
+    gtk_widget_add_css_class(page, "caption");
+    gtk_box_append(GTK_BOX(line), page);
+    auto* label = gtk_label_new(
+        (bookmark.label.empty()
+             ? Trf("ui.notes.page", std::to_string(bookmark.page))
+             : bookmark.label)
+            .c_str());
+    gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+    gtk_widget_set_hexpand(label, TRUE);
+    gtk_box_append(GTK_BOX(line), label);
+    auto* remove = gtk_button_new_with_label(Tr("ui.notes.delete-btn").c_str());
+    gtk_widget_add_css_class(remove, "flat");
+    gtk_widget_add_css_class(remove, "caption");
+    auto const page_no = bookmark.page;
+    hook(
+        remove, "clicked",
+        +[](GtkButton*, gpointer user_data) {
+          auto const page_no = GPOINTER_TO_INT(user_data);
+          if (auto* tab = g_host.active_pdf_only(); tab != nullptr) {
+            tab->remove_bookmark(page_no);
+          }
+        },
+        GINT_TO_POINTER(page_no));
+    gtk_box_append(GTK_BOX(line), remove);
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), line);
+    g_object_set_data(G_OBJECT(row), "pdfgist-note-page",
+                      GINT_TO_POINTER(bookmark.page));
+    gtk_list_box_append(list, row);
+  }
+}
+
+void refresh_bookmark_button() {
+  if (g_host.header_bookmark == nullptr) return;
+  auto* tab = g_host.active_pdf();
+  bool const marked = tab != nullptr && tab->is_bookmarked(tab->current_page());
+  gtk_button_set_icon_name(GTK_BUTTON(g_host.header_bookmark),
+                           marked ? "starred-symbolic" : "non-starred-symbolic");
+}
+
+void refresh_forms_pane() {
+  if (g_host.forms_pane != nullptr) g_host.forms_pane->refresh();
+}
+
+void annotate_from_selection(std::string const& color, std::string const& kind) {
+  auto* tab = g_host.active_pdf_only();
+  if (tab == nullptr) return;
+  tab->add_annotation_from_selection(color, kind);
+}
+
+void toggle_bookmark_ui() {
+  auto* tab = g_host.active_pdf();
+  if (tab == nullptr) return;
+  tab->toggle_bookmark(tab->current_page());
+}
+
+void toggle_split_ui() {
+  auto* tab = g_host.active_pdf();
+  if (tab == nullptr) return;
+  tab->set_split(!tab->split_on());
+}
+
+void toggle_tts_ui() {
+  std::string text;
+  if (g_host.epub_active() && g_host.epub != nullptr) {
+    text = g_host.epub->chapter_text(g_host.epub->current_page());
+  } else if (auto* tab = g_host.active_pdf(); tab != nullptr) {
+    text = tab->page_text(tab->current_page());
+  }
+  // Trim; mac guards on whitespace-only pages.
+  auto trimmed = [](std::string s) {
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\n' ||
+                          s.front() == '\r' || s.front() == '\t')) {
+      s.erase(s.begin());
+    }
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\n' ||
+                          s.back() == '\r' || s.back() == '\t')) {
+      s.pop_back();
+    }
+    return s;
+  }(std::move(text));
+  if (trimmed.empty()) {
+    host_alert(Tr("ui.tts.empty"));
+    return;
+  }
+  if (trimmed.size() > 20000) {
+    // UTF-8 safe cut (mac String.prefix(20000) parity).
+    std::size_t end = 20000;
+    while (end > 0 &&
+           (static_cast<unsigned char>(trimmed[end]) & 0xC0) == 0x80) {
+      --end;
+    }
+    trimmed = trimmed.substr(0, end);
+  }
+  if (!pdfgist::tts::toggle(trimmed)) {
+    // No shared i18n key for transport absence; host-side technical text.
+    host_alert("Text-to-speech is unavailable: the spd-say command "
+               "(speech-dispatcher) was not found.");
+  }
+}
+
+void print_ui() {
+  auto* tab = g_host.active_pdf();
+  if (tab == nullptr) {
+    host_alert(Tr("ui.need.document"));
+    return;
+  }
+  std::string const error =
+      pdfgist::printing::print_document(g_host.window, tab->document(),
+                                        tab->current_page());
+  if (!error.empty()) {
+    // GError text from the print stack is already human-readable.
+    host_alert(error);
+  }
 }
 
 }  // namespace
@@ -955,6 +1468,10 @@ void bootstrap() {
       g_host.ai_panel->sync_settings();
       refresh_recents_menu();
 
+      // Tabs opened before the backend was ready get their stored
+      // annotations now (mac loadDocData needs the API too).
+      for (auto& tab : g_host.tabs) load_annotations_for_tab(tab.get());
+
       // launch-open parity with the macOS host's PDFGIST_OPEN
       if (char const* launch = getenv("PDFGIST_OPEN")) {
         std::string const path = launch;
@@ -1091,6 +1608,7 @@ void reload_tab_from_bytes(PdfTab* tab, rivet::Bytes const& bytes) {
   tab->reload_document(std::move(doc));
   build_outline_for(tab);
   populate_thumbs();
+  refresh_forms_pane();  // form fields may differ in the edited document
   refresh_status();
   refresh_header_title();
 }
@@ -1833,6 +2351,12 @@ void update_main_stack() {
   gtk_stack_set_visible_child_name(GTK_STACK(g_host.main_stack),
                                    pages > 0 ? "reader" : "welcome");
   gtk_widget_set_visible(GTK_WIDGET(g_host.header_edit_menu), pages > 0);
+  if (g_host.header_bookmark != nullptr) {
+    gtk_widget_set_visible(GTK_WIDGET(g_host.header_bookmark), pages > 0);
+    gtk_widget_set_visible(GTK_WIDGET(g_host.header_split), pages > 0);
+    gtk_widget_set_visible(GTK_WIDGET(g_host.header_tts), pages > 0);
+    gtk_widget_set_visible(GTK_WIDGET(g_host.header_print), pages > 0);
+  }
 }
 
 void build_primary_menu();
@@ -2087,6 +2611,36 @@ void install_actions(GtkApplication* app) {
               static_cast<int>(g_variant_get_int32(value)));
         }
       }, nullptr, "i");
+  add("annotate-highlight",
+      +[](GSimpleAction*, GVariant* value, gpointer) {
+        if (value != nullptr) {
+          annotate_from_selection(g_variant_get_string(value, nullptr),
+                                  "highlight");
+        }
+      }, nullptr, "s");
+  add("annotate-underline", +[](GSimpleAction*, GVariant*,
+                                            gpointer) {
+        annotate_from_selection("blue", "underline");
+      }, nullptr);
+  add("annotate-strike", +[](GSimpleAction*, GVariant*,
+                                         gpointer) {
+        annotate_from_selection("yellow", "strike");
+      }, nullptr);
+  add("bookmark-toggle", +[](GSimpleAction*, GVariant*,
+                                         gpointer) {
+        toggle_bookmark_ui();
+      }, nullptr);
+  add("split-toggle", +[](GSimpleAction*, GVariant*,
+                                      gpointer) {
+        toggle_split_ui();
+      }, nullptr);
+  add("tts-toggle", +[](GSimpleAction*, GVariant*,
+                                    gpointer) {
+        toggle_tts_ui();
+      }, nullptr);
+  add("print", +[](GSimpleAction*, GVariant*, gpointer) {
+        print_ui();
+      }, nullptr);
   add("check-updates", +[](GSimpleAction*, GVariant*, gpointer) {
         check_updates_manual();
       }, nullptr);
@@ -2133,6 +2687,8 @@ void install_accels(GtkApplication* app) {
   set("app.toggle-sidebar", {"<Primary><Shift>l"});
   set("app.toggle-ai", {"<Primary><Shift>a"});
   set("app.check-updates", {"<Primary><Shift>u"});
+  set("app.bookmark-toggle", {"<Primary>b"});
+  set("app.print", {"<Primary>p"});
 }
 
 // ---------------------------------------------------------------------------
@@ -2171,6 +2727,7 @@ void build_primary_menu() {
   g_menu_append(view, Tr("ui.menu.zoom-out").c_str(), "app.zoom-out");
   g_menu_append(view, Tr("ui.menu.zoom-reset").c_str(), "app.zoom-reset");
   g_menu_append(view, Tr("ui.viewer.fit").c_str(), "app.fit-width");
+  g_menu_append(view, Tr("ui.toolbar.split").c_str(), "app.split-toggle");
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(view));
   g_object_unref(view);
   {
@@ -2193,6 +2750,14 @@ void build_primary_menu() {
     g_menu_append_section(menu, nullptr, G_MENU_MODEL(appearance));
     g_object_unref(appearance);
   }
+
+  // Document (bookmark / speech / print — mac reader menu parity)
+  auto* doc = g_menu_new();
+  g_menu_append(doc, Tr("ui.menu.bookmark").c_str(), "app.bookmark-toggle");
+  g_menu_append(doc, Tr("ui.menu.tts").c_str(), "app.tts-toggle");
+  g_menu_append(doc, Tr("ui.menu.print").c_str(), "app.print");
+  g_menu_append_section(menu, nullptr, G_MENU_MODEL(doc));
+  g_object_unref(doc);
 
   // AI
   auto* ai = g_menu_new();
@@ -2324,6 +2889,41 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_header_bar_pack_start(GTK_HEADER_BAR(header),
                             GTK_WIDGET(edit_menu_button));
   g_host.header_edit_menu = GTK_WIDGET(edit_menu_button);
+
+  // bookmark toggle (icon mirrors the current page's bookmark state)
+  auto* bookmark_button =
+      gtk_button_new_from_icon_name("non-starred-symbolic");
+  gtk_widget_set_tooltip_text(bookmark_button,
+                              Tr("ui.toolbar.bookmark").c_str());
+  gtk_actionable_set_action_name(GTK_ACTIONABLE(bookmark_button),
+                                 "app.bookmark-toggle");
+  gtk_header_bar_pack_start(GTK_HEADER_BAR(header), bookmark_button);
+  g_host.header_bookmark = bookmark_button;
+
+  // read aloud
+  auto* tts_button =
+      gtk_button_new_from_icon_name("audio-x-generic-symbolic");
+  gtk_widget_set_tooltip_text(tts_button, Tr("ui.toolbar.tts").c_str());
+  gtk_actionable_set_action_name(GTK_ACTIONABLE(tts_button),
+                                 "app.tts-toggle");
+  gtk_header_bar_pack_start(GTK_HEADER_BAR(header), tts_button);
+  g_host.header_tts = tts_button;
+
+  // split view toggle
+  auto* split_button = gtk_button_new_from_icon_name("view-dual-symbolic");
+  gtk_widget_set_tooltip_text(split_button, Tr("ui.toolbar.split").c_str());
+  gtk_actionable_set_action_name(GTK_ACTIONABLE(split_button),
+                                 "app.split-toggle");
+  gtk_header_bar_pack_start(GTK_HEADER_BAR(header), split_button);
+  g_host.header_split = split_button;
+
+  // print
+  auto* print_button =
+      gtk_button_new_from_icon_name("document-print-symbolic");
+  gtk_widget_set_tooltip_text(print_button, Tr("ui.toolbar.print").c_str());
+  gtk_actionable_set_action_name(GTK_ACTIONABLE(print_button), "app.print");
+  gtk_header_bar_pack_start(GTK_HEADER_BAR(header), print_button);
+  g_host.header_print = print_button;
 
   auto* toc_button = GTK_MENU_BUTTON(gtk_menu_button_new());
   gtk_menu_button_set_icon_name(toc_button, "view-list-symbolic");
@@ -2500,6 +3100,30 @@ void on_activate(GtkApplication* app, gpointer) {
       },
       nullptr);
 
+  // notes (annotations + bookmarks) — the sidebar's third mode (mac
+  // NotesPane)
+  auto* notes_scroll = gtk_scrolled_window_new();
+  auto* notes = gtk_list_box_new();
+  g_host.notes_list = GTK_LIST_BOX(notes);
+  gtk_list_box_set_selection_mode(g_host.notes_list, GTK_SELECTION_NONE);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(notes_scroll), notes);
+  gtk_stack_add_titled(GTK_STACK(left_stack), notes_scroll, "notes",
+                       Tr("ui.tab.notes").c_str());
+  hook(notes, "row-activated", on_note_row_activated, nullptr);
+
+  // forms (AcroForm fill + export) — mac FormsPane, sidebar mode
+  g_host.forms_pane = std::make_unique<FormsPane>(
+      pdfgist::forms::PaneContext{
+          [] { return g_host.active_pdf_only(); },
+          [](std::string const& message) { host_alert(message); },
+          [] {
+            if (auto* tab = g_host.active_pdf_only(); tab != nullptr) {
+              tab->refresh_rendering();
+            }
+          }});
+  gtk_stack_add_titled(GTK_STACK(left_stack), g_host.forms_pane->widget(),
+                       "forms", Tr("ui.tab.forms").c_str());
+
   // notebook
   auto* notebook = gtk_notebook_new();
   g_host.notebook = GTK_NOTEBOOK(notebook);
@@ -2581,6 +3205,9 @@ void on_activate(GtkApplication* app, gpointer) {
         refresh_header_title();
         populate_thumbs();
         build_outline_for_active();
+        populate_notes();
+        refresh_forms_pane();
+        refresh_bookmark_button();
         update_main_stack();
       },
       nullptr);
@@ -2644,6 +3271,7 @@ void on_open_files(GtkApplication*, GFile** files, gint n_files, gpointer) {
 void on_shutdown(GApplication*, gpointer) {
   g_host.shutting_down.store(true, std::memory_order_release);
   stop_update_poll();
+  pdfgist::tts::stop();
   if (g_host.startup_thread.joinable()) {
     g_host.startup_thread.join();
   }
@@ -2658,6 +3286,8 @@ void on_shutdown(GApplication*, gpointer) {
     startup_backend = std::move(g_host.startup_backend);
   }
   if (startup_backend != nullptr) startup_backend->stop();
+  // Flush pending annotation saves while backend + api are still alive.
+  for (auto& tab : g_host.tabs) store_annotations_now(tab.get());
   if (g_host.backend != nullptr) g_host.backend->stop();
   if (g_host.epub != nullptr) {
     g_host.epub->destroy();
@@ -2665,6 +3295,7 @@ void on_shutdown(GApplication*, gpointer) {
     g_host.epub = nullptr;
   }
   g_host.tabs.clear();
+  g_host.forms_pane.reset();
   g_host.ai_panel.reset();
   g_host.api.reset();
   g_host.backend.reset();

@@ -721,6 +721,11 @@ void AiPanel::do_translate_selection() {
     append_notice(translate_list_, Tr("ui.need.selection"));
     return;
   }
+  do_translate_text(text);
+}
+
+// Notes-pane excerpt translation (mac translateSelectionText).
+void AiPanel::do_translate_text(std::string const& text) {
   auto const lang = language_name(ctx_->settings.target_language);
   auto* card =
       new_card(translate_list_, Tr("ui.menu.translate"), "→ " + lang, false);

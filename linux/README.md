@@ -5,10 +5,11 @@ backend the macOS and Windows hosts drive: RVT1 RPC through the generated
 client (`GeneratedBackend.hpp`, do not edit), every completion and event
 dispatched back to the main loop before widgets are touched.
 
-State: **reading core, AI workflow, settings, EPUB, page editing, online
-updates and About are implemented** (P0). Annotation overlays, TTS,
-printing, split view and AcroForm stay P2 — see the top-level README
-roadmap.
+State: **feature parity with the macOS reading host (P2)**: reading core, AI
+workflow, settings, EPUB, page editing, online updates, About, plus the P2
+surface — password prompt for encrypted PDFs, annotation
+highlights/underline/strike with the notes pane, bookmarks, TTS, printing,
+split view and AcroForm filling with export.
 
 ## What is here
 
@@ -17,11 +18,26 @@ roadmap.
   instead of a loader abort; the .so is searched beside the executable,
   then `$RIVET_PDFIUM_PATH`, then the normal loader search. Pages render
   into cairo ARGB32 surfaces (PDFium's BGRA is byte-identical on
-  little-endian), text/outline come from the same C API.
+  little-endian), text/outline come from the same C API. The AcroForm
+  surface (form fill environment, field read/write, `FPDF_SaveAsCopy`) is
+  bound from the pinned archive's own headers for type layout but still
+  dlsym'd — a libpdfium without it loses only forms, never rendering.
+- `src/annotations.{hpp,cpp}` — the annotation storage schema (sidecar /
+  central JSON, byte-compatible with the mac/win hosts; rects in PDF page
+  space, bottom-left origin, y-up).
 - `src/pdfview.{hpp,cpp}` — reading core: PdfDocument (sizes + text-page
-  caches), PdfTab (continuous scroll, single/double spread, zoom +
-  fit-width, selection, find, thumbnails, outline). All PDFium calls run
-  on the UI thread.
+  caches + form surface), PdfTab (continuous scroll, single/double spread,
+  zoom + fit-width, selection, find, thumbnails, outline, annotation
+  overlay, split view). All PDFium calls run on the UI thread.
+- `src/tts.{hpp,cpp}` — read the current page aloud via `spd-say -w`
+  (speech-dispatcher); the child's exit doubles as the end-of-speech
+  signal, stop kills the process. Missing binary → readable message.
+- `src/printing.{hpp,cpp}` — GtkPrintOperation with a draw-page callback
+  over the document's cairo render path (scale-down-to-fit, printer DPI).
+- `src/forms.{hpp,cpp}` — AcroForm pane: enumerate text/check/choice
+  fields, fill in memory (FORM_* path with a verified annotation-dictionary
+  fallback), export through a save dialog via `FPDF_SaveAsCopy`. Values are
+  never persisted.
 - `src/panels.{hpp,cpp}` — AI panel: translate / summarize / chat stream
   cards (v1 StreamBuffer semantics: reasoning dimmed until the first
   answer delta) and the settings tab (presets with per-preset stash, API
@@ -32,12 +48,14 @@ roadmap.
   actions. Builds without WebKitGTK (`-DPDFGIST_ENABLE_EPUB=OFF`) with a
   readable fallback.
 - `src/main.cpp` — window assembly: header bar (open / page-edit menu /
-  TOC / primary menu), notebook tabs (the EPUB tab stays last), left
-  sidebar (thumbnails + outline), find bar, status bar, keyboard
-  navigation, drag & drop, page-level editing dialogs (delete / rotate /
-  insert blank / extract / merge / bake text), the three-shape update flow
-  (deb/rpm → package manager hint, AppImage → in-place swap + restart
-  consent, tarball → extraction hint) and the About dialog.
+  bookmark / TTS / split / print / TOC / primary menu), notebook tabs (the
+  EPUB tab stays last), left sidebar (thumbnails + outline + notes +
+  forms), find bar, status bar, keyboard navigation, drag & drop,
+  page-level editing dialogs (delete / rotate / insert blank / extract /
+  merge / bake text), the password prompt with wrong-password retry, the
+  three-shape update flow (deb/rpm → package manager hint, AppImage →
+  in-place swap + restart consent, tarball → extraction hint) and the About
+  dialog.
 - `src/host.{hpp,cpp}` — dispatch-to-main-loop helper, install-shape
   detection, host-side prefs (theme, panel visibility) in
   `<config-dir>/site.jrtx.pdfgist/host.conf`.
