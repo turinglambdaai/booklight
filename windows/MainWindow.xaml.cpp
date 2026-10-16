@@ -30,7 +30,7 @@ namespace {
 
 using pdfgist::PdfOpenError;
 
-constexpr wchar_t kAppTitle[] = L"PDFGist";
+constexpr wchar_t kAppTitle[] = L"Booklight";
 constexpr double kZoomStep = 1.2;
 constexpr double kMinZoom = 0.4;
 constexpr double kMaxZoom = 4.0;
@@ -161,13 +161,12 @@ MainWindow::MainWindow() {
   ThumbsModeLabel().Text(pdfgist::Tr("ui.viewer.thumbs"));
   OutlineModeLabel().Text(pdfgist::Tr("ui.viewer.outline"));
   NotesModeLabel().Text(pdfgist::Tr("ui.sidebar.annotations"));
-  WelcomeTitle().Text(pdfgist::Tr("app.name"));
-  WelcomeTagline().Text(pdfgist::Tr("ui.welcome.tagline"));
-  WelcomeFeature1().Text(pdfgist::Tr("ui.welcome.feature1"));
-  WelcomeFeature2().Text(pdfgist::Tr("ui.welcome.feature2"));
-  WelcomeFeature3().Text(pdfgist::Tr("ui.welcome.feature3"));
-  WelcomeOpenLabel().Text(pdfgist::Tr("ui.welcome.open"));
-  WelcomeContinue().Text(pdfgist::Tr("ui.welcome.continue"));
+  ShelfImportLabel().Text(pdfgist::Tr("ui.library.import"));
+  ShelfSearch().PlaceholderText(pdfgist::Tr("ui.library.search"));
+  ShelfEmptyTitle().Text(pdfgist::Tr("ui.library.empty"));
+  ShelfEmptyHint().Text(pdfgist::Tr("ui.library.empty-hint"));
+  ShelfEmptyImportLabel().Text(pdfgist::Tr("ui.library.import"));
+  ShelfEmptyIcon().Foreground(Brush(AccentColor()));
   FindInput().PlaceholderText(pdfgist::Tr("ui.viewer.find-placeholder"));
   FitWidthLabel().Text(pdfgist::Tr("ui.viewer.fit"));
   ChatSendLabel().Text(pdfgist::Tr("ui.chat.send"));
@@ -321,6 +320,7 @@ void MainWindow::Bootstrap() {
     rivet_app::SettingsView settings{};
     std::vector<rivet_app::ProviderPreset> presets;
     std::vector<rivet_app::RecentEntry> recents;
+    std::vector<rivet_app::LibraryEntry> library;
     try {
       rivet_app::API api(*backend);
       api.initialize().get();
@@ -328,12 +328,15 @@ void MainWindow::Bootstrap() {
       settings = api.get_settings().get();
       presets = api.list_presets().get();
       recents = api.get_recents().get();
+      library = api.get_library().get();
     } catch (std::exception const& e) {
       failure = e.what();
     }
-    dispatcher.TryEnqueue([weak, settings = std::move(settings),
+    dispatcher.TryEnqueue([weak, dispatcher, backend,
+                           settings = std::move(settings),
                            presets = std::move(presets),
                            recents = std::move(recents),
+                           library = std::move(library),
                            failure = std::move(failure)]() mutable {
       auto window = weak.get();
       if (!window) return;
@@ -344,14 +347,33 @@ void MainWindow::Bootstrap() {
       window->settings_ = std::move(settings);
       window->presets_ = std::move(presets);
       window->recents_ = std::move(recents);
+      window->library_ = std::move(library);
+      window->library_loaded_ = true;
       window->settings_loaded_ = true;
       window->ready_ = true;
       window->SetStatus(true, L"");
       window->LoadSettingsIntoPane();
       window->RefreshLeftPanel();
-      window->RefreshRecentsRows();  // welcome overlay continue list
+      window->RefreshShelf();
       window->HandleInstallMarkers();
       window->StartAutoUpdateCheck();
+      // Missing statuses refresh in the background; the shelf shows whatever
+      // is known the moment it is on screen (mac rescanShelf parity).
+      std::thread([weak, dispatcher, backend]() mutable {
+        std::vector<rivet_app::LibraryEntry> scanned;
+        try {
+          rivet_app::API api(*backend);
+          scanned = api.library_scan().get();
+        } catch (...) {
+          return;  // keep the bootstrap snapshot on failure
+        }
+        dispatcher.TryEnqueue([weak, scanned = std::move(scanned)]() mutable {
+          if (auto window = weak.get()) {
+            window->library_ = std::move(scanned);
+            window->RefreshShelf();
+          }
+        });
+      }).detach();
       // Stand-in for v1's file association (mac bootstrap parity).
       wchar_t buffer[32768]{};
       DWORD const length =
@@ -456,9 +478,22 @@ void MainWindow::Theme_Click(winrt::Windows::Foundation::IInspectable const&,
 }
 
 void MainWindow::UpdateChrome() {
-  WelcomeOverlay().Visibility(tabs_.empty() && epub_ == nullptr
-                                  ? Visibility::Visible
-                                  : Visibility::Collapsed);
+  // The shelf is the launch surface: visible whenever no reader tab is up.
+  bool const shelf = tabs_.empty() && epub_ == nullptr;
+  ShelfView().Visibility(shelf ? Visibility::Visible : Visibility::Collapsed);
+  // Reader-only toolbar controls do nothing on the shelf; keep the chrome
+  // honest about it (open / AI / theme stay useful everywhere).
+  auto const reader_vis = shelf ? Visibility::Collapsed : Visibility::Visible;
+  LeftToggle().Visibility(reader_vis);
+  RecentsButton().Visibility(reader_vis);
+  FindToggle().Visibility(reader_vis);
+  BookmarkToggle().Visibility(reader_vis);
+  SplitToggle().Visibility(reader_vis);
+  TtsButton().Visibility(reader_vis);
+  PrintButton().Visibility(reader_vis);
+  if (shelf && library_loaded_) {
+    RefreshShelf();  // progress bars catch up on return to the shelf
+  }
   BottomBar().Visibility(!epub_active_ && active_pdf_ != nullptr
                              ? Visibility::Visible
                              : Visibility::Collapsed);
@@ -670,14 +705,25 @@ void MainWindow::PickAndOpen() {
   }
   picker.FileTypeFilter().Append(L".pdf");
   picker.FileTypeFilter().Append(L".epub");
-  picker.PickSingleFileAsync().Completed(
+  picker.PickMultipleFilesAsync().Completed(
       [weak = get_weak()](winrt::Windows::Foundation::IAsyncOperation<
-                          winrt::Windows::Storage::StorageFile> const& sender,
+                          winrt::Windows::Foundation::Collections::IVectorView<
+                              winrt::Windows::Storage::StorageFile>> const&
+                              sender,
                           winrt::Windows::Foundation::AsyncStatus) {
         try {
-          auto const file = sender.GetResults();
-          if (file == nullptr) return;
-          if (auto window = weak.get()) window->OpenPath(std::wstring(file.Path()));
+          auto const files = sender.GetResults();
+          if (files == nullptr || files.Size() == 0) return;
+          std::vector<std::wstring> paths;
+          for (std::uint32_t i = 0; i < files.Size(); ++i) {
+            paths.push_back(std::wstring(files.GetAt(i).Path()));
+          }
+          if (auto window = weak.get()) {
+            // Reading-first open: everything lands on the shelf, the first
+            // book opens for reading right away (mac pickAndOpen parity).
+            window->ImportBooks(paths);
+            window->OpenPath(paths[0]);
+          }
         } catch (...) {
         }
       });
@@ -695,13 +741,22 @@ void MainWindow::OpenDroppedRaw(mux::DragEventArgs const& args) {
           try {
             auto const items = sender.GetResults();
             if (auto window = weak.get()) {
+              std::vector<std::wstring> books;
               for (std::uint32_t i = 0; i < items.Size(); ++i) {
                 std::wstring const path(items.GetAt(i).Path());
                 if (has_extension(path, L".pdf") ||
                     has_extension(path, L".epub")) {
-                  window->OpenPath(path);
-                  break;
+                  books.push_back(path);
                 }
+              }
+              if (books.empty()) return;
+              if (window->tabs_.empty() && window->epub_ == nullptr) {
+                // Shelf drop: import everything, open the first for reading.
+                window->ImportBooks(books);
+                window->OpenPath(books[0]);
+              } else {
+                // Reader drop: a tab, whose open grows the shelf.
+                window->OpenPath(books[0]);
               }
             }
           } catch (...) {
@@ -916,6 +971,10 @@ void MainWindow::OpenDocReady(
   // stored annotations + bookmarks ride the backend sidecar
   LoadDocData(tab);
 
+  // Opening grows the shelf: the catalog feeds on every successful open
+  // (upsert — no duplicates, mac importOpenedBook parity).
+  ImportBook(path);
+
   if (resume_page > 1 && resume_page <= tab->page_count) {
     ScrollToPage(*tab, resume_page);
   }
@@ -977,8 +1036,7 @@ void MainWindow::CloseTab(PdfTab const* tab) {
       if (active_pdf_.get() == tab) active_pdf_ = nullptr;
       // SelectionChanged already rebuilt the chrome; belt and braces.
       if (tabs_.empty()) {
-        WelcomeOverlay().Visibility(Visibility::Visible);
-        BottomBar().Visibility(Visibility::Collapsed);
+        UpdateChrome();
       }
       NoteActivity();
       RefreshLeftPanel();
@@ -2040,34 +2098,12 @@ void MainWindow::RefreshLeftPanel() {
 }
 
 void MainWindow::RefreshRecentsRows() {
-  // The recents live in the welcome overlay's continue list and the
-  // toolbar's 打开最近 flyout — the left panel is document-local only.
+  // The welcome continue list is gone — the shelf is the launch surface.
+  // Recents now feed the shelf's progress bars; the toolbar flyout reads
+  // recents_ directly when it opens.
   try {
-    WelcomeList().Children().Clear();
+    if (ShelfView().Visibility() == Visibility::Visible) RefreshShelf();
   } catch (...) {
-    return;
-  }
-  auto const weak = get_weak();
-  int const shown = std::min<std::size_t>(6, recents_.size());
-  for (int i = 0; i < shown; ++i) {
-    auto const& entry = recents_[static_cast<std::size_t>(i)];
-    auto row = muxc::Button();
-    row.Padding({10, 6, 10, 6});
-    row.MinWidth(0);
-    row.MinHeight(0);
-    row.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
-    muxc::TextBlock name_label2;
-    name_label2.Text(file_name(to_wide(entry.path)));
-    name_label2.FontSize(12);
-    row.Content(name_label2);
-    rivet_app::RecentEntry const value = entry;
-    row.Click([weak, value](winrt::Windows::Foundation::IInspectable const&,
-                            mux::RoutedEventArgs const&) {
-      if (auto window = weak.get()) {
-        window->OpenPath(to_wide(value.path), static_cast<int>(value.page));
-      }
-    });
-    WelcomeList().Children().Append(row);
   }
 }
 
