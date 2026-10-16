@@ -25,6 +25,7 @@
          racket/list
          rivet/backend
          (prefix-in epub: "../racket/pdfgist/epub.rkt")
+         (prefix-in library: "../racket/pdfgist/library.rkt")
          (prefix-in llm: "../racket/pdfgist/llm.rkt")
          (prefix-in pdfedit: "../racket/pdfgist/pdfedit.rkt")
          (prefix-in prompts: "../racket/pdfgist/prompts.rkt")
@@ -357,6 +358,155 @@
 ;; Recents come back newest-first (storage order).
 (define-rpc (get-recents : (List RecentEntry))
   (map recent-entry->dto (settings-recent-files (load-settings))))
+
+;; ---- bookshelf (library.json: catalog state only — books stay in place) ----
+;;
+;; The shelf references the user's files; annotations and reading progress
+;; live in sidecars beside each book (see shared/spec/DATA-FORMAT.md).
+;; Import carries the cover PNG rendered host-side (hosts own the
+;; renderers); the engine stores catalog state and serves the view.
+
+(define-record LibraryEntry
+  ([path : String]
+   [title : String]
+   [author : String]
+   [kind : String]         ; "pdf" | "epub"
+   [pages : Int64]         ; page (pdf) / chapter (epub) count
+   [added-at-ms : Int64]
+   [cover : String]        ; cover PNG path in the cache dir, "" = none
+   [collections : (List String)]
+   [status : String]))     ; "ok" | "missing"
+
+(define (book-entry->dto entry)
+  (LibraryEntry
+   (library:book-entry-path entry)
+   (library:book-entry-title entry)
+   (library:book-entry-author entry)
+   (library:book-entry-kind entry)
+   (library:book-entry-pages entry)
+   (* 1000 (library:book-entry-added-at entry))
+   (let ((name (library:book-entry-cover entry)))
+     (if (string=? name "")
+         ""
+         (path->string (build-path (library:covers-dir-path) name))))
+   (library:book-entry-collections entry)
+   (library:book-entry-status entry)))
+
+;; Newest import first.
+(define (library-entries->dto books)
+  (map book-entry->dto
+       (sort books > #:key library:book-entry-added-at)))
+
+;; An empty cover payload means "no cover available" (EPUB before cover
+;; extraction lands) — any existing cached cover is kept.
+(define-rpc (library-import [path : String]
+                            [title : String]
+                            [author : String]
+                            [kind : String]
+                            [pages : Int64]
+                            [cover : Bytes]
+                            : LibraryEntry)
+  (unless (zero? (bytes-length cover))
+    (define covers-dir (library:covers-dir-path))
+    (make-directory* covers-dir)
+    (call-with-output-file
+        (build-path covers-dir (library:cover-file-name path))
+      (lambda (out) (write-bytes cover out))
+      #:exists 'replace))
+  (define entry
+    (library:book-entry path title author kind (max 1 pages)
+                        (current-seconds)
+                        (if (zero? (bytes-length cover))
+                            ""
+                            (library:cover-file-name path))
+                        '()
+                        "ok"))
+  (define updated (library:update-shelf!
+                   (lambda (current)
+                     (struct-copy library:shelf current
+                                  [books (library:upsert-book
+                                          (library:shelf-books current)
+                                          entry)]))))
+  (book-entry->dto
+   (findf (lambda (b) (string=? (library:book-entry-path b) path))
+          (library:shelf-books updated))))
+
+(define-rpc (get-library : (List LibraryEntry))
+  (library-entries->dto (library:shelf-books (library:load-shelf))))
+
+;; Removing from the shelf never touches the book file; the cover cache
+;; entry is regenerable and dropped with it.
+(define-rpc (library-remove [path : String] : Void)
+  (library:update-shelf!
+   (lambda (current)
+     (struct-copy library:shelf current
+                  [books (library:remove-book (library:shelf-books current) path)])))
+  (define cover (build-path (library:covers-dir-path)
+                            (library:cover-file-name path)))
+  (when (file-exists? cover)
+    (with-handlers ([exn:fail? (lambda (_) (void))])
+      (delete-file cover)))
+  (void))
+
+(define-rpc (library-relink [from : String] [to : String] : Void)
+  (library:update-shelf!
+   (lambda (current)
+     (struct-copy library:shelf current
+                  [books (library:relink-book (library:shelf-books current)
+                                              from to)])))
+  (void))
+
+;; Re-stat every entry; clears/resets the missing flag per path.
+(define-rpc (library-scan : (List LibraryEntry))
+  (library-entries->dto
+   (library:shelf-books
+    (library:update-shelf!
+     (lambda (current)
+       (struct-copy library:shelf current
+                    [books (library:scan-shelf (library:shelf-books current)
+                                               file-exists?)]))))))
+
+(define-rpc (library-collection-create [name : String] : Void)
+  (library:update-shelf!
+   (lambda (current)
+     (struct-copy library:shelf current
+                  [collections
+                   (library:collection-create
+                    (library:shelf-collections current) name)])))
+  (void))
+
+;; Deleting a collection strips the label from every book carrying it.
+(define-rpc (library-collection-delete [name : String] : Void)
+  (library:update-shelf!
+   (lambda (current)
+     (struct-copy library:shelf current
+                  [books (library:strip-collection
+                          (library:shelf-books current) name)]
+                  [collections
+                   (library:collection-delete
+                    (library:shelf-collections current) name)])))
+  (void))
+
+;; Adding to a collection creates it implicitly (forgiving import flow).
+(define-rpc (library-book-collection [path : String]
+                                     [name : String]
+                                     [add : Bool]
+                                     : Void)
+  (library:update-shelf!
+   (lambda (current)
+     (struct-copy library:shelf current
+                  [collections
+                   (if add
+                       (library:collection-create
+                        (library:shelf-collections current) name)
+                       (library:shelf-collections current))]
+                  [books
+                   (if add
+                       (library:book-collection-add
+                        (library:shelf-books current) path name)
+                       (library:book-collection-remove
+                        (library:shelf-books current) path name))])))
+  (void))
 
 ;; Backend-side error/status strings follow this locale ("zh" | "en").
 (define-rpc (set-locale [code : String] : Void)

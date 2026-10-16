@@ -206,7 +206,8 @@
                       (embedded-public-key)
                       update-key-id
                       (rollout-bucket)
-                      maximum-download-bytes))
+                      maximum-download-bytes
+                      'app))
     (define candidate (select-update config manifest))
     (save-updater-prefs!
      (pref-with (load-updater-prefs)
@@ -463,7 +464,8 @@
                     (embedded-public-key)
                     update-key-id
                     (rollout-bucket)
-                    maximum-download-bytes))
+                    maximum-download-bytes
+                    'app))
   (define destination
     (if (appimage-flavor?)
         ;; the staged temp beside the running image; the final swap is an

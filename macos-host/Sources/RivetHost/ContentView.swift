@@ -104,6 +104,15 @@ struct WindowAccessor: NSViewRepresentable {
                     guard let self else { return }
                     self.parent.reader.closeDocument()
                     self.parent.app.unregister(self.parent.reader)
+                    // Books semantics: closing the last book returns to the
+                    // shelf — the app never idles as a bare Dock icon.
+                    let anyRemaining = NSApp.windows.contains {
+                        $0.isVisible && $0 !== window
+                            && $0.tabbingIdentifier == "site.jrtx.pdfgist.reader"
+                    }
+                    if !anyRemaining {
+                        self.parent.app.openWindow?(nil)
+                    }
                 }
             })
             refreshTitle()
@@ -138,35 +147,22 @@ struct ReaderWindowView: View {
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .automatic
     @State private var isKeyWindow = false
 
+    /// Library-first: a window without a document IS the shelf; a window
+    /// with one is a reader. Shared window plumbing wraps both modes.
     var body: some View {
-        NavigationSplitView(columnVisibility: $sidebarVisibility) {
-            ReaderSidebar(reader: reader)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 232, max: 440)
-        } detail: {
-            detail
+        Group {
+            if reader.hasDocument {
+                readerChrome
+            } else {
+                LibraryView()
+            }
         }
-        .inspector(isPresented: $reader.aiVisible) {
-            AISidebar(reader: reader)
-        }
-        .toolbar { readerToolbar }
-        // The SwiftUI-owned window title (macOS: navigationTitle drives the
-        // title bar and native tab labels).
-        .navigationTitle(reader.documentTitle ?? RivetGeneratedConfig.displayName)
-        .environmentObject(reader)
         .background(WindowAccessor(reader: reader, app: app))
         .overlay(alignment: .top) {
             if !app.status.isEmpty && !app.ready {
                 backendBanner
             }
         }
-        .overlay {
-            if reader.findVisible {
-                FindBarView(reader: reader)
-                    .padding(.top, 4)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .animation(.easeInOut(duration: 0.15), value: reader.findVisible)
         .background(Theme.bg)
         .foregroundStyle(Theme.text)
         .dropDestination(for: URL.self) { urls, _ in
@@ -192,6 +188,10 @@ struct ReaderWindowView: View {
                 sidebarVisibility = .all
             }
         }
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSWindow.didBecomeKeyNotification)) { notification in
+            isKeyWindow = (notification.object as? NSWindow) === NSApp.keyWindow
+        }
         .onAppear {
             app.openWindow = { value in
                 if let value {
@@ -201,22 +201,44 @@ struct ReaderWindowView: View {
                 }
             }
         }
-        .onReceive(NotificationCenter.default.publisher(
-            for: NSWindow.didBecomeKeyNotification)) { notification in
-            isKeyWindow = (notification.object as? NSWindow) === NSApp.keyWindow
+    }
+
+    /// The reading mode: native split sidebar + document + AI inspector.
+    private var readerChrome: some View {
+        NavigationSplitView(columnVisibility: $sidebarVisibility) {
+            ReaderSidebar(reader: reader)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 232, max: 440)
+        } detail: {
+            detail
         }
+        .inspector(isPresented: $reader.aiVisible) {
+            AISidebar(reader: reader)
+        }
+        // The SwiftUI-owned window title (macOS: navigationTitle drives the
+        // title bar and native tab labels).
+        .navigationTitle(reader.documentTitle ?? RivetGeneratedConfig.displayName)
+        .toolbar { readerToolbar }
+        .environmentObject(reader)
+        .overlay {
+            if reader.findVisible {
+                FindBarView(reader: reader)
+                    .padding(.top, 4)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: reader.findVisible)
     }
 
     private func dropOpened(_ urls: [URL]) {
-        let paths = urls
+        let dropped = urls
             .filter { ["pdf", "epub"].contains($0.pathExtension.lowercased()) }
-            .map { $0.path }
-        guard !paths.isEmpty else { return }
+        guard !dropped.isEmpty else { return }
         if !reader.hasDocument {
-            Task { await reader.openPath(paths[0]) }
-            for path in paths.dropFirst() { app.openWindow?(path) }
+            // The shelf takes the drop: import all, open none.
+            app.importBooks(dropped)
         } else {
-            for path in paths { app.openWindow?(path) }
+            // Reading window: dropped books open in new windows.
+            for url in dropped { app.openWindow?(url.path) }
         }
     }
 
@@ -236,8 +258,6 @@ struct ReaderWindowView: View {
                 .ignoresSafeArea()
         } else if let tab = reader.pdf {
             CenteredDocument(tab: tab)
-        } else {
-            WelcomeView(reader: reader)
         }
     }
 
@@ -472,141 +492,6 @@ struct FindBarView: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderStrong))
         .shadow(color: Color.black.opacity(0.18), radius: 8, y: 2)
-    }
-}
-
-// MARK: - welcome / empty state (the document browser layer)
-
-/// Shown in windows without a document: brand, open action and the
-/// continue-reading list — the same role Books' library plays. Open Recent
-/// lives here and in the File menu, nowhere near the reader sidebar.
-struct WelcomeView: View {
-    @EnvironmentObject private var app: AppModel
-    let reader: ReaderModel
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                brandMark
-                Text("PDFGist")
-                    .font(.system(size: 30, weight: .bold))
-                Text(L10n.t("ui.welcome.tagline"))
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.textDim)
-                featureRow("sparkles", L10n.t("ui.welcome.feature1"))
-                featureRow("magnifyingglass", L10n.t("ui.welcome.feature2"))
-                featureRow("key", L10n.t("ui.welcome.feature3"))
-                openButton
-                Text(L10n.t("ui.welcome.or-drag"))
-                    .font(.footnote)
-                    .foregroundStyle(Theme.textFaint)
-                continueSection
-                Text(L10n.t("ui.welcome.hints"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textFaint)
-            }
-            .frame(maxWidth: 460)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 40)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.bg)
-    }
-
-    private var brandMark: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Theme.accent)
-                .frame(width: 72, height: 72)
-            Image(systemName: "doc.richtext.fill")
-                .font(.system(size: 34))
-                .foregroundStyle(Color.white)
-        }
-    }
-
-    private func featureRow(_ icon: String, _ text: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.accent)
-                .frame(width: 16)
-            Text(text)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.textDim)
-        }
-    }
-
-    private var openButton: some View {
-        Button {
-            app.pickAndOpen()
-        } label: {
-            Text(L10n.t("ui.welcome.open-any"))
-                .font(.system(size: 14, weight: .semibold))
-                .padding(.horizontal, 22)
-                .padding(.vertical, 9)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Color.white)
-        .background(RoundedRectangle(cornerRadius: 7).fill(Theme.accent))
-        .disabled(!app.ready)
-    }
-
-    @ViewBuilder
-    private var continueSection: some View {
-        if !app.recents.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.t("ui.welcome.continue"))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.textDim)
-                ForEach(Array(app.recents.prefix(6).enumerated()), id: \.element.path) { _, recent in
-                    WelcomeRecentRow(recent: recent)
-                }
-            }
-            .padding(.top, 10)
-        }
-    }
-}
-
-struct WelcomeRecentRow: View {
-    @EnvironmentObject private var app: AppModel
-    let recent: RivetTypes.RecentEntry
-
-    var body: some View {
-        Button {
-            app.openWindow?(recent.path)
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text((recent.path as NSString).lastPathComponent)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                    Text(recentMeta)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textFaint)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.textFaint)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Theme.panel))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(recent.path)
-    }
-
-    private var recentMeta: String {
-        let date = Date(timeIntervalSince1970: Double(recent.last_read_ms) / 1000)
-        let calendar = Calendar.current
-        return L10n.t(
-            "ui.welcome.recent-meta", "\(recent.page)",
-            "\(calendar.component(.month, from: date))",
-            "\(calendar.component(.day, from: date))")
     }
 }
 

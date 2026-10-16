@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import PDFKit
 import UniformTypeIdentifiers
 import RivetEmbedding
 import RivetRuntime
@@ -16,6 +17,180 @@ final class AppModel: ObservableObject {
         view_mode: "single", annotation_sidecar: false, has_api_key: false, recent: [])
     @Published var presets: [RivetTypes.ProviderPreset] = []
     @Published var recents: [RivetTypes.RecentEntry] = []
+
+    // ---- bookshelf (library-first: the launch window IS the shelf) ----
+    @Published var library: [RivetTypes.LibraryEntry] = []
+    @Published var libraryLoaded = false
+    @Published var libraryImporting = false
+    @Published var shelfSearch = ""
+    /// nil = all books; "unfiled" = no collection; otherwise a collection name.
+    @Published var shelfFilter: String?
+
+    var shelfCollections: [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for entry in library {
+            for name in entry.collections where seen.insert(name).inserted {
+                out.append(name)
+            }
+        }
+        return out
+    }
+
+    /// The shelf rows after the search box and the collection filter.
+    var shelfEntries: [RivetTypes.LibraryEntry] {
+        var rows = library
+        if let filter = shelfFilter {
+            rows = rows.filter { entry in
+                filter == "unfiled"
+                    ? entry.collections.isEmpty
+                    : entry.collections.contains(filter)
+            }
+        }
+        let needle = shelfSearch.trimmingCharacters(in: .whitespaces).lowercased()
+        if !needle.isEmpty {
+            rows = rows.filter {
+                $0.title.lowercased().contains(needle)
+                    || $0.author.lowercased().contains(needle)
+            }
+        }
+        return rows
+    }
+
+    /// Reading progress for a shelf row, joined from recents by path.
+    func shelfProgress(_ entry: RivetTypes.LibraryEntry) -> (page: Int, of: Int)? {
+        let recent = recents.first { $0.path == entry.path }
+        guard let recent, recent.page > 1 || entry.pages > 0 else { return nil }
+        return (Int(recent.page), max(1, Int(entry.pages)))
+    }
+
+    func loadLibrary() async {
+        guard let api else { return }
+        library = (try? await api.get_library()) ?? library
+        libraryLoaded = true
+    }
+
+    func rescanShelf() async {
+        guard let api else { return }
+        library = (try? await api.library_scan()) ?? library
+    }
+
+    func removeFromShelf(_ entry: RivetTypes.LibraryEntry) {
+        library.removeAll { $0.path == entry.path }
+        Task { try? await api?.library_remove(path: entry.path) }
+    }
+
+    /// Generated LibraryEntry is an immutable value type — optimistic UI
+    /// updates rebuild the entry, then persist through the RPC.
+    private func replaceEntry(_ updated: RivetTypes.LibraryEntry) {
+        if let index = library.firstIndex(where: { $0.path == updated.path }) {
+            library[index] = updated
+        }
+    }
+
+    func relinkEntry(_ entry: RivetTypes.LibraryEntry, to url: URL) {
+        replaceEntry(RivetTypes.LibraryEntry(
+            path: url.path, title: entry.title, author: entry.author,
+            kind: entry.kind, pages: entry.pages, added_at_ms: entry.added_at_ms,
+            cover: entry.cover, collections: entry.collections, status: "ok"))
+        Task { try? await api?.library_relink(from: entry.path, to: url.path) }
+    }
+
+    func addToCollection(_ entry: RivetTypes.LibraryEntry, name: String) {
+        guard !entry.collections.contains(name) else { return }
+        replaceEntry(RivetTypes.LibraryEntry(
+            path: entry.path, title: entry.title, author: entry.author,
+            kind: entry.kind, pages: entry.pages, added_at_ms: entry.added_at_ms,
+            cover: entry.cover, collections: entry.collections + [name],
+            status: entry.status))
+        Task { try? await api?.library_book_collection(path: entry.path, name: name, add: true) }
+    }
+
+    func removeFromCollection(_ entry: RivetTypes.LibraryEntry, name: String) {
+        replaceEntry(RivetTypes.LibraryEntry(
+            path: entry.path, title: entry.title, author: entry.author,
+            kind: entry.kind, pages: entry.pages, added_at_ms: entry.added_at_ms,
+            cover: entry.cover, collections: entry.collections.filter { $0 != name },
+            status: entry.status))
+        Task { try? await api?.library_book_collection(path: entry.path, name: name, add: false) }
+    }
+
+    /// Import files into the shelf (and render covers host-side — hosts own
+    /// the renderers). Books are cataloged in place; files are not touched.
+    func importBooks(_ urls: [URL]) {
+        let books = urls.filter { ["pdf", "epub"].contains($0.pathExtension.lowercased()) }
+        guard !books.isEmpty, let api else { return }
+        libraryImporting = true
+        Task { [weak self] in
+            defer { Task { @MainActor in self?.libraryImporting = false } }
+            for url in books {
+                let ext = url.pathExtension.lowercased()
+                let stem = url.deletingPathExtension().lastPathComponent
+                do {
+                    if ext == "pdf" {
+                        guard let doc = PDFDocument(url: url) else { continue }
+                        let metaTitle = doc.documentAttributes?["Title"] as? String
+                        let title = (metaTitle?.isEmpty == false) ? metaTitle! : stem
+                        let cover = Self.coverPNG(for: doc.page(at: 0), width: 320)
+                        _ = try await api.library_import(
+                            path: url.path, title: title,
+                            author: doc.documentAttributes?["Author"] as? String ?? "",
+                            kind: "pdf", pages: Int64(doc.pageCount),
+                            cover: cover ?? Data())
+                    } else {
+                        let view = try await api.epub_open(path: url.path)
+                        _ = try await api.library_import(
+                            path: url.path, title: view.title, author: "",
+                            kind: "epub", pages: view.chapters, cover: Data())
+                    }
+                } catch {
+                    continue // one bad book never blocks the rest of the import
+                }
+            }
+            await MainActor.run { [weak self] in
+                self?.libraryImporting = false
+            }
+            await self?.loadLibrary()
+        }
+    }
+
+    /// Opening a book from anywhere grows the shelf organically: the open
+    /// path feeds the catalog a cover + metadata (upsert = no duplicates).
+    func importOpenedBook(path: String, doc: PDFDocument) {
+        Task { [weak self] in
+            guard let self, let api = self.api else { return }
+            let metaTitle = doc.documentAttributes?["Title"] as? String
+            let stem = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+            let title = (metaTitle?.isEmpty == false) ? metaTitle! : stem
+            let cover = Self.coverPNG(for: doc.page(at: 0), width: 320)
+            _ = try? await api.library_import(
+                path: path, title: title, author: doc.documentAttributes?["Author"] as? String ?? "",
+                kind: "pdf", pages: Int64(doc.pageCount), cover: cover ?? Data())
+            await MainActor.run { Task { await self.loadLibrary() } }
+        }
+    }
+
+    func importOpenedEpub(path: String) {
+        Task { [weak self] in
+            guard let self, let api = self.api else { return }
+            guard let view = try? await api.epub_open(path: path) else { return }
+            _ = try? await api.library_import(
+                path: path, title: view.title, author: "",
+                kind: "epub", pages: view.chapters, cover: Data())
+            await MainActor.run { Task { await self.loadLibrary() } }
+        }
+    }
+
+    /// Page-1 thumbnail as PNG bytes for the shelf cover cache.
+    static func coverPNG(for page: PDFPage?, width: CGFloat) -> Data? {
+        guard let page else { return nil }
+        let thumb = page.thumbnail(of: CGSize(width: width, height: width * 1.5),
+                                   for: .mediaBox)
+        guard let tiff = thumb.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else { return nil }
+        return png
+    }
 
     // updater state (backend verifies/downloads; this model polls)
     @Published var updateState: UpdateState = .idle
@@ -171,6 +346,10 @@ final class AppModel: ObservableObject {
             recents = r
             ready = true
             status = ""
+            await loadLibrary()
+            // Refresh missing statuses in the background; the shelf shows
+            // whatever is known the moment it is on screen.
+            Task { [weak self] in await self?.rescanShelf() }
             autoCheckForUpdates()
         } catch {
             ready = false
@@ -506,14 +685,14 @@ final class AppModel: ObservableObject {
             guard response == .OK else { return }
             let urls = panel.urls
             guard !urls.isEmpty, let self else { return }
-            var rest = ArraySlice(urls.map { $0.path })
+            // Reading-first open: everything lands on the shelf, the first
+            // book opens for reading right away.
+            self.importBooks(urls)
+            let paths = urls.map { $0.path }
             if let reader = self.activeReader, !reader.hasDocument {
-                let first = rest.first!
-                rest = rest.dropFirst()
-                Task { await reader.openPath(first) }
-            }
-            for path in rest {
-                self.openWindow?(path)
+                Task { await reader.openPath(paths[0]) }
+            } else {
+                self.openWindow?(paths[0])
             }
         }
         if let window = NSApp.keyWindow {

@@ -148,11 +148,12 @@
        "2026-10-13T00:00:00Z" "0.0.0" #f #t 100
        (list (update-artifact (platform-symbol) (architecture-symbol)
                               url (bytes->hex-string (sha256-bytes payload))
-                              (bytes-length payload) 'zip '()))))
+                              (bytes-length payload) 'zip '() 'app))))
     (select-update
      (updater-config app-identifier app-version app-channel
                      (platform-symbol) (architecture-symbol)
-                     pub update-key-id 0 download-limit)
+                     pub update-key-id 0 download-limit
+                     'app)
      manifest))
 
   (define pub
@@ -175,7 +176,8 @@
      (download-with-progress!
       (updater-config app-identifier app-version app-channel
                       (platform-symbol) (architecture-symbol)
-                      pub update-key-id 0 download-limit)
+                      pub update-key-id 0 download-limit
+                      'app)
       candidate destination)
      destination)
     (check-true (file-exists? destination))
@@ -203,7 +205,8 @@
                  (download-with-progress!
                   (updater-config app-identifier app-version app-channel
                                   (platform-symbol) (architecture-symbol)
-                                  pub update-key-id 0 download-limit)
+                                  pub update-key-id 0 download-limit
+                                  'app)
                   candidate destination)))
     (check-false (file-exists? destination))
     (check-false (file-exists? (path-add-extension destination #".partial")))
@@ -230,7 +233,7 @@
                               "https://dl.example/pdfgist/pdfgist-9.9.9.zip"
                               (sha256-file/hex artifact-file)
                               (file-size artifact-file)
-                              'zip '()))))
+                              'zip '() 'app))))
     (define wrapped (open-output-bytes))
     (write-signed-manifest manifest priv "pdfgist-test" wrapped)
     (define verified
@@ -250,7 +253,8 @@
     (define config
       (updater-config app-identifier "0.0.1" app-channel
                       (platform-symbol) (architecture-symbol)
-                      test-pub "pdfgist-test" 42 download-limit))
+                      test-pub "pdfgist-test" 42 download-limit
+                      'app))
     (define candidate (select-update config verified))
     (check-true (update-candidate? candidate))
     (check-equal? (update-artifact-size (update-candidate-artifact candidate))

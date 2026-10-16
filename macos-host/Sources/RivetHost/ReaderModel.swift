@@ -240,6 +240,7 @@ final class ReaderModel: ObservableObject {
         sidebarMode = 0
         loadDocData(tab)
         noteActivity(tab, immediate: true)
+        app?.importOpenedBook(path: path, doc: doc)
     }
 
     // MARK: EPUB (one book per window)
@@ -270,6 +271,7 @@ final class ReaderModel: ObservableObject {
             tab.currentPage = resumeChapter
         }
         noteEpubActivity(tab, immediate: true)
+        app?.importOpenedEpub(path: path)
     }
 
     func noteEpubChapter(_ tab: EpubTab) {
