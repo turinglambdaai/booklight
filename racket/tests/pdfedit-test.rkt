@@ -4,8 +4,8 @@
 (require rackunit
          racket/bytes
          racket/string
-         "../pdfgist/pdfdoc.rkt"
-         "../pdfgist/pdfedit.rkt")
+         "../booklight/pdfdoc.rkt"
+         "../booklight/pdfedit.rkt")
 
 ;; Racket 9.3 lacks bytes-contains?
 (define (bytes-contains? haystack needle)

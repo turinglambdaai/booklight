@@ -8,10 +8,10 @@
          racket/file
          racket/runtime-path
          racket/string
-         "../pdfgist/jsonw.rkt"
-         "../pdfgist/providers.rkt"
-         (prefix-in recents: "../pdfgist/recents.rkt")
-         "../pdfgist/settings.rkt")
+         "../booklight/jsonw.rkt"
+         "../booklight/providers.rkt"
+         (prefix-in recents: "../booklight/recents.rkt")
+         "../booklight/settings.rkt")
 
 (define temp-root (make-temporary-file "pdfgist-settings-~a" 'directory))
 

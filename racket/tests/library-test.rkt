@@ -11,9 +11,9 @@
          racket/port
          racket/runtime-path
          racket/string
-         "../pdfgist/jsonw.rkt"
-         "../pdfgist/library.rkt"
-         "../pdfgist/settings.rkt")
+         "../booklight/jsonw.rkt"
+         "../booklight/library.rkt"
+         "../booklight/settings.rkt")
 
 (define temp-root (make-temporary-file "pdfgist-library-~a" 'directory))
 

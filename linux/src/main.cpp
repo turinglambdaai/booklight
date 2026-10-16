@@ -41,6 +41,7 @@
 #include "panels.hpp"
 #include "pdfview.hpp"
 #include "printing.hpp"
+#include "shelf.hpp"
 #include "tts.hpp"
 
 namespace {
@@ -112,6 +113,8 @@ struct Host {
   std::unique_ptr<rivet_app::API> api;
   PanelContext panel_ctx;
   std::unique_ptr<AiPanel> ai_panel;
+  std::unique_ptr<pdfgist::Shelf> shelf;
+  bool shelf_visible{true};  // launch state: the shelf IS the empty state
 
   std::vector<std::unique_ptr<PdfTab>> tabs;
   EpubTab* epub{nullptr};
@@ -294,6 +297,12 @@ void set_theme(std::string const& theme) {
 // ---------------------------------------------------------------------------
 
 void refresh_header_title() {
+  // Shelf surface (launch state): the window title names the shelf.
+  if (g_host.shelf_visible) {
+    gtk_label_set_text(g_host.title_label, Tr("ui.library.title").c_str());
+    gtk_label_set_text(g_host.subtitle_label, "");
+    return;
+  }
   PdfTab* tab = g_host.active_pdf();
   if (g_host.epub_active()) {
     gtk_label_set_text(g_host.title_label,
@@ -566,6 +575,9 @@ void finish_pdf_open(std::string const& path, int resume_page,
   refresh_forms_pane();
   refresh_status();
   refresh_header_title();
+  // Reading-first: every successful open grows the shelf (mac
+  // importOpenedBook — the upsert dedupes on the path).
+  if (g_host.shelf != nullptr) g_host.shelf->import_book(path);
 }
 
 // Modal password prompt with an in-place wrong-password retry loop (the
@@ -723,6 +735,9 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
   if (resume_chapter > 1) raw->go_to_chapter(resume_chapter);
   refresh_status();
   refresh_header_title();
+  // Reading-first: the opened EPUB lands on the shelf too (mac
+  // importOpenedEpub).
+  if (g_host.shelf != nullptr) g_host.shelf->import_book(path);
 }
 
 void open_path(std::string const& path, int resume_page = 1) {
@@ -1471,6 +1486,7 @@ void bootstrap() {
       gtk_label_set_text(g_host.status_label, "");
       g_host.ai_panel->sync_settings();
       refresh_recents_menu();
+      if (g_host.shelf != nullptr) g_host.shelf->refresh();
 
       // Tabs opened before the backend was ready get their stored
       // annotations now (mac loadDocData needs the API too).
@@ -2349,11 +2365,20 @@ constexpr int kLeftSidebarWidth = 232;
 constexpr int kAiSidebarWidth = 400;
 
 void update_main_stack() {
-  // welcome page while nothing is open
+  // the shelf is the launch surface; the reader replaces it while tabs live
   if (g_host.main_stack == nullptr) return;
   gint const pages = gtk_notebook_get_n_pages(g_host.notebook);
+  bool const reading = pages > 0;
   gtk_stack_set_visible_child_name(GTK_STACK(g_host.main_stack),
-                                   pages > 0 ? "reader" : "welcome");
+                                   reading ? "reader" : "shelf");
+  bool const shelf_active = !reading;
+  if (g_host.shelf != nullptr) {
+    g_host.shelf->set_active(shelf_active);
+    // Coming back to the shelf re-joins reading progress (recents moved
+    // while the notebook owned the window).
+    if (shelf_active && !g_host.shelf_visible) g_host.shelf->refresh();
+  }
+  g_host.shelf_visible = shelf_active;
   gtk_widget_set_visible(GTK_WIDGET(g_host.header_edit_menu), pages > 0);
   if (g_host.header_bookmark != nullptr) {
     gtk_widget_set_visible(GTK_WIDGET(g_host.header_bookmark), pages > 0);
@@ -2946,8 +2971,33 @@ void on_activate(GtkApplication* app, gpointer) {
   g_host.primary_menu = primary_button;
   build_primary_menu();
 
+  // shelf header controls (visible only while the shelf is the active
+  // surface — update_main_stack toggles them with the reader chrome).
+  // pack_end order paints right-to-left: menu | search | filter, the mac
+  // toolbar arrangement.
+  g_host.shelf = std::make_unique<pdfgist::Shelf>(pdfgist::Shelf::Hooks{
+      [](std::string const& p) { open_path(p); },
+      [](std::string const& m) { host_alert(m); },
+      [] {
+        return (g_host.ready && g_host.api != nullptr) ? g_host.api.get()
+                                                       : nullptr;
+      },
+      [] { return g_host.recents; },
+      [] { return g_host.window; },
+  });
+  gtk_header_bar_pack_start(GTK_HEADER_BAR(header),
+                            g_host.shelf->header_import());
+  gtk_header_bar_pack_start(GTK_HEADER_BAR(header),
+                            g_host.shelf->header_spinner());
+  gtk_header_bar_pack_end(GTK_HEADER_BAR(header),
+                          g_host.shelf->header_search());
+  gtk_header_bar_pack_end(GTK_HEADER_BAR(header),
+                          g_host.shelf->header_filter());
+
   auto* title_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-  g_host.title_label = GTK_LABEL(gtk_label_new("PDFGist"));
+  // launch state is the shelf; refresh_header_title keeps it in sync
+  g_host.title_label =
+      GTK_LABEL(gtk_label_new(Tr("ui.library.title").c_str()));
   gtk_widget_add_css_class(GTK_WIDGET(g_host.title_label), "title");
   gtk_label_set_ellipsize(g_host.title_label, PANGO_ELLIPSIZE_END);
   g_host.subtitle_label = GTK_LABEL(gtk_label_new(nullptr));
@@ -3016,38 +3066,16 @@ void on_activate(GtkApplication* app, gpointer) {
                    +[](GtkButton*, gpointer) { close_find(); },
                    nullptr);
 
-  // main stack: welcome | reader
+  // main stack: shelf | reader (the launch surface IS the shelf)
   auto* main_stack = gtk_stack_new();
   g_host.main_stack = main_stack;
   gtk_stack_set_transition_type(GTK_STACK(main_stack),
                                 GTK_STACK_TRANSITION_TYPE_NONE);
   gtk_box_append(GTK_BOX(root), main_stack);
 
-  // welcome page
-  auto* welcome = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-  gtk_widget_set_valign(welcome, GTK_ALIGN_CENTER);
-  gtk_widget_set_halign(welcome, GTK_ALIGN_CENTER);
-  auto* welcome_title = gtk_label_new(nullptr);
-  gtk_label_set_markup(GTK_LABEL(welcome_title),
-                       "<span size='x-large' weight='bold'>PDFGist"
-                       "</span>");
-  auto* welcome_hint = gtk_label_new(
-      (Tr("ui.welcome.open-any") + "\n" + Tr("ui.welcome.linux-hint"))
-          .c_str());
-  gtk_label_set_justify(GTK_LABEL(welcome_hint), GTK_JUSTIFY_CENTER);
-  gtk_widget_add_css_class(welcome_hint, "dim-label");
-  auto* welcome_open =
-      gtk_button_new_with_label(Tr("ui.welcome.open").c_str());
-  gtk_widget_add_css_class(welcome_open, "pill");
-  hook(welcome_open, "clicked",
-                   +[](GtkButton*, gpointer) {
-                     pick_and_open();
-                   },
-                   nullptr);
-  gtk_box_append(GTK_BOX(welcome), welcome_title);
-  gtk_box_append(GTK_BOX(welcome), welcome_hint);
-  gtk_box_append(GTK_BOX(welcome), welcome_open);
-  gtk_stack_add_named(GTK_STACK(main_stack), welcome, "welcome");
+  // shelf page: cover grid over the backend library (collections filter and
+  // search live in the header bar, packed above).
+  gtk_stack_add_named(GTK_STACK(main_stack), g_host.shelf->page(), "shelf");
 
   // reader page: left sidebar | notebook | AI panel
   auto* reader = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
@@ -3235,7 +3263,15 @@ void on_activate(GtkApplication* app, gpointer) {
           if (path != nullptr) {
             std::string const p = path;
             g_free(path);
-            open_path(p);
+            // Dropping on the shelf imports (reading-first landing); drops
+            // on the reader open the file (mac openDropped parity).
+            if (g_host.shelf != nullptr && !g_host.shelf_visible) {
+              open_path(p);
+            } else if (g_host.shelf != nullptr) {
+              g_host.shelf->import_paths({p});
+            } else {
+              open_path(p);
+            }
             return TRUE;
           }
         }
@@ -3301,6 +3337,7 @@ void on_shutdown(GApplication*, gpointer) {
   g_host.tabs.clear();
   g_host.forms_pane.reset();
   g_host.ai_panel.reset();
+  g_host.shelf.reset();
   g_host.api.reset();
   g_host.backend.reset();
 }

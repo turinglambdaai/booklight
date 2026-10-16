@@ -72,6 +72,8 @@ using BookmarkGetTitleFn = unsigned long (*)(FPDF_BOOKMARK, void*,
                                              unsigned long);
 using BookmarkGetDestFn = FPDF_DEST (*)(FPDF_DOCUMENT, FPDF_BOOKMARK);
 using DestGetDestPageIndexFn = int (*)(FPDF_DOCUMENT, FPDF_DEST);
+using GetMetaTextFn = unsigned long (*)(FPDF_DOCUMENT, FPDF_BYTESTRING, void*,
+                                        unsigned long);
 
 struct Api {
   InitLibraryFn FPDF_InitLibrary{nullptr};
@@ -104,6 +106,7 @@ struct Api {
   BookmarkGetTitleFn FPDFBookmark_GetTitle{nullptr};
   BookmarkGetDestFn FPDFBookmark_GetDest{nullptr};
   DestGetDestPageIndexFn FPDFDest_GetDestPageIndex{nullptr};
+  GetMetaTextFn FPDF_GetMetaText{nullptr};
   bool complete{false};
 };
 
@@ -328,6 +331,9 @@ void load_once() {
   }
   g_api.complete = true;
   g_api.FPDF_InitLibrary(nullptr);
+  // Metadata is optional surface too: a trimmed libpdfium loses only the
+  // shelf title/author, never rendering.
+  (void)bind_optional(handle, g_api.FPDF_GetMetaText, "FPDF_GetMetaText");
   // The form/save surface is optional: older or trimmed libpdfium builds
   // lose only AcroForm support, never rendering.
   g_form.complete = load_form_api(handle);
@@ -482,6 +488,21 @@ bool Document::page_size(int index, double* width, double* height) {
   if (height != nullptr) *height = g_api.FPDF_GetPageHeightF(page);
   g_api.FPDF_ClosePage(page);
   return true;
+}
+
+std::string Document::metadata(char const* tag) {
+  if (g_api.FPDF_GetMetaText == nullptr || handle_ == nullptr) return {};
+  // First call with no buffer returns the byte count needed (UTF-16LE with
+  // the NUL terminator, per fpdf_doc.h).
+  unsigned long const needed = g_api.FPDF_GetMetaText(handle_, tag, nullptr, 0);
+  if (needed <= 2) return {};  // nothing but the terminator
+  std::vector<unsigned short> buffer(needed / 2 + 1, 0);
+  unsigned long const got =
+      g_api.FPDF_GetMetaText(handle_, tag, buffer.data(), needed);
+  if (got == 0) return {};
+  std::size_t units = got / 2;
+  while (units > 0 && buffer[units - 1] == 0) --units;  // strip terminator
+  return utf16_to_utf8(buffer.data(), units);
 }
 
 cairo_surface_t* Document::render_page(int index, double scale, bool dark,

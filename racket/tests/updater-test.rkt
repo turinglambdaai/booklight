@@ -41,7 +41,7 @@
          racket/tcp
          "../../app/updater.rkt"
          "../../app/version.rkt"
-         "../pdfgist/settings.rkt")
+         "../booklight/settings.rkt")
 
 (use-all-factories!)
 
