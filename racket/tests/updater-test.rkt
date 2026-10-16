@@ -45,6 +45,18 @@
 
 (use-all-factories!)
 
+;; rivet moved update-artifact to 8 fields (arguments + component) in the
+;; middle of the v0.11.0 line; construct through this shim so the suite
+;; runs on either shape.
+(define (make-test-artifact platform architecture url sha256 size installer arguments)
+  (with-handlers
+      ([exn:fail:contract:arity?
+        (lambda (_)
+          (apply update-artifact
+                 (append (list platform architecture url sha256 size installer arguments)
+                         (list 'app))))])
+    (update-artifact platform architecture url sha256 size installer arguments)))
+
 ;; Every state-file touch lands in a throwaway config dir, never the user's
 ;; (current-config-dir is the settings.rkt parameter the updater reads).
 (parameterize ([current-config-dir
@@ -146,9 +158,9 @@
       (update-manifest
        app-identifier "9.9.9" 7 'stable
        "2026-10-13T00:00:00Z" "0.0.0" #f #t 100
-       (list (update-artifact (platform-symbol) (architecture-symbol)
-                              url (bytes->hex-string (sha256-bytes payload))
-                              (bytes-length payload) 'zip '() 'app))))
+       (list (make-test-artifact (platform-symbol) (architecture-symbol)
+                                 url (bytes->hex-string (sha256-bytes payload))
+                                 (bytes-length payload) 'zip '()))))
     (select-update
      (updater-config app-identifier app-version app-channel
                      (platform-symbol) (architecture-symbol)
@@ -229,11 +241,11 @@
       (update-manifest
        app-identifier "9.9.9" 7 'stable
        "2026-10-13T00:00:00Z" "0.0.0" #f #t 100
-       (list (update-artifact (platform-symbol) (architecture-symbol)
-                              "https://dl.example/pdfgist/pdfgist-9.9.9.zip"
-                              (sha256-file/hex artifact-file)
-                              (file-size artifact-file)
-                              'zip '() 'app))))
+       (list (make-test-artifact (platform-symbol) (architecture-symbol)
+                                 "https://dl.example/pdfgist/pdfgist-9.9.9.zip"
+                                 (sha256-file/hex artifact-file)
+                                 (file-size artifact-file)
+                                 'zip '()))))
     (define wrapped (open-output-bytes))
     (write-signed-manifest manifest priv "pdfgist-test" wrapped)
     (define verified
