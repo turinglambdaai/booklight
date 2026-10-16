@@ -585,7 +585,8 @@ void MainWindow::LoadShelfCover(
         auto store_op = writer.StoreAsync();
         store_op.Completed(
             [weak, stream, writer, border, placeholder](
-                winrt::Windows::Foundation::IAsyncAction const&,
+                winrt::Windows::Foundation::IAsyncOperation<
+                    std::uint32_t> const&,
                 winrt::Windows::Foundation::AsyncStatus status) mutable {
               if (status != winrt::Windows::Foundation::AsyncStatus::Completed) {
                 return;
