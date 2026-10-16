@@ -6,7 +6,7 @@
          racket/file
          racket/runtime-path
          racket/string
-         "../pdfgist/epub.rkt")
+         "../booklight/epub.rkt")
 
 (define-runtime-path fixture-path "fixtures/sample.epub")
 (define data (file->bytes fixture-path))

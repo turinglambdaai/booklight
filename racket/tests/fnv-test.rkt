@@ -5,7 +5,7 @@
 ;; v1 (Tauri) annotations.rs, and the {:016x} rendering.
 
 (require rackunit
-         "../pdfgist/fnv.rkt")
+         "../booklight/fnv.rkt")
 
 ;; Standard published FNV-1a 64 vectors.
 (check-equal? (fnv1a64 "") #xcbf29ce484222325)

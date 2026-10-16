@@ -18,8 +18,8 @@
          rivet/backend
          rivet/protocol
          "../../app/backend.rkt"
-         "../pdfgist/fnv.rkt"
-         "../pdfgist/settings.rkt")
+         "../booklight/fnv.rkt"
+         "../booklight/settings.rkt")
 
 ;; ---- watchdog: a hung stream must fail the file, not hang CI ----
 (define test-done (make-semaphore))

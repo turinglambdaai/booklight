@@ -6,8 +6,8 @@
 
 (require rackunit
          racket/port
-         "../pdfgist/sse.rkt"
-         "../pdfgist/llm.rkt")
+         "../booklight/sse.rkt"
+         "../booklight/llm.rkt")
 
 ;; ---- line classification ----
 

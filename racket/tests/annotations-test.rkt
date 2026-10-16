@@ -8,10 +8,10 @@
          racket/file
          racket/string
          racket/path
-         "../pdfgist/annotations.rkt"
-         "../pdfgist/fnv.rkt"
-         "../pdfgist/jsonw.rkt"
-         "../pdfgist/settings.rkt")
+         "../booklight/annotations.rkt"
+         "../booklight/fnv.rkt"
+         "../booklight/jsonw.rkt"
+         "../booklight/settings.rkt")
 
 (define temp-root (make-temporary-file "pdfgist-annotations-~a" 'directory))
 

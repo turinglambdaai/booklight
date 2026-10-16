@@ -5,7 +5,7 @@
 ;; Doubao /api/v3 must NOT get /v1 appended).
 
 (require rackunit
-         "../pdfgist/urlnorm.rkt")
+         "../booklight/urlnorm.rkt")
 
 ;; llm.rs keeps_provider_version_segments
 (check-equal? (normalize-base-url "https://api.deepseek.com/v1")

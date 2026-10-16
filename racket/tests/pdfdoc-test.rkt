@@ -6,7 +6,7 @@
 (require rackunit
          racket/format
          racket/string
-         "../pdfgist/pdfdoc.rkt")
+         "../booklight/pdfdoc.rkt")
 
 ;; Racket has no bytes-contains? in 9.3 — local helper.
 (define (bytes-contains? haystack needle)

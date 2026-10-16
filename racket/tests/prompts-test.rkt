@@ -6,7 +6,7 @@
 (require rackunit
          racket/list
          racket/string
-         "../pdfgist/prompts.rkt")
+         "../booklight/prompts.rkt")
 
 ;; ---- translation ----
 
