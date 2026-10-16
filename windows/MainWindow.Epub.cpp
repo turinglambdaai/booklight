@@ -160,6 +160,8 @@ void MainWindow::LoadEpubBook(std::shared_ptr<EpubBook> book) {
       window->NavigateToEpubController(book, sections);
       window->ApplyEpubTheme(*book);
       window->RefreshLeftPanel();
+      // Opening grows the shelf (mac importOpenedEpub parity).
+      window->ImportBook(book->path);
     });
   }).detach();
 }

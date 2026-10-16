@@ -229,6 +229,14 @@ struct MainWindow : MainWindowT<MainWindow> {
                        winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void FitWidth_Click(winrt::Windows::Foundation::IInspectable const&,
                       winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void ShelfImport_Click(winrt::Windows::Foundation::IInspectable const&,
+                         winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void ShelfFilter_SelectionChanged(
+      winrt::Windows::Foundation::IInspectable const&,
+      winrt::Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const&);
+  void ShelfSearch_TextChanged(
+      winrt::Windows::Foundation::IInspectable const&,
+      winrt::Microsoft::UI::Xaml::Controls::TextChangedEventArgs const&);
 
  private:
   // ---- lifecycle (MainWindow.xaml.cpp) ----
@@ -443,6 +451,35 @@ struct MainWindow : MainWindowT<MainWindow> {
   void RunMergeDialog();
   void RunBakeDialog();
   void PickPdfFile(std::function<void(std::wstring const&)> on_picked);
+
+  // ---- shelf (MainWindow.Shelf.cpp) — the reading-first launch surface ----
+  std::vector<rivet_app::LibraryEntry> ShelfRows() const;
+  void RefreshShelfFilterBox();
+  void RefreshShelf();
+  winrt::Microsoft::UI::Xaml::UIElement MakeShelfCell(
+      rivet_app::LibraryEntry const& entry);
+  void LoadShelfCover(std::string const& png_path,
+                      winrt::Microsoft::UI::Xaml::Controls::Border const& border,
+                      winrt::Microsoft::UI::Xaml::Controls::StackPanel const& placeholder);
+  // One shared upsert helper: opening a book from anywhere grows the shelf.
+  void ImportBook(std::wstring const& path);
+  void ImportBooks(std::vector<std::wstring> const& paths);
+  void ShelfReplaceEntry(rivet_app::LibraryEntry const& updated);
+  void ShelfAddToCollection(rivet_app::LibraryEntry const& entry,
+                            std::wstring const& name);
+  void ShelfRemoveFromCollection(rivet_app::LibraryEntry const& entry,
+                                 std::wstring const& name);
+  void ShelfNewCollection(rivet_app::LibraryEntry const& entry);
+  void ShelfRelink(rivet_app::LibraryEntry const& entry);
+  void ShelfRemove(rivet_app::LibraryEntry const& entry);
+  void RevealInExplorer(std::wstring const& path);
+  std::vector<rivet_app::LibraryEntry> library_;
+  bool library_loaded_ = false;
+  bool library_importing_ = false;
+  bool shelf_ui_updating_ = false;
+  std::wstring shelf_filter_;  // "" = all / "unfiled" / collection name
+  std::wstring shelf_search_;
+  std::vector<std::wstring> shelf_filter_values_;  // SelectedIndex → filter
 
   // ---- AcroForm pane (MainWindow.Forms.cpp) ----
   void BuildFormsPane();
