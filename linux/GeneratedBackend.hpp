@@ -17,10 +17,10 @@
 namespace rivet_app {
 inline constexpr char kModuleName[] = "backend";
 inline constexpr char kEntryName[] = "start";
-inline constexpr char kDisplayName[] = "PDFGist";
-inline constexpr char kVersion[] = "0.3.4";
+inline constexpr char kDisplayName[] = "Booklight";
+inline constexpr char kVersion[] = "0.1.0";
 inline constexpr std::int64_t kBuild = 1;
-inline constexpr char kIdentifier[] = "site.jrtx.pdfgist";
+inline constexpr char kIdentifier[] = "site.jrtx.booklight";
 inline constexpr char kReleaseChannel[] = "stable";
 
 enum class SummarizeMode { page, selection, doc };

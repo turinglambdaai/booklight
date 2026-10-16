@@ -24,6 +24,7 @@
 
 (provide annotation-storage-path
          sidecar-storage-path
+         legacy-sidecar-path
          annotations-dir-path
          empty-document
          legacy-array?
@@ -37,10 +38,16 @@
 (define (annotations-dir-path)
   (build-path (current-config-dir) "annotations"))
 
+;; Sidecar files carry the product name; the pdfgist name is the legacy
+;; shape kept readable so pre-booklight sidecars migrate transparently.
 (define (sidecar-storage-path pdf-path)
   (unless (string? pdf-path)
     (raise-argument-error 'sidecar-storage-path "string?" pdf-path))
-  (string-append pdf-path ".pdfgist.json"))
+  (string-append pdf-path ".booklight.json"))
+
+(define (legacy-sidecar-path pdf-path)
+  (and (string? pdf-path)
+       (string-append pdf-path ".pdfgist.json")))
 
 (define (annotation-storage-path pdf-path)
   (unless (string? pdf-path)
@@ -148,7 +155,11 @@
 (define (load-document-bytes pdf-path sidecar?)
   (define file
     (if sidecar?
-        (sidecar-storage-path pdf-path)
+        (or (and (file-exists? (sidecar-storage-path pdf-path))
+                 (sidecar-storage-path pdf-path))
+            (let ((legacy (legacy-sidecar-path pdf-path)))
+              (and legacy (file-exists? legacy) legacy))
+            (sidecar-storage-path pdf-path))
         (annotation-storage-path pdf-path)))
   (if (not (file-exists? file))
       (json-value->bytes (empty-document))

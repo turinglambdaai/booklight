@@ -79,7 +79,7 @@ struct WindowAccessor: NSViewRepresentable {
         func attach() {
             guard window == nil else { return }
             let candidate = NSApp.keyWindow
-                ?? NSApp.windows.first { $0.isVisible && $0.tabbingIdentifier == "site.jrtx.pdfgist.reader" }
+                ?? NSApp.windows.first { $0.isVisible && $0.tabbingIdentifier == "site.jrtx.booklight.reader" }
                 ?? NSApp.windows.first(where: \.isVisible)
             guard let window = candidate else { return }
             self.window = window
@@ -87,7 +87,7 @@ struct WindowAccessor: NSViewRepresentable {
             // Merge All Windows works and the tab bar's + button offers the
             // welcome state, exactly like Preview's document windows.
             window.tabbingMode = .preferred
-            window.tabbingIdentifier = "site.jrtx.pdfgist.reader"
+            window.tabbingIdentifier = "site.jrtx.booklight.reader"
             let center = NotificationCenter.default
             observers.append(center.addObserver(
                 forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
@@ -108,7 +108,7 @@ struct WindowAccessor: NSViewRepresentable {
                     // shelf — the app never idles as a bare Dock icon.
                     let anyRemaining = NSApp.windows.contains {
                         $0.isVisible && $0 !== window
-                            && $0.tabbingIdentifier == "site.jrtx.pdfgist.reader"
+                            && $0.tabbingIdentifier == "site.jrtx.booklight.reader"
                     }
                     if !anyRemaining {
                         self.parent.app.openWindow?(nil)

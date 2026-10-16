@@ -22,7 +22,7 @@ RES="$APP/Contents/Resources"
 
 for lang in zh-Hans en; do
   mkdir -p "$RES/$lang.lproj"
-  printf 'CFBundleDisplayName = "PDFGist";\n' > "$RES/$lang.lproj/InfoPlist.strings"
+  printf 'CFBundleDisplayName = "Booklight";\n' > "$RES/$lang.lproj/InfoPlist.strings"
 done
 
 LOCALIZATIONS_XML='<array><string>zh-Hans</string><string>en</string></array>'

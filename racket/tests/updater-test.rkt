@@ -263,14 +263,14 @@
     (check-equal?
      (destination-path candidate)
      (build-path (config-dir-path) "updates"
-                 (string-append "PDFGist-9.9.9.zip")))
+                 (string-append "Booklight-9.9.9.zip")))
     (delete-file priv-path)
     (delete-file artifact-file))
 
   (test-case "embedded release identity is coherent"
-    (check-equal? app-identifier "site.jrtx.pdfgist")
+    (check-equal? app-identifier "site.jrtx.booklight")
     (check-equal? app-channel 'stable)
-    (check-equal? update-key-id "pdfgist-2026-10")
+    (check-equal? update-key-id "booklight-2026-10")
     (check-true (string? app-version))
     (check-equal? app-build 1)))
 

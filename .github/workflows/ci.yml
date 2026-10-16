@@ -124,7 +124,7 @@ jobs:
           dbus-run-session -- bash -c '
             set -uo pipefail
             export XDG_RUNTIME_DIR
-            export WAYLAND_DISPLAY=pdfgist-smoke
+            export WAYLAND_DISPLAY=booklight-smoke
             export GDK_BACKEND=wayland
             unset DISPLAY
             weston --backend=headless-backend.so --socket="$WAYLAND_DISPLAY" \

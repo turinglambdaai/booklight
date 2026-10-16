@@ -44,7 +44,7 @@ AcroForm filling with export, settings, and the signed self-updater with
 per-platform install shapes (zip swap on macOS, MSI / portable on
 Windows, deb / rpm / AppImage / tarball on Linux).
 
-PDF page-level operations run on the domain core's own minimal PDF reader/writer (`racket/pdfgist/pdfdoc.rkt`) — no external PDF libraries.
+PDF page-level operations run on the domain core's own minimal PDF reader/writer (`racket/booklight/pdfdoc.rkt`) — no external PDF libraries.
 
 ## Building from source
 

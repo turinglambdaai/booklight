@@ -6,10 +6,10 @@ public enum RivetGeneratedError: Error { case typeMismatch(String); case unknown
 public enum RivetGeneratedConfig {
     public static let moduleName = "backend"
     public static let entryName = "start"
-    public static let displayName = "PDFGist"
-    public static let version = "0.3.4"
+    public static let displayName = "Booklight"
+    public static let version = "0.1.0"
     public static let build: Int64 = 1
-    public static let identifier = "site.jrtx.pdfgist"
+    public static let identifier = "site.jrtx.booklight"
     public static let releaseChannel = "stable"
 }
 

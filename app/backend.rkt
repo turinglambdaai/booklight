@@ -24,16 +24,16 @@
          racket/file
          racket/list
          rivet/backend
-         (prefix-in epub: "../racket/pdfgist/epub.rkt")
-         (prefix-in library: "../racket/pdfgist/library.rkt")
-         (prefix-in llm: "../racket/pdfgist/llm.rkt")
-         (prefix-in pdfedit: "../racket/pdfgist/pdfedit.rkt")
-         (prefix-in prompts: "../racket/pdfgist/prompts.rkt")
-         (prefix-in recents: "../racket/pdfgist/recents.rkt")
-         "../racket/pdfgist/annotations.rkt"
-         "../racket/pdfgist/i18n.rkt"
-         "../racket/pdfgist/providers.rkt"
-         "../racket/pdfgist/settings.rkt"
+         (prefix-in epub: "../racket/booklight/epub.rkt")
+         (prefix-in library: "../racket/booklight/library.rkt")
+         (prefix-in llm: "../racket/booklight/llm.rkt")
+         (prefix-in pdfedit: "../racket/booklight/pdfedit.rkt")
+         (prefix-in prompts: "../racket/booklight/prompts.rkt")
+         (prefix-in recents: "../racket/booklight/recents.rkt")
+         "../racket/booklight/annotations.rkt"
+         "../racket/booklight/i18n.rkt"
+         "../racket/booklight/providers.rkt"
+         "../racket/booklight/settings.rkt"
          "updater.rkt"
          "version.rkt")
 
@@ -204,6 +204,7 @@
 
 ;; Ensures the config directory exists; cheap warm-up for hosts.
 (define-rpc (initialize : Void)
+  (migrate-legacy-config!)
   (make-directory* (config-dir-path))
   (void))
 

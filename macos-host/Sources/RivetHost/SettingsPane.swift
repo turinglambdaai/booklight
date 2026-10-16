@@ -188,9 +188,9 @@ struct SettingsPane: View {
             // one click away from the failure it describes.
             HStack(spacing: 14) {
                 Link(L10n.t("ui.about.website"),
-                     destination: URL(string: "https://pdfgist.jrtx.site")!)
+                     destination: URL(string: "https://booklight.jrtx.site")!)
                 Link(L10n.t("ui.about.issue"),
-                     destination: URL(string: "https://github.com/turinglambdaai/pdfgist/issues")!)
+                     destination: URL(string: "https://github.com/turinglambdaai/booklight/issues")!)
             }
             .font(.system(size: 11))
             Text(L10n.t("ui.about.license"))

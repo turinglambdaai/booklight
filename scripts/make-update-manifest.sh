@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build the PDFGist update manifest (rivet format) over the final artifacts.
+# Build the Booklight update manifest (rivet format) over the final artifacts.
 #
 # Usage: scripts/make-update-manifest.sh <tag> <dist-dir> <key-der-path>
 #   <tag>          release tag, e.g. v0.1.0 (must match the VERSION file)
 #   <dist-dir>     directory containing the release artifacts, i.e. the names
 #                  the release pipeline produces:
-#                    pdfgist-<ver>-macos-arm64.zip   pdfgist-<ver>-macos-x64.zip
-#                    pdfgist-<ver>-windows-x64.zip
-#                    pdfgist-<ver>-linux-x64.tar.gz  pdfgist-<ver>-linux-arm64.tar.gz
+#                    booklight-<ver>-macos-arm64.zip   booklight-<ver>-macos-x64.zip
+#                    booklight-<ver>-windows-x64.zip
+#                    booklight-<ver>-linux-x64.tar.gz  booklight-<ver>-linux-arm64.tar.gz
 #   <key-der-path> Ed25519 private key in DER (SubjectPublicKeyInfo/OneAsymmetricKey)
 #                  form; the CI secret stores it base64-encoded.
 #
@@ -32,8 +32,8 @@ TAG="${1:?usage: make-update-manifest.sh <tag> <dist-dir> <key-der-path>}"
 DIST="${2:?usage: make-update-manifest.sh <tag> <dist-dir> <key-der-path>}"
 KEY_PATH="${3:?usage: make-update-manifest.sh <tag> <dist-dir> <key-der-path>}"
 VERSION="${TAG#v}"
-KEY_ID="${RIVET_UPDATE_KEY_ID:-pdfgist-2026-10}"
-BASE_URL="${RELEASE_ASSET_BASE_URL:-https://github.com/turinglambdaai/pdfgist/releases/download/$TAG}"
+KEY_ID="${RIVET_UPDATE_KEY_ID:-booklight-2026-10}"
+BASE_URL="${RELEASE_ASSET_BASE_URL:-https://github.com/turinglambdaai/booklight/releases/download/$TAG}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -46,11 +46,11 @@ if [ "$VERSION" != "$RKTD_VERSION" ]; then
   exit 1
 fi
 
-for artifact in "$DIST/pdfgist-$VERSION-macos-arm64.zip" \
-                "$DIST/pdfgist-$VERSION-macos-x64.zip" \
-                "$DIST/pdfgist-$VERSION-windows-x64.zip" \
-                "$DIST/pdfgist-$VERSION-linux-x64.tar.gz" \
-                "$DIST/pdfgist-$VERSION-linux-arm64.tar.gz"; do
+for artifact in "$DIST/booklight-$VERSION-macos-arm64.zip" \
+                "$DIST/booklight-$VERSION-macos-x64.zip" \
+                "$DIST/booklight-$VERSION-windows-x64.zip" \
+                "$DIST/booklight-$VERSION-linux-x64.tar.gz" \
+                "$DIST/booklight-$VERSION-linux-arm64.tar.gz"; do
   if [ ! -f "$artifact" ]; then
     echo "error: missing installer: $artifact" >&2
     exit 1
@@ -60,7 +60,7 @@ done
 # ---- build + sign the manifest with rivet's own signer -----------------------
 MANIFEST="$DIST/update-stable.json"
 
-SCRIPT="$(mktemp /tmp/pdfgist-manifest-XXXXXX.rkt)"
+SCRIPT="$(mktemp /tmp/booklight-manifest-XXXXXX.rkt)"
 trap 'rm -f "$SCRIPT"' EXIT
 
 cat > "$SCRIPT" <<RKT
@@ -88,7 +88,7 @@ cat > "$SCRIPT" <<RKT
                    '()))
 
 (define manifest
-  (update-manifest "site.jrtx.pdfgist"
+  (update-manifest "site.jrtx.booklight"
                    version
                    build
                    'stable
@@ -106,18 +106,18 @@ cat > "$SCRIPT" <<RKT
                    #t
                    100
                    (list (artifact 'macos 'arm64
-                                   (format "pdfgist-~a-macos-arm64.zip" version) 'zip)
+                                   (format "booklight-~a-macos-arm64.zip" version) 'zip)
                          (artifact 'macos 'x64
-                                   (format "pdfgist-~a-macos-x64.zip" version) 'zip)
+                                   (format "booklight-~a-macos-x64.zip" version) 'zip)
                          (artifact 'windows 'x64
-                                   (format "pdfgist-~a-windows-x64.zip" version) 'zip)
+                                   (format "booklight-~a-windows-x64.zip" version) 'zip)
                          ;; Linux updates through the tar.gz; the host's
                          ;; install-shape dispatch layers the deb/rpm hint
                          ;; and the AppImage sibling swap on top.
                          (artifact 'linux 'x64
-                                   (format "pdfgist-~a-linux-x64.tar.gz" version) 'targz)
+                                   (format "booklight-~a-linux-x64.tar.gz" version) 'targz)
                          (artifact 'linux 'arm64
-                                   (format "pdfgist-~a-linux-arm64.tar.gz" version) 'targz))))
+                                   (format "booklight-~a-linux-arm64.tar.gz" version) 'targz))))
 
 ;; write-signed-manifest validates the struct against the manifest schema
 ;; before signing, so a malformed manifest fails the release instead of

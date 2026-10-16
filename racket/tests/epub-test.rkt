@@ -1,4 +1,4 @@
-;; Tests for the EPUB domain reader (racket/pdfgist/epub.rkt), run against
+;; Tests for the EPUB domain reader (racket/booklight/epub.rkt), run against
 ;; the committed fixture racket/tests/fixtures/sample.epub.
 #lang racket/base
 

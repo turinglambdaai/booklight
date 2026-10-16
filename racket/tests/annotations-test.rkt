@@ -6,6 +6,7 @@
 (require json
          rackunit
          racket/file
+         racket/string
          racket/path
          "../pdfgist/annotations.rkt"
          "../pdfgist/fnv.rkt"
@@ -19,9 +20,12 @@
  (lambda ()
    (parameterize ([current-config-dir temp-root])
      ;; ---- path computation ----
-     ;; Rust: PathBuf::from(format!("{source}.pdfgist.json")) — the suffix is
-     ;; appended to the full PDF path, so "paper.pdf" -> "paper.pdf.pdfgist.json".
+     ;; booklight appends ".booklight.json" to the full PDF path
+     ;; ("paper.pdf" -> "paper.pdf.booklight.json"); the pdfgist name is
+     ;; the legacy shape the loader still reads.
      (check-equal? (sidecar-storage-path "/docs/paper.pdf")
+                   "/docs/paper.pdf.booklight.json")
+     (check-equal? (legacy-sidecar-path "/docs/paper.pdf")
                    "/docs/paper.pdf.pdfgist.json")
      (define key-path (annotation-storage-path "/docs/paper.pdf"))
      (check-equal?
@@ -131,11 +135,22 @@
      ;; ---- sidecar mode ----
      (define pdf-path (build-path temp-root "sidecar-doc.pdf"))
      (define sidecar-pdf (path->string pdf-path))
-     (store-document-bytes!
-      sidecar-pdf #t (string->bytes/utf-8 "{\"annotations\":[],\"bookmarks\":[]}"))
-     (check-true (file-exists? (path->string (string->path (string-append sidecar-pdf ".pdfgist.json")))))
+     ;; a pre-booklight pdfgist sidecar is picked up transparently
+     (define legacy-path (string->path (string-append sidecar-pdf ".pdfgist.json")))
+     (call-with-output-file legacy-path
+       (lambda (out)
+         (display "{\"annotations\":[],\"bookmarks\":[]}" out))
+       #:exists 'replace)
      (check-equal? (load-document-bytes sidecar-pdf #t)
                    (string->bytes/utf-8
-                    "{\n  \"annotations\": [],\n  \"bookmarks\": []\n}"))))
+                    "{\n  \"annotations\": [],\n  \"bookmarks\": []\n}"))
+     ;; storing writes the booklight name…
+     (store-document-bytes!
+      sidecar-pdf #t (string->bytes/utf-8 "{\"annotations\":[],\"bookmarks\":[{\"page\":3}]}"))
+     (check-true (file-exists? (path->string (string->path (string-append sidecar-pdf ".booklight.json")))))
+     ;; …and from then on the new file wins
+     (define reread (load-document-bytes sidecar-pdf #t))
+     (check-true (string-contains? (bytes->string/utf-8 reread) "\"page\": 3"))
+     (check-false (string-contains? (bytes->string/utf-8 reread) "\"id\":\"x\""))))
  (lambda ()
    (delete-directory/files temp-root)))

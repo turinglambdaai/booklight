@@ -369,7 +369,7 @@
 
 ;; Sidecar mode stores next to the PDF.
 (call "set-annotations" pdf-path #t (string->bytes/utf-8 "{\"annotations\":[],\"bookmarks\":[{\"page\":3}]}"))
-(check-true (file-exists? (string-append pdf-path ".pdfgist.json")))
+(check-true (file-exists? (string-append pdf-path ".booklight.json")))
 (define-values (sidecar-annotations _e12) (call "get-annotations" pdf-path #t))
 (check-equal?
  (length (hash-ref (read-json (open-input-bytes sidecar-annotations)) 'bookmarks))

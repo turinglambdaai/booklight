@@ -18,6 +18,7 @@
 
 (require json
          racket/file
+         racket/path
          racket/port
          racket/string
          "i18n.rkt"
@@ -28,6 +29,7 @@
 (provide current-config-dir
          config-dir-path
          settings-file-path
+         migrate-legacy-config!
          pdfgist-settings
          pdfgist-settings?
          settings-provider
@@ -53,7 +55,7 @@
 
 ;; ---- config dir convention (Tauri app_config_dir parity) ----
 
-(define app-identifier "site.jrtx.pdfgist")
+(define app-identifier "site.jrtx.booklight")
 
 (define (default-config-dir)
   (case (system-type)
@@ -70,6 +72,22 @@
      (build-path (find-system-path 'home-dir) ".config" app-identifier)]))
 
 (define current-config-dir (make-parameter (default-config-dir)))
+
+;; The pre-booklight config dir (site.jrtx.pdfgist) holds settings,
+;; annotations and recents for the same user. When the new dir does not
+;; exist yet, copy the whole legacy dir over — one-time, non-destructive
+;; (the old dir stays as a backup; the shelf re-imports books separately).
+(define legacy-app-identifier "site.jrtx.pdfgist")
+
+(define (migrate-legacy-config!)
+  (define new-dir (current-config-dir))
+  (if (directory-exists? new-dir)
+      (void)
+      (let ((parent (path-only new-dir)))
+        (when parent
+          (define old-dir (build-path parent legacy-app-identifier))
+          (when (directory-exists? old-dir)
+            (copy-directory/files old-dir new-dir))))))
 
 (define (config-dir-path)
   (current-config-dir))

@@ -1,4 +1,4 @@
-;; Tests for racket/pdfgist/pdfdoc — the page-level edit pipeline.
+;; Tests for racket/booklight/pdfdoc — the page-level edit pipeline.
 ;; Run with: raco test racket/
 
 #lang racket/base

@@ -61,34 +61,34 @@ jobs:
       - name: Package
         run: raco rivet package
       - name: Declare bundle localizations (zh-Hans + en system chrome)
-        run: bash scripts/localize-app.sh dist/pdfgist.app
+        run: bash scripts/localize-app.sh dist/booklight.app
       - name: Portable zip + checksum
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           cd dist
-          zip -qry "pdfgist-${VERSION}-macos-${{ matrix.arch }}.zip" pdfgist.app
-          shasum -a 256 "pdfgist-${VERSION}-macos-${{ matrix.arch }}.zip" \
-            > "pdfgist-${VERSION}-macos-${{ matrix.arch }}.zip.sha256"
+          zip -qry "booklight-${VERSION}-macos-${{ matrix.arch }}.zip" booklight.app
+          shasum -a 256 "booklight-${VERSION}-macos-${{ matrix.arch }}.zip" \
+            > "booklight-${VERSION}-macos-${{ matrix.arch }}.zip.sha256"
       - name: Human installer (DMG, drag to Applications)
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           staging="$(mktemp -d)/dmg-stage"
           mkdir -p "$staging"
-          cp -R dist/pdfgist.app "$staging/"
+          cp -R dist/booklight.app "$staging/"
           ln -s /Applications "$staging/Applications"
-          hdiutil create -volname "PDFGist ${VERSION}" -srcfolder "$staging" -ov -format UDZO \
-            "dist/pdfgist-${VERSION}-macos-${{ matrix.arch }}.dmg"
-          hdiutil attach "dist/pdfgist-${VERSION}-macos-${{ matrix.arch }}.dmg" \
+          hdiutil create -volname "Booklight ${VERSION}" -srcfolder "$staging" -ov -format UDZO \
+            "dist/booklight-${VERSION}-macos-${{ matrix.arch }}.dmg"
+          hdiutil attach "dist/booklight-${VERSION}-macos-${{ matrix.arch }}.dmg" \
             -mountpoint "$RUNNER_TEMP/dmg-verify" -readonly
-          test -d "$RUNNER_TEMP/dmg-verify/pdfgist.app"
+          test -d "$RUNNER_TEMP/dmg-verify/booklight.app"
           hdiutil detach "$RUNNER_TEMP/dmg-verify"
           cd dist
-          shasum -a 256 "pdfgist-${VERSION}-macos-${{ matrix.arch }}.dmg" \
-            > "pdfgist-${VERSION}-macos-${{ matrix.arch }}.dmg.sha256"
+          shasum -a 256 "booklight-${VERSION}-macos-${{ matrix.arch }}.dmg" \
+            > "booklight-${VERSION}-macos-${{ matrix.arch }}.dmg.sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-package-${{ matrix.arch }}
-          path: dist/pdfgist-*
+          path: dist/booklight-*
           if-no-files-found: error
 
   windows:
@@ -139,9 +139,9 @@ jobs:
           cd dist
           # rivet v0.11.0 names the MSI and the portable zip in family form
           # already; only the SBOM/notices lack the platform segment.
-          mv sbom.cdx.json "pdfgist-${VERSION}-windows-x64.sbom.cdx.json"
-          mv THIRD_PARTY_NOTICES.txt "pdfgist-${VERSION}-windows-x64-THIRD_PARTY_NOTICES.txt"
-          for f in pdfgist-*; do
+          mv sbom.cdx.json "booklight-${VERSION}-windows-x64.sbom.cdx.json"
+          mv THIRD_PARTY_NOTICES.txt "booklight-${VERSION}-windows-x64-THIRD_PARTY_NOTICES.txt"
+          for f in booklight-*; do
             case "$f" in
               *.sha256) ;;
               # The sbom/notices/wixpdb bodies stay in the CI artifact only;
@@ -154,7 +154,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-package
-          path: dist/pdfgist-*
+          path: dist/booklight-*
           if-no-files-found: error
 
   linux:
@@ -201,7 +201,7 @@ jobs:
           # The AppImage sidecar (write-appimage-checksum!) backs the
           # AppImage self-update flow — keep it verbatim. Everything else
           # gets a sidecar if it lacks one.
-          for f in pdfgist-*; do
+          for f in booklight-*; do
             case "$f" in
               *.sha256) ;;
               *.sbom.cdx.json | *-THIRD_PARTY_NOTICES.txt) ;;
@@ -211,7 +211,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-package-${{ matrix.arch }}
-          path: dist/pdfgist-*
+          path: dist/booklight-*
           if-no-files-found: error
 
   release:
@@ -272,12 +272,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if gh release view "${{ github.ref_name }}" -R turinglambdaai/pdfgist >/dev/null 2>&1; then
-            gh release upload "${{ github.ref_name }}" dist/* --clobber -R turinglambdaai/pdfgist
+          if gh release view "${{ github.ref_name }}" -R turinglambdaai/booklight >/dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" dist/* --clobber -R turinglambdaai/booklight
           else
             gh release create "${{ github.ref_name }}" dist/* \
-              -R turinglambdaai/pdfgist \
-              --title "PDFGist ${VERSION}" \
+              -R turinglambdaai/booklight \
+              --title "Booklight ${VERSION}" \
               --notes-file /tmp/notes.md
           fi
       - name: Attest build provenance
@@ -296,15 +296,15 @@ jobs:
           # arch, MSI for Windows). Deliberately after the provenance
           # attestation so dist/* there stays versioned-only.
           mkdir -p stable-alias
-          cp "dist/pdfgist-${VERSION}-macos-arm64.dmg" stable-alias/pdfgist-macos-arm64.dmg
-          cp "dist/pdfgist-${VERSION}-macos-x64.dmg" stable-alias/pdfgist-macos-x64.dmg
+          cp "dist/booklight-${VERSION}-macos-arm64.dmg" stable-alias/booklight-macos-arm64.dmg
+          cp "dist/booklight-${VERSION}-macos-x64.dmg" stable-alias/booklight-macos-x64.dmg
           # Linux: deb (x64/arm64), AppImage (x86_64/aarch64 naming) and
           # the tar.gz the linux feed entry serves.
-          cp "dist/pdfgist-${VERSION}-linux-amd64.deb" stable-alias/pdfgist-linux-x64.deb
-          cp "dist/pdfgist-${VERSION}-linux-arm64.deb" stable-alias/pdfgist-linux-arm64.deb
-          cp "dist/pdfgist-${VERSION}-linux-x86_64.AppImage" stable-alias/pdfgist-linux-x64.AppImage
-          cp "dist/pdfgist-${VERSION}-linux-aarch64.AppImage" stable-alias/pdfgist-linux-arm64.AppImage
-          cp "dist/pdfgist-${VERSION}-linux-x64.tar.gz" stable-alias/pdfgist-linux-x64.tar.gz
-          cp "dist/pdfgist-${VERSION}-linux-arm64.tar.gz" stable-alias/pdfgist-linux-arm64.tar.gz
-          cp "dist/pdfgist-${VERSION}-windows-x64.msi" stable-alias/pdfgist-windows-x64.msi
-          gh release upload "${{ github.ref_name }}" stable-alias/* --clobber -R turinglambdaai/pdfgist
+          cp "dist/booklight-${VERSION}-linux-amd64.deb" stable-alias/booklight-linux-x64.deb
+          cp "dist/booklight-${VERSION}-linux-arm64.deb" stable-alias/booklight-linux-arm64.deb
+          cp "dist/booklight-${VERSION}-linux-x86_64.AppImage" stable-alias/booklight-linux-x64.AppImage
+          cp "dist/booklight-${VERSION}-linux-aarch64.AppImage" stable-alias/booklight-linux-arm64.AppImage
+          cp "dist/booklight-${VERSION}-linux-x64.tar.gz" stable-alias/booklight-linux-x64.tar.gz
+          cp "dist/booklight-${VERSION}-linux-arm64.tar.gz" stable-alias/booklight-linux-arm64.tar.gz
+          cp "dist/booklight-${VERSION}-windows-x64.msi" stable-alias/booklight-windows-x64.msi
+          gh release upload "${{ github.ref_name }}" stable-alias/* --clobber -R turinglambdaai/booklight

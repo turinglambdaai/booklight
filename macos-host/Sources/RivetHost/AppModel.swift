@@ -235,7 +235,12 @@ final class AppModel: ObservableObject {
         // v1 UI is Chinese-first; en.json exists, so follow the system locale
         // unless the in-app override says otherwise (Locale.preferredLanguages
         // also honors the per-app language override in System Settings).
-        let stored = UserDefaults.standard.string(forKey: "pdfgist-lang") ?? "system"
+        // Identity migration: the language preference may still live in the
+        // pre-booklight defaults domain.
+        let stored = UserDefaults.standard.string(forKey: "booklight-lang")
+            ?? (CFPreferencesCopyAppValue("pdfgist-lang" as CFString,
+                                          "site.jrtx.pdfgist" as CFString) as? String)
+            ?? "system"
         languageSetting = stored
         L10n.language = Self.resolvedLanguage(stored)
         if let launch = ProcessInfo.processInfo.environment["PDFGIST_OPEN"],
@@ -254,7 +259,7 @@ final class AppModel: ObservableObject {
 
     func setLanguage(_ setting: String) {
         languageSetting = setting
-        UserDefaults.standard.set(setting, forKey: "pdfgist-lang")
+        UserDefaults.standard.set(setting, forKey: "booklight-lang")
     }
 
     /// Relaunch into the newly chosen language: open first, terminate only

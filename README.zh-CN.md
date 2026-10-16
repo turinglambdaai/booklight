@@ -36,7 +36,7 @@
 
 三端宿主交付同一功能集：多标签 PDF 阅读（macOS 用 PDFKit，Windows/Linux 用同一 pin 的 chromium/8100 PDFium——bblanchon/pdfium-binaries 同一构建的各平台包，均做 SHA-256 校验）、划选 AI 工作流（流式）、EPUB（原生 Web 视图）、页编辑、批注高亮与批注/书签面板、书签、全文搜索、朗读、打印、分屏、AcroForm 填表与导出、设置，以及签名自更新（macOS zip 换装、Windows MSI/便携版、Linux deb/rpm/AppImage/tar.gz 三形态）。
 
-PDF 页级操作由领域核心自研的最小 PDF 读写器（`racket/pdfgist/pdfdoc.rkt`）完成——不依赖任何第三方 PDF 库。
+PDF 页级操作由领域核心自研的最小 PDF 读写器（`racket/booklight/pdfdoc.rkt`）完成——不依赖任何第三方 PDF 库。
 
 ## 从源码构建
 

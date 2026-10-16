@@ -56,7 +56,7 @@
          racket/path
          racket/port
          racket/string
-         "../racket/pdfgist/settings.rkt"
+         "../racket/booklight/settings.rkt"
          "version.rkt")
 
 (provide platform-symbol
