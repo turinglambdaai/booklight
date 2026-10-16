@@ -30,7 +30,7 @@ namespace {
 
 using pdfgist::PdfOpenError;
 
-constexpr wchar_t kAppTitle[] = L"PDFGist";
+constexpr wchar_t kAppTitle[] = L"Booklight";
 constexpr double kZoomStep = 1.2;
 constexpr double kMinZoom = 0.4;
 constexpr double kMaxZoom = 4.0;

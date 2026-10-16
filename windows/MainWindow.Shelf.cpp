@@ -396,7 +396,7 @@ mux::UIElement MainWindow::MakeShelfCell(rivet_app::LibraryEntry const& entry) {
   title.FontSize(12);
   title.TextWrapping(mux::TextWrapping::Wrap);
   title.MaxLines(2);
-  title.Height(30);  // fixed: rows stay aligned with 1-line titles
+  title.Height(34);  // fixed: rows stay aligned with 1-line titles
   title.TextTrimming(mux::TextTrimming::CharacterEllipsis);
   title.Foreground(Brush(TextColor(dark)));
   if (missing) title.Opacity(0.45);
@@ -435,7 +435,7 @@ mux::UIElement MainWindow::MakeShelfCell(rivet_app::LibraryEntry const& entry) {
   bar.Visibility(has_progress ? Visibility::Visible : Visibility::Collapsed);
   auto label = muxc::TextBlock();
   label.FontSize(10);
-  label.Height(13);  // fixed: keeps row heights aligned (mac parity)
+  label.Height(14);  // fixed: keeps row heights aligned (mac parity)
   label.Opacity(0.5);
   label.Foreground(Brush(TextDimColor(dark)));
   if (has_progress) {

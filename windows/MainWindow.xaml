@@ -187,7 +187,7 @@
                         IsMultiSelectCheckBoxEnabled="False">
                         <GridView.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <ItemsWrapGrid Orientation="Horizontal" ItemWidth="164" ItemHeight="268" />
+                                <ItemsWrapGrid Orientation="Horizontal" ItemWidth="164" ItemHeight="272" />
                             </ItemsPanelTemplate>
                         </GridView.ItemsPanel>
                     </GridView>
