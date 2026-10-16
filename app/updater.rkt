@@ -88,28 +88,21 @@
 ;; rivet moved updater-config to 10 fields (component) mid-v0.11.0; the
 ;; updater constructs through this shim so production runs on either shape.
 (define (make-updater-config)
+  (define args
+    (list app-identifier
+          app-version
+          app-channel
+          (platform-symbol)
+          (architecture-symbol)
+          (embedded-public-key)
+          update-key-id
+          (rollout-bucket)
+          maximum-download-bytes))
   (with-handlers
       ([exn:fail:contract:arity?
         (lambda (_)
-          (updater-config app-identifier
-                          app-version
-                          app-channel
-                          (platform-symbol)
-                          (architecture-symbol)
-                          (embedded-public-key)
-                          update-key-id
-                          (rollout-bucket)
-                          maximum-download-bytes)])
-    (updater-config app-identifier
-                    app-version
-                    app-channel
-                    (platform-symbol)
-                    (architecture-symbol)
-                    (embedded-public-key)
-                    update-key-id
-                    (rollout-bucket)
-                    maximum-download-bytes
-                    'app)))
+          (apply updater-config (append args (list 'app))))])
+    (apply updater-config args)))
 
 (define (installer-extension)
   (case (system-type 'os)
