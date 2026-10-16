@@ -188,7 +188,7 @@ inline constexpr struct LinuxStringEntry {
     {"ui.toolbar.bookmark", "书签当前页（⌘B）", "Bookmark this page (⌘B)"},
     {"ui.toolbar.find", "搜索（⌘F）", "Search (⌘F)"},
     {"ui.toolbar.open", "打开 PDF（⌘O）", "Open PDF (⌘O)"},
-    {"ui.toolbar.panel", "缩略图 / 目录", "Thumbnails / Outline"},
+    {"ui.toolbar.panel", "侧栏视图：缩略图、目录、批注", "Sidebar view: thumbnails, outline, annotations"},
     {"ui.toolbar.print", "打印（⌘P）", "Print (⌘P)"},
     {"ui.toolbar.split", "分屏视图", "Split View"},
     {"ui.toolbar.tab-close", "关闭标签页（⌘W）", "Close tab (⌘W)"},

@@ -5,6 +5,14 @@ All notable changes to PDFGist are documented here. Format follows
 The 1.x release era was retired in the version epoch reset below; its
 releases and tags were deleted and the history lives in git on `main`.
 
+## [0.3.2] - 2026-10-16
+
+### Changed
+- **macOS: the sidebar view switcher moved into the toolbar** — the
+  Preview position, next to the sidebar toggle. Nothing is bolted onto
+  the sidebar's bottom edge anymore; the sidebar uses its full height,
+  and picking a view while the sidebar is collapsed opens it.
+
 ## [0.3.1] - 2026-10-16
 
 ### Fixed

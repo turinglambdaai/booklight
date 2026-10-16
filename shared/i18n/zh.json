@@ -175,7 +175,7 @@
   "ui.toolbar.bookmark": "书签当前页（⌘B）",
   "ui.toolbar.find": "搜索（⌘F）",
   "ui.toolbar.open": "打开 PDF（⌘O）",
-  "ui.toolbar.panel": "缩略图 / 目录",
+  "ui.toolbar.panel": "侧栏视图：缩略图、目录、批注",
   "ui.toolbar.print": "打印（⌘P）",
   "ui.toolbar.split": "分屏视图",
   "ui.toolbar.tab-close": "关闭标签页（⌘W）",

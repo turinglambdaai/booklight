@@ -26,22 +26,7 @@ struct ReaderSidebar: View {
 
     @ViewBuilder
     private func pdfSidebar(_ tab: PDFTab) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            panelContent(tab)
-            Spacer(minLength: 0)
-            modePicker
-        }
-    }
-
-    private var modePicker: some View {
-        Picker("", selection: $reader.sidebarMode) {
-            Text(L10n.t("ui.viewer.thumbs")).tag(0)
-            Text(L10n.t("ui.viewer.outline")).tag(1)
-            Text(L10n.t("ui.sidebar.annotations")).tag(2)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .padding(8)
+        panelContent(tab)
     }
 
     @ViewBuilder

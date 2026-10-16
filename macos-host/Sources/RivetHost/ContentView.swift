@@ -236,6 +236,29 @@ struct ReaderWindowView: View {
 
     @ToolbarContentBuilder
     private var readerToolbar: some ToolbarContent {
+        // Sidebar view switcher in the Preview position: next to the
+        // sidebar toggle, never bolted onto the sidebar itself. Picking a
+        // mode while the sidebar is collapsed opens it.
+        ToolbarItem(placement: .navigation) {
+            Picker("", selection: Binding(
+                get: { reader.sidebarMode },
+                set: { mode in
+                    reader.sidebarMode = mode
+                    if sidebarVisibility == .detailOnly {
+                        sidebarVisibility = .all
+                    }
+                })) {
+                Text(L10n.t("ui.viewer.thumbs")).tag(0)
+                Text(L10n.t("ui.viewer.outline")).tag(1)
+                Text(L10n.t("ui.sidebar.annotations")).tag(2)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .disabled(reader.pdf == nil)
+            .help(L10n.t("ui.toolbar.panel"))
+        }
+
         ToolbarItemGroup(placement: .primaryAction) {
             if let epub = reader.epub, reader.epubActive {
                 PageNavControl(

@@ -175,7 +175,7 @@
   "ui.toolbar.bookmark": "Bookmark this page (⌘B)",
   "ui.toolbar.find": "Search (⌘F)",
   "ui.toolbar.open": "Open PDF (⌘O)",
-  "ui.toolbar.panel": "Thumbnails / Outline",
+  "ui.toolbar.panel": "Sidebar view: thumbnails, outline, annotations",
   "ui.toolbar.print": "Print (⌘P)",
   "ui.toolbar.split": "Split View",
   "ui.toolbar.tab-close": "Close tab (⌘W)",

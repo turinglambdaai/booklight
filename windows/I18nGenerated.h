@@ -187,7 +187,7 @@ inline constexpr struct WinStringEntry {
     {"ui.toolbar.bookmark", L"书签当前页（⌘B）", L"Bookmark this page (⌘B)"},
     {"ui.toolbar.find", L"搜索（⌘F）", L"Search (⌘F)"},
     {"ui.toolbar.open", L"打开 PDF（⌘O）", L"Open PDF (⌘O)"},
-    {"ui.toolbar.panel", L"缩略图 / 目录", L"Thumbnails / Outline"},
+    {"ui.toolbar.panel", L"侧栏视图：缩略图、目录、批注", L"Sidebar view: thumbnails, outline, annotations"},
     {"ui.toolbar.print", L"打印（⌘P）", L"Print (⌘P)"},
     {"ui.toolbar.split", L"分屏视图", L"Split View"},
     {"ui.toolbar.tab-close", L"关闭标签页（⌘W）", L"Close tab (⌘W)"},
