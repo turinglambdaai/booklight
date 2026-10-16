@@ -99,7 +99,7 @@
                           (embedded-public-key)
                           update-key-id
                           (rollout-bucket)
-                          maximum-download-bytes))])
+                          maximum-download-bytes)])
     (updater-config app-identifier
                     app-version
                     app-channel
@@ -109,7 +109,7 @@
                     update-key-id
                     (rollout-bucket)
                     maximum-download-bytes
-                    'app)))))
+                    'app)))
 
 (define (installer-extension)
   (case (system-type 'os)
