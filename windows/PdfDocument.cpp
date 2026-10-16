@@ -686,4 +686,32 @@ std::vector<OutlineItem> PdfDocument::Outline() const {
   return items;
 }
 
+// ---- metadata ----------------------------------------------------------------------
+
+// FPDF_GetMetaText answers the byte length including the 2-byte NUL
+// terminator; trim stray whitespace the way PDFKit does.
+std::wstring meta_string(FPDF_DOCUMENT document, FPDF_BYTESTRING tag) {
+  unsigned long const bytes = FPDF_GetMetaText(document, tag, nullptr, 0);
+  if (bytes < 2) return {};
+  std::vector<unsigned short> buffer(static_cast<size_t>(bytes / 2) + 1);
+  unsigned long const written =
+      FPDF_GetMetaText(document, tag, buffer.data(), bytes);
+  if (written < 2) return {};
+  std::wstring text = utf16le_to_utf16(buffer.data(),
+                                       static_cast<int>(written / 2 - 1));
+  std::size_t const first = text.find_first_not_of(L" \t\r\n");
+  if (first == std::wstring::npos) return {};
+  std::size_t const last = text.find_last_not_of(L" \t\r\n");
+  return text.substr(first, last - first + 1);
+}
+
+DocumentMeta PdfDocument::MetaInfo() const {
+  std::lock_guard<std::mutex> lock(pdfium_mutex());
+  FPDF_DOCUMENT document = static_cast<FPDF_DOCUMENT>(document_);
+  DocumentMeta meta;
+  meta.title = meta_string(document, "Title");
+  meta.author = meta_string(document, "Author");
+  return meta;
+}
+
 }  // namespace pdfgist

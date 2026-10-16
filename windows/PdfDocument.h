@@ -43,6 +43,13 @@ struct FindHit {
   std::array<double, 4> rect{};
 };
 
+// Document information dictionary (the shelf's import feeds it into the
+// catalog; empty strings mean the field is absent).
+struct DocumentMeta {
+  std::wstring title;
+  std::wstring author;
+};
+
 class PdfDocument {
  public:
   // bytes are copied (PDFium keeps a pointer into them for the document's
@@ -58,6 +65,9 @@ class PdfDocument {
   PdfDocument& operator=(PdfDocument const&) = delete;
 
   int PageCount() const { return static_cast<int>(page_sizes_.size()); }
+
+  // Document information dictionary (Title / Author), whitespace-trimmed.
+  DocumentMeta MetaInfo() const;
 
   // Display size of a page in points (rotation applied).
   void PageSize(int index, double* width, double* height) const;
