@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
     /// metadata of the newest available update (version, size); shown in the sheet
     @Published var updateInfo: UpdateCheckResult?
     private var updatePollTimer: Timer?
+    private var updatePollFailures = 0
 
     /// The reader window that owns menu actions (the key window), registered
     /// by WindowAccessor when its window becomes key.
@@ -107,6 +108,11 @@ final class AppModel: ObservableObject {
                 guard let event = try? RivetEvent.decode(name: name, value: value) else { return }
                 Task { @MainActor in relay?.receive(event) }
             }
+            // Racket CS takes over SIGTERM at boot and never restores the
+            // default disposition, so `kill` bounces off the running app
+            // (the 0.3.0 stuck-update incident). Hooks go in AFTER the
+            // runtime boots, not before (rivet syncpilot#3 precedent).
+            signal(SIGTERM, SIG_DFL)
             let api = RivetAPI(client: backend.client)
             self.api = api
             Task { await bootstrap() }
@@ -334,6 +340,7 @@ final class AppModel: ObservableObject {
 
     private func startPolling() {
         updatePollTimer?.invalidate()
+        updatePollFailures = 0
         let timer = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.pollUpdateState() }
         }
@@ -344,29 +351,66 @@ final class AppModel: ObservableObject {
 
     private func pollUpdateState() {
         guard let api else { return }
-        Task {
+        Task { [weak self] in
             do {
                 let data = try await api.update_state()
                 let state = try JSONDecoder().decode(UpdateState.self, from: data)
-                updateState = state
-                if state.phase != "downloading" {
-                    updatePollTimer?.invalidate()
-                    updatePollTimer = nil
+                await MainActor.run {
+                    guard let self else { return }
+                    self.updatePollFailures = 0
+                    self.updateState = state
+                    if state.phase != "downloading" {
+                        self.updatePollTimer?.invalidate()
+                        self.updatePollTimer = nil
+                    }
                 }
             } catch {
-                updatePollTimer?.invalidate()
-                updatePollTimer = nil
+                // 0.2.x stopped the timer on the first transient RPC error,
+                // freezing the progress bar forever (the stuck-update
+                // incident). Retry through hiccups; only give up — loudly —
+                // after a sustained silence.
+                await MainActor.run {
+                    guard let self else { return }
+                    self.updatePollFailures += 1
+                    if self.updatePollFailures >= 8 {
+                        self.updatePollTimer?.invalidate()
+                        self.updatePollTimer = nil
+                        self.updateState = .error(
+                            L10n.t("ui.update.install-failed", AppModel.cleanError(error)))
+                    }
+                }
             }
         }
     }
 
     func installUpdate() {
         guard updateState.phase == "downloaded",
-              let path = updateState.downloadedPath else { return }
-        do {
-            try UpdaterInstaller.install(artifactAt: URL(fileURLWithPath: path))
-        } catch {
-            updateState = .error(L10n.t("ui.update.install-failed", "\(error)"))
+              let path = updateState.downloadedPath, !path.isEmpty else {
+            // Never a silent no-op: reaching here with the wrong state means
+            // the sheet drifted from the model — say so and offer retry.
+            updateState = .error(L10n.t("ui.update.install-failed", L10n.t("ui.update.state-stale")))
+            return
+        }
+        updateState = UpdateState(
+            phase: "installing", percent: 100, message: nil,
+            downloadedPath: path, availableVersion: updateState.availableVersion)
+        Task { [weak self] in
+            do {
+                try UpdaterInstaller.install(artifactAt: URL(fileURLWithPath: path))
+                let launched = await UpdaterInstaller.relaunchInstalled()
+                guard !launched else { return } // old process ended via terminate
+                await MainActor.run {
+                    // The swap worked but the new bundle would not launch:
+                    // the running (old) app stays alive and reports it.
+                    self?.updateState = .error(
+                        L10n.t("ui.update.install-failed", L10n.t("ui.update.relaunch-failed")))
+                }
+            } catch {
+                await MainActor.run {
+                    self?.updateState = .error(
+                        L10n.t("ui.update.install-failed", AppModel.cleanError(error)))
+                }
+            }
         }
     }
 

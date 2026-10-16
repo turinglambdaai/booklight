@@ -17,7 +17,7 @@ struct UpdateCheckResult: Codable {
 }
 
 struct UpdateState: Codable {
-    let phase: String        // idle | checking | downloading | downloaded | error
+    let phase: String        // idle | checking | downloading | downloaded | installing | error
     let percent: Int
     let message: String?
     let downloadedPath: String?
@@ -56,6 +56,10 @@ struct UpdateView: View {
                 Text("\(model.updateState.percent)%")
                     .font(.caption)
                     .foregroundStyle(Theme.textDim)
+
+            case "installing":
+                ProgressView()
+                Text(L10n.t("ui.update.installing"))
 
             case "downloaded":
                 Text(L10n.t("ui.update.available"))
@@ -167,7 +171,6 @@ enum UpdaterInstaller {
         }
 
         try swapIn(appURL)
-        finishInstall()
     }
 
     /// Portable-zip manifests (the family feed format): unpack with ditto,
@@ -190,7 +193,6 @@ enum UpdaterInstaller {
         }
 
         try swapIn(appURL)
-        finishInstall()
     }
 
     /// Backup → copy → rollback-on-failure, shared by both container paths.
@@ -218,13 +220,27 @@ enum UpdaterInstaller {
     /// The artifact arrived over the network, so the quarantine xattr rides
     /// into the copied bundle and Gatekeeper would block the very update
     /// the user just approved. The backend already verified the artifact
-    /// (Ed25519 manifest + SHA-256) — clearing it here is safe. Then
-    /// relaunch from the new bundle and end the old process.
-    private static func finishInstall() {
+    /// (Ed25519 manifest + SHA-256) — clearing it here is safe.
+    ///
+    /// Launch-confirmed relaunch: the old process only ends once the new
+    /// bundle is confirmed running. A failed relaunch must never take the
+    /// working app down with it (the 0.3.0 incident left no app at all).
+    static func relaunchInstalled() async -> Bool {
         try? run("/usr/bin/xattr", ["-cr", installationTargetURL().path])
-        NSWorkspace.shared.open(installationTargetURL())
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            NSApp.terminate(nil)
+        return await withCheckedContinuation { continuation in
+            NSWorkspace.shared.openApplication(
+                at: installationTargetURL(),
+                configuration: NSWorkspace.OpenConfiguration()
+            ) { application, error in
+                Task { @MainActor in
+                    if application != nil {
+                        NSApp.terminate(nil)
+                        continuation.resume(returning: true)
+                    } else {
+                        continuation.resume(returning: false)
+                    }
+                }
+            }
         }
     }
 

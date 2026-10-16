@@ -5,6 +5,23 @@ All notable changes to PDFGist are documented here. Format follows
 The 1.x release era was retired in the version epoch reset below; its
 releases and tags were deleted and the history lives in git on `main`.
 
+## [0.3.1] - 2026-10-16
+
+### Fixed
+- **macOS: a stalled update could wedge the app.** The download-state
+  poller stopped its timer on the first transient RPC error, freezing
+  the progress bar forever, and the install step could silently no-op —
+  the 0.2.x → 0.3.0 update shipped a downloaded payload but never
+  swapped it in. The poller now rides out hiccups (up to eight
+  consecutive failures) before surfacing an error, the install step
+  always reports its outcome, installation shows an "installing" state,
+  and the old process only ends after the new bundle is confirmed
+  running — a failed relaunch never takes the working app down.
+- **macOS: `kill` bounced off the running app.** The embedded Racket
+  runtime takes over the SIGTERM disposition at boot and never restores
+  it; the default disposition is restored once the runtime is up, so
+  the app dies cleanly on SIGTERM again.
+
 ## [0.3.0] - 2026-10-16
 
 ### Added

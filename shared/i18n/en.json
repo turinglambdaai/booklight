@@ -246,5 +246,8 @@
   "ui.menu.single-page": "Single Pages",
   "ui.menu.double-page": "Two Pages",
   "ui.sidebar.annotations": "Annotations",
-  "ui.tts.unavailable": "Text-to-speech is unavailable: the spd-say command (speech-dispatcher) was not found."
+  "ui.tts.unavailable": "Text-to-speech is unavailable: the spd-say command (speech-dispatcher) was not found.",
+  "ui.update.installing": "Installing…",
+  "ui.update.state-stale": "The update state went stale — check for updates again.",
+  "ui.update.relaunch-failed": "The new version failed to launch; this version is untouched."
 }
