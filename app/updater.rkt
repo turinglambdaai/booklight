@@ -85,6 +85,32 @@
     [(aarch64 arm64) 'arm64]
     [else 'x64]))
 
+;; rivet moved updater-config to 10 fields (component) mid-v0.11.0; the
+;; updater constructs through this shim so production runs on either shape.
+(define (make-updater-config)
+  (with-handlers
+      ([exn:fail:contract:arity?
+        (lambda (_)
+          (updater-config app-identifier
+                          app-version
+                          app-channel
+                          (platform-symbol)
+                          (architecture-symbol)
+                          (embedded-public-key)
+                          update-key-id
+                          (rollout-bucket)
+                          maximum-download-bytes))])
+    (updater-config app-identifier
+                    app-version
+                    app-channel
+                    (platform-symbol)
+                    (architecture-symbol)
+                    (embedded-public-key)
+                    update-key-id
+                    (rollout-bucket)
+                    maximum-download-bytes
+                    'app))))
+
 (define (installer-extension)
   (case (system-type 'os)
     [(macosx) ".dmg"]
@@ -198,16 +224,7 @@
                              (embedded-public-key)
                              #:key-id update-key-id))
     (define config
-      (updater-config app-identifier
-                      app-version
-                      app-channel
-                      (platform-symbol)
-                      (architecture-symbol)
-                      (embedded-public-key)
-                      update-key-id
-                      (rollout-bucket)
-                      maximum-download-bytes
-                      'app))
+      (make-updater-config))
     (define candidate (select-update config manifest))
     (save-updater-prefs!
      (pref-with (load-updater-prefs)
@@ -456,16 +473,7 @@
   (state-set! 'percent 0)
   (state-set! 'message 'null)
   (define config
-    (updater-config app-identifier
-                    app-version
-                    app-channel
-                    (platform-symbol)
-                    (architecture-symbol)
-                    (embedded-public-key)
-                    update-key-id
-                    (rollout-bucket)
-                    maximum-download-bytes
-                    'app))
+    (make-updater-config))
   (define destination
     (if (appimage-flavor?)
         ;; the staged temp beside the running image; the final swap is an
