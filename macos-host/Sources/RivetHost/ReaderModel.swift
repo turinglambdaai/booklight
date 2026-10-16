@@ -322,6 +322,32 @@ final class ReaderModel: ObservableObject {
         pdf?.splitOn.toggle()
     }
 
+    /// Tools > Merge PDF: pick the second document, then hand both paths to
+    /// the domain core (result replaces the in-memory document).
+    func pickAndMergePDF() {
+        guard pdf != nil else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.canChooseFiles = true
+        panel.message = L10n.t("ui.pages.merge")
+        let handle: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.runPageEdit(.merge(path: url.path))
+        }
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: handle)
+        } else {
+            handle(panel.runModal())
+        }
+    }
+
+    /// Tools > Fill Form: the forms pane is a sidebar view (document tools
+    /// live on the document side; the right inspector is AI-only).
+    func showForms() {
+        guard pdf != nil else { return }
+        sidebarMode = 3
+    }
+
     func openFind() {
         if epubActive {
             if epub != nil { findVisible = true }
@@ -360,6 +386,11 @@ final class ReaderModel: ObservableObject {
                 data = try await api.edit_rotate_pages(path: tab.path, pages: [page], delta: 90)
             case .insertBlankAfterCurrent:
                 data = try await api.edit_insert_blank_after(path: tab.path, page: page)
+            case .extractCurrent:
+                let bytes = try await api.edit_extract_pages(path: tab.path, pages: [page])
+                try await saveEditResult(bytes,
+                                         defaultName: extractName(tab.title))
+                return
             case .extract(let pages):
                 let bytes = try await api.edit_extract_pages(path: tab.path, pages: pages)
                 try await saveEditResult(bytes,

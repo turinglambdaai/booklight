@@ -181,7 +181,7 @@ enum L10n {
     "ui.toolbar.bookmark": "书签当前页（⌘B）",
     "ui.toolbar.find": "搜索（⌘F）",
     "ui.toolbar.open": "打开 PDF（⌘O）",
-    "ui.toolbar.panel": "侧栏视图：缩略图、目录、批注",
+    "ui.toolbar.panel": "侧栏视图：缩略图、目录、批注、表单",
     "ui.toolbar.print": "打印（⌘P）",
     "ui.toolbar.split": "分屏视图",
     "ui.toolbar.tab-close": "关闭标签页（⌘W）",
@@ -260,6 +260,9 @@ enum L10n {
     "ui.settings.language-system": "跟随系统",
     "ui.settings.language-note": "界面语言，重启 PDFGist 后生效。",
     "ui.settings.relaunch": "重新启动",
+    "ui.menu.tools": "工具",
+    "ui.sidebar.forms": "表单",
+    "ui.menu.fill-forms": "填写表单",
     ]
 
     private static let en: [String: String] = [
@@ -439,7 +442,7 @@ enum L10n {
     "ui.toolbar.bookmark": "Bookmark this page (⌘B)",
     "ui.toolbar.find": "Search (⌘F)",
     "ui.toolbar.open": "Open PDF (⌘O)",
-    "ui.toolbar.panel": "Sidebar view: thumbnails, outline, annotations",
+    "ui.toolbar.panel": "Sidebar view: thumbnails, outline, annotations, forms",
     "ui.toolbar.print": "Print (⌘P)",
     "ui.toolbar.split": "Split View",
     "ui.toolbar.tab-close": "Close tab (⌘W)",
@@ -518,6 +521,9 @@ enum L10n {
     "ui.settings.language-system": "Follow System",
     "ui.settings.language-note": "UI language; takes effect after relaunch.",
     "ui.settings.relaunch": "Relaunch Now",
+    "ui.menu.tools": "Tools",
+    "ui.sidebar.forms": "Forms",
+    "ui.menu.fill-forms": "Fill Form…",
     ]
 
     /// Look up a key in the active language, falling back to zh then the key

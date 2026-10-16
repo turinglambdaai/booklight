@@ -34,17 +34,16 @@ struct ReaderSidebar: View {
         switch reader.sidebarMode {
         case 0:
             ScrollView {
-                VStack(spacing: 0) {
-                    ThumbnailStrip(tab: tab)
-                        .frame(height: 140)
-                        .padding(.horizontal, 6)
-                    PageOpsBar(tab: tab)
-                }
+                ThumbnailStrip(tab: tab)
+                    .frame(height: 140)
+                    .padding(.horizontal, 6)
             }
         case 1:
             OutlineList(tab: tab)
-        default:
+        case 2:
             NotesPane(tab: tab)
+        default:
+            FormsPane(tab: tab)
         }
     }
 
@@ -57,65 +56,6 @@ struct ReaderSidebar: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - page ops (v1 editor.ts buttons; ops target the current page —
-// v1 used thumbnail checkboxes, this build narrows to the current page)
-
-struct PageOpsBar: View {
-    @ObservedObject var tab: PDFTab
-    @EnvironmentObject private var app: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(L10n.t("ui.pages.title"))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.textDim)
-            HStack(spacing: 6) {
-                opButton(L10n.t("ui.pages.rotate")) {
-                    app.activeReader?.runPageEdit(.rotateCurrent)
-                }
-                opButton(L10n.t("ui.pages.blank")) {
-                    app.activeReader?.runPageEdit(.insertBlankAfterCurrent)
-                }
-                opButton(L10n.t("ui.pages.delete")) {
-                    app.activeReader?.runPageEdit(.deleteCurrent)
-                }
-            }
-            HStack(spacing: 6) {
-                opButton(L10n.t("ui.pages.extract")) {
-                    app.activeReader?.runPageEdit(.extract(pages: [Int64(tab.currentPage)]))
-                }
-                opButton(L10n.t("ui.pages.merge")) {
-                    let panel = NSOpenPanel()
-                    panel.allowedContentTypes = [.pdf]
-                    panel.canChooseFiles = true
-                    if panel.runModal() == .OK, let url = panel.url {
-                        app.activeReader?.runPageEdit(.merge(path: url.path))
-                    }
-                }
-            }
-            Text(L10n.t("ui.pages.current-hint", "\(tab.currentPage)"))
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.textFaint)
-        }
-        .padding(.horizontal, 10)
-        .padding(.top, 4)
-        .padding(.bottom, 8)
-    }
-
-    private func opButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 11))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Theme.text)
-        .background(RoundedRectangle(cornerRadius: 5).fill(Theme.panelAlt))
-        .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.border))
     }
 }
 
@@ -255,7 +195,6 @@ struct AISidebar: View {
         case .translate: return L10n.t("ui.tab.translate")
         case .summarize: return L10n.t("ui.tab.summarize")
         case .chat: return L10n.t("ui.tab.chat")
-        case .forms: return L10n.t("ui.tab.forms")
         }
     }
 
@@ -271,12 +210,6 @@ struct AISidebar: View {
             SummarizePane(reader: reader)
         case .chat:
             ChatPane(reader: reader)
-        case .forms:
-            if let tab = reader.pdf {
-                FormsPane(tab: tab)
-            } else {
-                EmptyHint(L10n.t("ui.need.document"))
-            }
         }
     }
 }

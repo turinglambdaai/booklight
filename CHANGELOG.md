@@ -5,6 +5,20 @@ All notable changes to PDFGist are documented here. Format follows
 The 1.x release era was retired in the version epoch reset below; its
 releases and tags were deleted and the history lives in git on `main`.
 
+## [0.3.4] - 2026-10-16
+
+### Changed
+- **macOS: document tools got their own Tools menu** — rotate current
+  page, insert blank page, delete current page, extract current page,
+  merge PDF, and fill form. PDFGist is a PDF tool, and the operations
+  that change the document belong in a discoverable menu with full
+  labels, not bolted onto reading chrome: the button row that lived
+  under the sidebar thumbnails is gone.
+- **macOS: form filling moved out of the AI inspector** into a fourth
+  sidebar view (thumbnails / outline / annotations / forms). The right
+  inspector is AI-only — translate, summarize, chat. Forms are a
+  document tool, reachable from Tools > Fill Form or the sidebar.
+
 ## [0.3.3] - 2026-10-16
 
 ### Fixed

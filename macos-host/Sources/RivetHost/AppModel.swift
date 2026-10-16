@@ -488,6 +488,9 @@ final class AppModel: ObservableObject {
         }
         HostActions.firstPage = { [weak self] in self?.activeReader?.goToEdgePage(last: false) }
         HostActions.lastPage = { [weak self] in self?.activeReader?.goToEdgePage(last: true) }
+        HostActions.pageEdit = { [weak self] op in self?.activeReader?.runPageEdit(op) }
+        HostActions.mergePDF = { [weak self] in self?.activeReader?.pickAndMergePDF() }
+        HostActions.showForms = { [weak self] in self?.activeReader?.showForms() }
     }
 
     /// Open panel shared by the menu and the welcome state. Empty reader
@@ -545,6 +548,9 @@ enum HostActions {
     nonisolated(unsafe) static var page: ((Int) -> Void)?
     nonisolated(unsafe) static var firstPage: (() -> Void)?
     nonisolated(unsafe) static var lastPage: (() -> Void)?
+    nonisolated(unsafe) static var pageEdit: ((PageEditOp) -> Void)?
+    nonisolated(unsafe) static var mergePDF: (() -> Void)?
+    nonisolated(unsafe) static var showForms: (() -> Void)?
 }
 
 /// RVT1 event bridge: events arrive on a background hop and are delivered to

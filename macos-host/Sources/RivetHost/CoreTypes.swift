@@ -57,6 +57,7 @@ enum PageEditOp {
     case deleteCurrent
     case rotateCurrent
     case insertBlankAfterCurrent
+    case extractCurrent
     case extract(pages: [Int64])
     case merge(path: String)
 }
@@ -148,7 +149,7 @@ struct PasswordPrompt: Identifiable {
 // MARK: - AI inspector tabs (annotations moved to the reader sidebar)
 
 enum AITab: String, CaseIterable, Identifiable {
-    case translate, summarize, chat, forms
+    case translate, summarize, chat
     var id: String { rawValue }
 }
 

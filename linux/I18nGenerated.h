@@ -188,7 +188,7 @@ inline constexpr struct LinuxStringEntry {
     {"ui.toolbar.bookmark", "书签当前页（⌘B）", "Bookmark this page (⌘B)"},
     {"ui.toolbar.find", "搜索（⌘F）", "Search (⌘F)"},
     {"ui.toolbar.open", "打开 PDF（⌘O）", "Open PDF (⌘O)"},
-    {"ui.toolbar.panel", "侧栏视图：缩略图、目录、批注", "Sidebar view: thumbnails, outline, annotations"},
+    {"ui.toolbar.panel", "侧栏视图：缩略图、目录、批注、表单", "Sidebar view: thumbnails, outline, annotations, forms"},
     {"ui.toolbar.print", "打印（⌘P）", "Print (⌘P)"},
     {"ui.toolbar.split", "分屏视图", "Split View"},
     {"ui.toolbar.tab-close", "关闭标签页（⌘W）", "Close tab (⌘W)"},
@@ -267,6 +267,9 @@ inline constexpr struct LinuxStringEntry {
     {"ui.settings.language-system", "跟随系统", "Follow System"},
     {"ui.settings.language-note", "界面语言，重启 PDFGist 后生效。", "UI language; takes effect after relaunch."},
     {"ui.settings.relaunch", "重新启动", "Relaunch Now"},
+    {"ui.menu.tools", "工具", "Tools"},
+    {"ui.sidebar.forms", "表单", "Forms"},
+    {"ui.menu.fill-forms", "填写表单", "Fill Form…"},
 };
 
 }  // namespace pdfgist

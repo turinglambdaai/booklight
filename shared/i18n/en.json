@@ -175,7 +175,7 @@
   "ui.toolbar.bookmark": "Bookmark this page (⌘B)",
   "ui.toolbar.find": "Search (⌘F)",
   "ui.toolbar.open": "Open PDF (⌘O)",
-  "ui.toolbar.panel": "Sidebar view: thumbnails, outline, annotations",
+  "ui.toolbar.panel": "Sidebar view: thumbnails, outline, annotations, forms",
   "ui.toolbar.print": "Print (⌘P)",
   "ui.toolbar.split": "Split View",
   "ui.toolbar.tab-close": "Close tab (⌘W)",
@@ -253,5 +253,8 @@
   "ui.settings.language": "Language",
   "ui.settings.language-system": "Follow System",
   "ui.settings.language-note": "UI language; takes effect after relaunch.",
-  "ui.settings.relaunch": "Relaunch Now"
+  "ui.settings.relaunch": "Relaunch Now",
+  "ui.menu.tools": "Tools",
+  "ui.sidebar.forms": "Forms",
+  "ui.menu.fill-forms": "Fill Form…"
 }

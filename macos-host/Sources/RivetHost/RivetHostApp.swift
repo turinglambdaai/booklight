@@ -122,6 +122,32 @@ struct AppCommands: Commands {
                 HostActions.lastPage?()
             }
         }
+
+        // Document tools: everything that CHANGES the document. Page surgery
+        // is the product's core tool set — discoverable here with full
+        // labels, never bolted onto reading chrome as permanent buttons.
+        CommandMenu(L10n.t("ui.menu.tools")) {
+            Button(L10n.t("ui.pages.rotate")) {
+                HostActions.pageEdit?(.rotateCurrent)
+            }
+            Button(L10n.t("ui.pages.blank")) {
+                HostActions.pageEdit?(.insertBlankAfterCurrent)
+            }
+            Button(L10n.t("ui.pages.delete")) {
+                HostActions.pageEdit?(.deleteCurrent)
+            }
+            Divider()
+            Button(L10n.t("ui.pages.extract")) {
+                HostActions.pageEdit?(.extractCurrent)
+            }
+            Button(L10n.t("ui.pages.merge")) {
+                HostActions.mergePDF?()
+            }
+            Divider()
+            Button(L10n.t("ui.menu.fill-forms")) {
+                HostActions.showForms?()
+            }
+        }
     }
 
     /// Standard File > Open Recent, driven by the backend's recents list (it

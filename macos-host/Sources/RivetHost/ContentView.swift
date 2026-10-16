@@ -185,6 +185,13 @@ struct ReaderWindowView: View {
             set: { app.showUpdateSheet = $0 })) {
             UpdateView()
         }
+        .onChange(of: reader.sidebarMode) { _ in
+            // Picking a view — from the toolbar picker or the Tools menu —
+            // while the sidebar is collapsed opens it.
+            if sidebarVisibility == .detailOnly {
+                sidebarVisibility = .all
+            }
+        }
         .onAppear {
             app.openWindow = { value in
                 if let value {
@@ -240,17 +247,11 @@ struct ReaderWindowView: View {
         // sidebar toggle, never bolted onto the sidebar itself. Picking a
         // mode while the sidebar is collapsed opens it.
         ToolbarItem(placement: .navigation) {
-            Picker("", selection: Binding(
-                get: { reader.sidebarMode },
-                set: { mode in
-                    reader.sidebarMode = mode
-                    if sidebarVisibility == .detailOnly {
-                        sidebarVisibility = .all
-                    }
-                })) {
+            Picker("", selection: $reader.sidebarMode) {
                 Text(L10n.t("ui.viewer.thumbs")).tag(0)
                 Text(L10n.t("ui.viewer.outline")).tag(1)
                 Text(L10n.t("ui.sidebar.annotations")).tag(2)
+                Text(L10n.t("ui.sidebar.forms")).tag(3)
             }
             .pickerStyle(.segmented)
             .labelsHidden()

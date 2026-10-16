@@ -175,7 +175,7 @@
   "ui.toolbar.bookmark": "书签当前页（⌘B）",
   "ui.toolbar.find": "搜索（⌘F）",
   "ui.toolbar.open": "打开 PDF（⌘O）",
-  "ui.toolbar.panel": "侧栏视图：缩略图、目录、批注",
+  "ui.toolbar.panel": "侧栏视图：缩略图、目录、批注、表单",
   "ui.toolbar.print": "打印（⌘P）",
   "ui.toolbar.split": "分屏视图",
   "ui.toolbar.tab-close": "关闭标签页（⌘W）",
@@ -253,5 +253,8 @@
   "ui.settings.language": "语言",
   "ui.settings.language-system": "跟随系统",
   "ui.settings.language-note": "界面语言，重启 PDFGist 后生效。",
-  "ui.settings.relaunch": "重新启动"
+  "ui.settings.relaunch": "重新启动",
+  "ui.menu.tools": "工具",
+  "ui.sidebar.forms": "表单",
+  "ui.menu.fill-forms": "填写表单"
 }
