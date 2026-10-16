@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PDFGist — 用户手册 / User Guide</title>
-<meta name="description" content="PDFGist 用户手册：五分钟上手、翻译与自带模型配置、总结与批注、常见问题。" />
+<title>Booklight — 用户手册 / User Guide</title>
+<meta name="description" content="Booklight 用户手册：五分钟上手、翻译与自带模型配置、总结与批注、常见问题。" />
 <link rel="icon" type="image/png" href="assets/favicon.png" />
 <link rel="preload" href="assets/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin />
 <style>
@@ -139,11 +139,11 @@ var _hmt = _hmt || [];
 <body>
 <nav class="nav">
   <div class="container nav-inner">
-    <a class="brand" href="index.html"><img src="assets/favicon.png" alt="PDFGist" />PDFGist</a>
+    <a class="brand" href="index.html"><img src="assets/favicon.png" alt="Booklight" />Booklight</a>
     <div class="nav-links">
       <a href="index.html#features" data-en="Features" data-zh="功能">功能</a>
       <a href="guide.html" class="nav-manual" style="color:var(--accent)" data-en="Guide" data-zh="手册">手册</a>
-      <a href="https://github.com/turinglambdaai/pdfgist" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/turinglambdaai/booklight" target="_blank" rel="noopener">GitHub</a>
       <div class="lang-dropdown-wrapper">
           <button class="lang-btn" type="button" aria-label="Switch language">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
@@ -188,9 +188,9 @@ var _hmt = _hmt || [];
       </h2>
       <p data-en="Download, open, translate one paragraph. That is the whole tutorial. Everything below is optional." data-zh="下载、打开、翻一段。教程到此结束。以下内容都是可选的。">下载、打开、翻一段。教程到此结束。以下内容都是可选的。</p>
       <ol>
-        <li data-en="<strong>Install.</strong> Grab the latest dmg from the <a href='https://github.com/turinglambdaai/pdfgist/releases/latest'>Releases</a> page. Drag PDFGist into Applications. Launch it. macOS 14+ required; Apple silicon and Intel Macs are both supported."
-            data-zh="<strong>安装。</strong>到 <a href='https://github.com/turinglambdaai/pdfgist/releases/latest'>Releases</a> 页下载最新 dmg。把 PDFGist 拖进「应用程序」。启动。需要 macOS 14+；Apple 芯片与 Intel 芯片都支持。">
-          <strong>Install.</strong> Grab the latest dmg and drag PDFGist into Applications.
+        <li data-en="<strong>Install.</strong> Grab the latest dmg from the <a href='https://github.com/turinglambdaai/booklight/releases/latest'>Releases</a> page. Drag Booklight into Applications. Launch it. macOS 14+ required; Apple silicon and Intel Macs are both supported."
+            data-zh="<strong>安装。</strong>到 <a href='https://github.com/turinglambdaai/booklight/releases/latest'>Releases</a> 页下载最新 dmg。把 Booklight 拖进「应用程序」。启动。需要 macOS 14+；Apple 芯片与 Intel 芯片都支持。">
+          <strong>Install.</strong> Grab the latest dmg and drag Booklight into Applications.
         </li>
         <li data-en="<strong>Open a PDF.</strong> Click <em>Open PDF</em> (or press <kbd>⌘O</kbd>) and pick any PDF. It opens in a tab. The left sidebar shows recents, thumbnails and the outline; your page and scroll position are remembered for next time."
             data-zh="<strong>打开一份 PDF。</strong>点「打开 PDF」（或按 <kbd>⌘O</kbd>），选任意 PDF。它会在新标签页中打开。左侧栏是最近打开、缩略图和目录；页码与滚动位置会被记住，下次续读。">
@@ -209,9 +209,9 @@ var _hmt = _hmt || [];
           <strong>Summarize.</strong> Summarize tab, pick scope, click once.
         </li>
       </ol>
-      <img class="manual-shot" src="assets/hero-light.png" alt="PDFGist reading view on macOS"
-           data-alt-en="PDFGist reading view on macOS: sidebar, document, AI panel"
-           data-alt-zh="PDFGist 阅读界面（macOS）：左侧栏、文档与 AI 面板" />
+      <img class="manual-shot" src="assets/hero-light.png" alt="Booklight reading view on macOS"
+           data-alt-en="Booklight reading view on macOS: sidebar, document, AI panel"
+           data-alt-zh="Booklight 阅读界面（macOS）：左侧栏、文档与 AI 面板" />
       <p class="manual-hint" data-en="The screenshot is the real macOS build." data-zh="截图为真实的 macOS 版本。">截图为真实的 macOS 版本。</p>
     </section>
 
@@ -225,7 +225,7 @@ var _hmt = _hmt || [];
         <li data-en="<strong>Tabs.</strong> Open many documents. Press <kbd>⌘W</kbd> to close the current tab." data-zh="<strong>多标签。</strong>同时开多份文档；<kbd>⌘W</kbd> 关闭当前标签。"><strong>Tabs.</strong> Open many documents; <kbd>⌘W</kbd> closes the tab.</li>
         <li data-en="<strong>Views.</strong> Single page or two-page book view. Zoom with pinch or <kbd>⌘+</kbd> / <kbd>⌘−</kbd>. Fit width with one click." data-zh="<strong>视图。</strong>单页或双页书视图；捏合或 <kbd>⌘+</kbd> / <kbd>⌘−</kbd> 缩放，一键适宽。"><strong>Views.</strong> Single or two-page view; pinch to zoom.</li>
         <li data-en="<strong>Navigate.</strong> Thumbnails, outline, and full-text search. Press <kbd>⌘F</kbd>, type, jump with Enter." data-zh="<strong>导航。</strong>缩略图、目录、全文搜索；<kbd>⌘F</kbd> 输入关键词，回车跳转。"><strong>Navigate.</strong> Thumbnails, outline, search with <kbd>⌘F</kbd>.</li>
-        <li data-en="<strong>Continue reading.</strong> Recents remember page and scroll position. Files stay where they are — PDFGist never copies them into a library." data-zh="<strong>续读。</strong>最近打开记住页码与滚动位置；文件留在原地，PDFGist 绝不复制进应用库。"><strong>Continue reading.</strong> Recents remember your position; files stay in place.</li>
+        <li data-en="<strong>Continue reading.</strong> Recents remember page and scroll position. Files stay where they are — Booklight never copies them into a library." data-zh="<strong>续读。</strong>最近打开记住页码与滚动位置；文件留在原地，Booklight 绝不复制进应用库。"><strong>Continue reading.</strong> Recents remember your position; files stay in place.</li>
         <li data-en="<strong>Dark mode, print, read aloud.</strong> Toggle the sun icon for dark mode. Press <kbd>⌘P</kbd> to print. Click the speaker for text-to-speech." data-zh="<strong>深色、打印、朗读。</strong>点太阳图标切深色；<kbd>⌘P</kbd> 打印；点喇叭图标朗读。"><strong>Dark mode, print, read aloud.</strong> Sun icon, <kbd>⌘P</kbd>, speaker icon.</li>
         <li data-en="<strong>EPUB too.</strong> Open an .epub the same way. You get reflowable typography, chapter TOC, book-wide search, font-size control, and the same AI workflow per chapter." data-zh="<strong>EPUB 也行。</strong>同样方式打开 .epub：流式排版、章节目录、书内搜索、字号调节，章节享受同一套 AI 工作流。"><strong>EPUB too.</strong> Same workflow for e-books.</li>
       </ul>
@@ -236,7 +236,7 @@ var _hmt = _hmt || [];
       <h2 class="manual-h2"><span class="h2-emoji">🔑</span>
         <span data-en="Translation &amp; your model key" data-zh="翻译与模型 Key">翻译与模型 Key</span>
       </h2>
-      <p data-en="PDFGist ships no AI quota. You connect your own provider. Your key stays on this machine; requests go straight to your provider." data-zh="PDFGist 不带任何 AI 配额，你接入自己的服务商。Key 只存本机，请求直达你的服务商。">PDFGist 不带任何 AI 配额，你接入自己的服务商。Key 只存本机，请求直达你的服务商。</p>
+      <p data-en="Booklight ships no AI quota. You connect your own provider. Your key stays on this machine; requests go straight to your provider." data-zh="Booklight 不带任何 AI 配额，你接入自己的服务商。Key 只存本机，请求直达你的服务商。">Booklight 不带任何 AI 配额，你接入自己的服务商。Key 只存本机，请求直达你的服务商。</p>
       <h3 data-en="Where do I put my API key?" data-zh="API Key 填在哪里？">API Key 填在哪里？</h3>
       <ol>
         <li data-en="Open the AI panel on the right edge. Click the <em>Settings</em> tab (设置)." data-zh="打开最右侧的 AI 面板，点「设置」标签。">Open the AI panel. Click the Settings tab.</li>
@@ -305,12 +305,12 @@ var _hmt = _hmt || [];
 
       <details open>
         <summary data-en="Where is my data stored?" data-zh="我的数据存在哪里？">我的数据存在哪里？</summary>
-        <p data-en="Settings and your API key live in <code>~/Library/Application Support/site.jrtx.pdfgist/</code> (macOS). Annotations and bookmarks live in a sidecar JSON file next to each PDF. Your PDFs never move." data-zh="设置与 API Key 存在 <code>~/Library/Application Support/site.jrtx.pdfgist/</code>（macOS）。批注与书签存在每份 PDF 旁边的 sidecar JSON 里。你的 PDF 文件永远不被移动。">Settings live in the app config folder; annotations live beside each PDF.</p>
+        <p data-en="Settings and your API key live in <code>~/Library/Application Support/site.jrtx.booklight/</code> (macOS). Annotations and bookmarks live in a sidecar JSON file next to each PDF. Your PDFs never move." data-zh="设置与 API Key 存在 <code>~/Library/Application Support/site.jrtx.booklight/</code>（macOS）。批注与书签存在每份 PDF 旁边的 sidecar JSON 里。你的 PDF 文件永远不被移动。">Settings live in the app config folder; annotations live beside each PDF.</p>
       </details>
 
       <details open>
         <summary data-en="Is it private?" data-zh="隐私如何保障？">隐私如何保障？</summary>
-        <p data-en="PDFGist is local-first. No account. No telemetry. Your key and settings never leave this machine. The only network traffic is what you trigger: AI requests go directly from your machine to the provider endpoint you configured, and update checks download from the official GitHub Releases." data-zh="PDFGist 本地优先：无账号、无遥测。Key 与设置绝不离开本机。网络请求只有你主动触发的两类——AI 请求从你的机器直达你配置的服务商端点，更新检查从官方 GitHub Releases 下载。">Local-first: no account, no telemetry. AI requests go straight to your provider.</p>
+        <p data-en="Booklight is local-first. No account. No telemetry. Your key and settings never leave this machine. The only network traffic is what you trigger: AI requests go directly from your machine to the provider endpoint you configured, and update checks download from the official GitHub Releases." data-zh="Booklight 本地优先：无账号、无遥测。Key 与设置绝不离开本机。网络请求只有你主动触发的两类——AI 请求从你的机器直达你配置的服务商端点，更新检查从官方 GitHub Releases 下载。">Local-first: no account, no telemetry. AI requests go straight to your provider.</p>
       </details>
 
       <details open>
@@ -325,7 +325,7 @@ var _hmt = _hmt || [];
 
       <details open>
         <summary data-en="How do I uninstall?" data-zh="怎么卸载？">怎么卸载？</summary>
-        <p data-en="Drag PDFGist from Applications to Trash. Then remove the config folder <code>~/Library/Application Support/site.jrtx.pdfgist/</code> if you want to erase your key and settings. Sidecar annotation files sit next to your PDFs — delete them only if you want to lose the annotations." data-zh="把 PDFGist 从「应用程序」拖进废纸篓。想彻底清除 Key 与设置，再删掉 <code>~/Library/Application Support/site.jrtx.pdfgist/</code>。批注 sidecar 文件在 PDF 旁边——确认不需要批注了再删。">Drag the app to Trash; remove the config folder to erase keys and settings.</p>
+        <p data-en="Drag Booklight from Applications to Trash. Then remove the config folder <code>~/Library/Application Support/site.jrtx.booklight/</code> (and the legacy <code>site.jrtx.pdfgist/</code> if it is still around from before the rename) if you want to erase your key and settings. Sidecar annotation files sit next to your PDFs — delete them only if you want to lose the annotations." data-zh="把 Booklight 从「应用程序」拖进废纸篓。想彻底清除 Key 与设置，再删掉 <code>~/Library/Application Support/site.jrtx.booklight/</code>。批注 sidecar 文件在 PDF 旁边——确认不需要批注了再删。">Drag the app to Trash; remove the config folder to erase keys and settings.</p>
       </details>
 
       <details open>
@@ -339,13 +339,13 @@ var _hmt = _hmt || [];
 
 <footer>
   <div class="container foot-inner">
-    <span>© 2026 TuringLambdaAI · PDFGist is free software under AGPL-3.0</span>
-    <span><a href="index.html" data-en="Home" data-zh="首页">首页</a> · <a href="https://github.com/turinglambdaai/pdfgist" target="_blank" rel="noopener">GitHub</a></span>
+    <span>© 2026 TuringLambdaAI · Booklight is free software under AGPL-3.0</span>
+    <span><a href="index.html" data-en="Home" data-zh="首页">首页</a> · <a href="https://github.com/turinglambdaai/booklight" target="_blank" rel="noopener">GitHub</a></span>
   </div>
 </footer>
 
 <script>
-  var lang = localStorage.getItem("pdfgist-lang") || "zh";
+  var lang = localStorage.getItem("booklight-lang") || "zh";
   function applyLang(l) {
     lang = l;
     localStorage.setItem("pdfgist-lang", l);

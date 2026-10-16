@@ -1,61 +1,72 @@
-# PDFGist
+# Booklight
 
-> 本地优先的 AI PDF 阅读器——接入你自己的大模型。一份 Racket 领域核心，通过类型化 RPC 驱动各平台第一方原生宿主。
-
-[![release](https://img.shields.io/github/v/release/turinglambdaai/pdfgist)](https://github.com/turinglambdaai/pdfgist/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml/badge.svg)](https://github.com/turinglambdaai/pdfgist/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+> 跨平台的书架与阅读器——PDF / EPUB 沉浸阅读，AI 在手边。
 
 [English](README.md) · **中文**
 
-大多数 AI PDF 应用把你锁进它们的订阅。PDFGist 反其道而行：应用本身只是一个轻快的阅读器，智能来自你自己指定的模型。你的 Key、你的模型、你的账单——Key 保存在本机，请求直达你选择的服务商，除此之外没有任何数据离开你的机器。
+[![release](https://img.shields.io/github/v/release/turinglambdaai/booklight)](https://github.com/turinglambdaai/booklight/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turinglambdaai/booklight/actions/workflows/ci.yml/badge.svg)](https://github.com/turinglambdaai/booklight/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
-## 功能
+苹果做出了最好的阅读体验，然后把它锁进了自己的设备。Booklight 把这份安静带给每个桌面：一个属于你的书架、不打扰的阅读、随叫随到的 AI——书是你的文件，模型是你的模型，花销是你的花销。任何东西都不会被复制进应用私有库，除了你主动发给自家服务商的请求，没有任何数据离开你的机器。
 
-- **PDF 阅读**——多标签、连续滚动、双页书视图、缩放/适宽、缩略图、目录、全文搜索、深色模式、打印、分屏、语音朗读、键盘导航
-- **EPUB 阅读**——衬线流式排版、章节目录、书内全文搜索、字号调节、深色模式，同一套 AI 工作流作用于章节
-- **页面编辑**——删除、旋转、插入空白页、提取所选页为新文件、合并文档、烘焙水印与文本框（全部在内存中进行，绝不改动你的源文件）
-- **续读**——最近文件记住页码与滚动位置；文件始终留在你的文件夹和同步盘里，绝不复制进应用库
-- **划词翻译**——选中任意文本，一键翻译，流式输出
-- **段落对照**——当前页逐段翻译，原文/译文成对按阅读顺序展示，多段并行流式
-- **页面与全文总结**——当前页、选区或整份文档的一键结构化总结
-- **与文档对话**——基于当前页、选区或文档前若干页提问
-- **表单填写**——填写文本/勾选/选择字段，导出填写后的 PDF
-- **批注与书签**——三色高亮、笔记、书签，存放在 PDF 旁的 sidecar JSON 里，天然支持网盘同步
-- **自带模型**——预置智谱 GLM（含 GLM Coding 套餐专属端点）、DeepSeek、Moonshot Kimi、通义千问、豆包（火山方舟）、硅基流动、Ollama，或任意 OpenAI 兼容 Base URL；模型列表按需拉取
-- **在线更新**——签名校验的应用自更新（Ed25519 签名的发布清单 + SHA-256 校验下载）；每天最多静默检查一次，安装始终需你确认
-- **本地优先**——设置与 API Key 保存在用户配置目录；无账号，无遥测
+## 书架
+
+- 启动即书架——封面、收藏集、搜索、阅读进度
+- 书以**原位编目**：导入只引用你的文件，从不复制；文件被移走时书架标记「丢失」，等你重新链接
+- 阅读进度自动汇入书架；合上书回到书架
+- 书架文件（`library.json`）是单一、有文档、格式稳定的文件，放进你的同步盘即可同步——见 [DATA-FORMAT](shared/spec/DATA-FORMAT.md)
+
+## 阅读
+
+- **PDF**——连续滚动、双页书页视图、缩放/适宽、缩略图、目录、全文搜索、分屏、键盘导航
+- **EPUB**——衬线重排版式、章节目录、全书搜索
+- 批注——三色高亮、下划线、删除线、笔记与书签，存在书的旁边，天然适配云盘同步
+- 朗读、打印、深色模式、随处续读
+
+## AI 在手边
+
+- 划词翻译、页面/全书总结、基于当前页/选区/全书的对话
+- 全程流式输出
+- 自带模型——智谱 GLM（含 GLM Coding 计划端点）、DeepSeek、月之暗面 Kimi、阿里通义千问、豆包（火山方舟）、硅基流动、Ollama，或任意 OpenAI 兼容端点；模型列表按需拉取
+- Key 只存你的配置目录，请求直达你的服务商
+
+## 轻编辑（刻意克制）
+
+- 一级「工具」菜单承载页面手术：旋转、插空白页、删页、提取、合并——全程内存操作，源文件不动
+- AcroForm 表单填写与导出
+
+## 在线更新
+
+Ed25519 签名校验的自更新（签名清单 + SHA-256 下载校验）；至多每天静默检查一次，点过确认才安装——三平台一致。
 
 ## 架构
 
-一份 Racket 领域核心（`racket/` + `app/backend.rkt`）拥有全部业务逻辑——AI 流式、PDF 页级操作、批注存储、设置——通过 [Rivet](https://github.com/turinglambdaai/rivet) 类型化 RPC（RVT1）暴露；各平台第一方宿主只做渲染与交互：
+一份 Racket 领域核心（`racket/booklight/` + `app/backend.rkt`）承载全部业务逻辑——书架、AI 流式、PDF 页面手术、批注存储、设置——经 [Rivet](https://github.com/turinglambdaai/rivet) 的类型化 RPC（RVT1）暴露；各平台第一方原生宿主只做渲染与交互：
 
-| 宿主 | 技术栈 | 目录 |
+| 平台宿主 | 技术栈 | 目录 |
 |---|---|---|
 | macOS | SwiftUI + 生成客户端 | `macos-host/` |
 | Windows | WinUI 3（C++/WinRT）+ PDFium + 生成客户端 | `windows/` |
 | Linux | GTK4 + PDFium + WebKitGTK + 生成客户端 | `linux/` |
 
-三端宿主交付同一功能集：多标签 PDF 阅读（macOS 用 PDFKit，Windows/Linux 用同一 pin 的 chromium/8100 PDFium——bblanchon/pdfium-binaries 同一构建的各平台包，均做 SHA-256 校验）、划选 AI 工作流（流式）、EPUB（原生 Web 视图）、页编辑、批注高亮与批注/书签面板、书签、全文搜索、朗读、打印、分屏、AcroForm 填表与导出、设置，以及签名自更新（macOS zip 换装、Windows MSI/便携版、Linux deb/rpm/AppImage/tar.gz 三形态）。
-
-PDF 页级操作由领域核心自研的最小 PDF 读写器（`racket/booklight/pdfdoc.rkt`）完成——不依赖任何第三方 PDF 库。
+PDF 页级操作由领域核心自研的最小读写器（`racket/booklight/pdfdoc.rkt` + `pdfedit.rkt`）完成——不依赖第三方 PDF 库。数据存哪、怎么同步：[DATA-FORMAT](shared/spec/DATA-FORMAT.md)。
 
 ## 从源码构建
 
-前置要求：[Racket](https://racket-lang.org) CS 9.x 并以 link 方式安装 [Rivet](https://github.com/turinglambdaai/rivet)，以及所在平台的 Swift / WinRT / GTK 工具链。Windows 宿主通过 [PDFium](https://pdfium.googlesource.com/pdfium/)（BSD-3）渲染 PDF：构建期从 bblanchon/pdfium-binaries 拉取 pin 死版本并做 SHA-256 校验的二进制——仓库里不提交任何二进制。
+前置：[Racket](https://racket-lang.org) CS 9.x（以 link 方式装好 [Rivet](https://github.com/turinglambdaai/rivet)）+ 你所在平台的 Swift / WinRT / GTK 工具链。Windows 与 Linux 宿主经 [PDFium](https://pdfium.googlesource.com/pdfium/)（BSD-3）渲染：构建时拉取固定版本并做 SHA-256 校验的预编译产物——仓库不提交任何二进制。
 
 ```bash
 raco rivet doctor --json   # 工具链自检
 raco rivet build           # 生成三端客户端 + 构建后端与宿主
-raco rivet dev             # 开发循环（改动自动重建）
+raco rivet dev             # 开发循环（改动重建）
 raco test racket/          # 领域核心测试
 ```
 
 ## 路线图
 
-- [x] Windows 宿主——阅读 / AI / EPUB / 页编辑 / 更新（P0 层）
-- [x] Windows——全功能对齐：批注高亮、批注/书签面板、朗读、打印、分屏、表单填写
-- [x] Linux 宿主——阅读 / AI / EPUB / 页编辑 / 更新（P0 层）
-- [x] Linux——全功能对齐：批注高亮叠加、批注/书签面板、朗读、打印、分屏、表单填写、密码框
-- [ ] 移动端 —— iOS / iPadOS 宿主（Rivet portable Swift 层）与 Android 宿主（Rivet Kotlin 平台），对齐家族全平台标准；watchOS 进度伴机尾随手机宿主
+- [x] 书架——收藏集、封面、搜索、阅读进度、文件丢失处理（三平台齐）
+- [x] 阅读——PDF/EPUB、批注、AI 工作流、轻编辑、朗读、打印、分屏、表单（三平台齐）
+- [ ] 阅读主题——纸张/夜间页面底色、排版控制
+- [ ] 移动端——iOS / iPadOS 宿主（Rivet portable Swift 层）与 Android 宿主（Rivet Kotlin 平台），对齐家族全平台标准
 
 ## 许可证
 
