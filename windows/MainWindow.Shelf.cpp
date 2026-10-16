@@ -595,7 +595,7 @@ void MainWindow::LoadShelfCover(
               flush_op.Completed(
                   [weak, stream, writer, border, placeholder](
                       winrt::Windows::Foundation::IAsyncOperation<
-                          std::uint32_t> const&,
+                          bool> const&,
                       winrt::Windows::Foundation::AsyncStatus status) mutable {
                     if (status !=
                         winrt::Windows::Foundation::AsyncStatus::Completed) {
