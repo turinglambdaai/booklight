@@ -63,6 +63,17 @@
                 (make-temporary-file "pdfgist-updater-home-~a" 'directory)])
   (define download-limit (* 800 1024 1024))
 
+  ;; same tolerance for updater-config (component field added mid-v0.11.0)
+  (define (make-test-config pub key-id bucket)
+    (define args
+      (list app-identifier app-version app-channel
+            (platform-symbol) (architecture-symbol)
+            pub key-id bucket download-limit))
+    (with-handlers
+        ([exn:fail:contract:arity?
+          (lambda (_) (apply updater-config (append args (list 'app))))])
+      (apply updater-config args)))
+
   (test-case "platform symbols match rivet release manifests"
     (case (system-type 'os)
       [(macosx) (check-equal? (platform-symbol) 'macos)]
@@ -162,10 +173,7 @@
                                  url (bytes->hex-string (sha256-bytes payload))
                                  (bytes-length payload) 'zip '()))))
     (select-update
-     (updater-config app-identifier app-version app-channel
-                     (platform-symbol) (architecture-symbol)
-                     pub update-key-id 0 download-limit
-                     'app)
+     (make-test-config pub update-key-id 0)
      manifest))
 
   (define pub
@@ -186,10 +194,7 @@
       (build-path (config-dir-path) "updates" "PDFGist-9.9.9.zip"))
     (check-equal?
      (download-with-progress!
-      (updater-config app-identifier app-version app-channel
-                      (platform-symbol) (architecture-symbol)
-                      pub update-key-id 0 download-limit
-                      'app)
+     (make-test-config pub update-key-id 0)
       candidate destination)
      destination)
     (check-true (file-exists? destination))
@@ -215,10 +220,7 @@
     (check-exn exn:fail?
                (lambda ()
                  (download-with-progress!
-                  (updater-config app-identifier app-version app-channel
-                                  (platform-symbol) (architecture-symbol)
-                                  pub update-key-id 0 download-limit
-                                  'app)
+     (make-test-config pub update-key-id 0)
                   candidate destination)))
     (check-false (file-exists? destination))
     (check-false (file-exists? (path-add-extension destination #".partial")))
@@ -263,10 +265,7 @@
     ;; select-update picks the artifact for this platform/architecture the
     ;; same way the live checker does
     (define config
-      (updater-config app-identifier "0.0.1" app-channel
-                      (platform-symbol) (architecture-symbol)
-                      test-pub "pdfgist-test" 42 download-limit
-                      'app))
+      (make-test-config test-pub "pdfgist-test" 42))
     (define candidate (select-update config verified))
     (check-true (update-candidate? candidate))
     (check-equal? (update-artifact-size (update-candidate-artifact candidate))
