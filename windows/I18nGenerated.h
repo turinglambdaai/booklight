@@ -262,6 +262,10 @@ inline constexpr struct WinStringEntry {
     {"ui.update.installing", L"正在安装…", L"Installing…"},
     {"ui.update.state-stale", L"更新状态已过期，请重新检查更新。", L"The update state went stale — check for updates again."},
     {"ui.update.relaunch-failed", L"新版本启动失败，当前版本未受影响。", L"The new version failed to launch; this version is untouched."},
+    {"ui.settings.language", L"语言", L"Language"},
+    {"ui.settings.language-system", L"跟随系统", L"Follow System"},
+    {"ui.settings.language-note", L"界面语言，重启 PDFGist 后生效。", L"UI language; takes effect after relaunch."},
+    {"ui.settings.relaunch", L"重新启动", L"Relaunch Now"},
 };
 
 }  // namespace pdfgist

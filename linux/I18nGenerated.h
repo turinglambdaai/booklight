@@ -263,6 +263,10 @@ inline constexpr struct LinuxStringEntry {
     {"ui.update.installing", "正在安装…", "Installing…"},
     {"ui.update.state-stale", "更新状态已过期，请重新检查更新。", "The update state went stale — check for updates again."},
     {"ui.update.relaunch-failed", "新版本启动失败，当前版本未受影响。", "The new version failed to launch; this version is untouched."},
+    {"ui.settings.language", "语言", "Language"},
+    {"ui.settings.language-system", "跟随系统", "Follow System"},
+    {"ui.settings.language-note", "界面语言，重启 PDFGist 后生效。", "UI language; takes effect after relaunch."},
+    {"ui.settings.relaunch", "重新启动", "Relaunch Now"},
 };
 
 }  // namespace pdfgist

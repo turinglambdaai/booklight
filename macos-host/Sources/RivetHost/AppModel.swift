@@ -43,6 +43,11 @@ final class AppModel: ObservableObject {
     /// (the App/Commands layer has no environment access for this).
     var openWindow: ((String?) -> Void)?
 
+    /// In-app language override: "system" | "zh" | "en". Applied at launch
+    /// (UI strings are baked per render, so switching needs a relaunch —
+    /// the Settings pane offers the button).
+    @Published var languageSetting: String
+
     /// File to open in the first reader window at launch (PDFGIST_OPEN,
     /// standing in for file association in dev builds — the bare SwiftPM
     /// binary creates no window for a positional argument).
@@ -52,11 +57,39 @@ final class AppModel: ObservableObject {
     private(set) var api: RivetAPI?
 
     init() {
-        // v1 UI is Chinese-first; en.json exists, so follow the system locale.
-        L10n.language = Locale.preferredLanguages.first?.hasPrefix("zh") == false ? "en" : "zh"
+        // v1 UI is Chinese-first; en.json exists, so follow the system locale
+        // unless the in-app override says otherwise (Locale.preferredLanguages
+        // also honors the per-app language override in System Settings).
+        let stored = UserDefaults.standard.string(forKey: "pdfgist-lang") ?? "system"
+        languageSetting = stored
+        L10n.language = Self.resolvedLanguage(stored)
         if let launch = ProcessInfo.processInfo.environment["PDFGIST_OPEN"],
            ["pdf", "epub"].contains(URL(fileURLWithPath: launch).pathExtension.lowercased()) {
             pendingLaunch = launch
+        }
+    }
+
+    static func resolvedLanguage(_ setting: String) -> String {
+        switch setting {
+        case "zh": return "zh"
+        case "en": return "en"
+        default: return Locale.preferredLanguages.first?.hasPrefix("zh") == false ? "en" : "zh"
+        }
+    }
+
+    func setLanguage(_ setting: String) {
+        languageSetting = setting
+        UserDefaults.standard.set(setting, forKey: "pdfgist-lang")
+    }
+
+    /// Relaunch into the newly chosen language: open first, terminate only
+    /// once the new instance is confirmed coming up.
+    func relaunchNow() {
+        guard let bundleURL = Bundle.main.bundleURL as URL? else { return }
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
+            Task { @MainActor in
+                NSApp.terminate(nil)
+            }
         }
     }
 

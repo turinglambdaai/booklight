@@ -249,5 +249,9 @@
   "ui.tts.unavailable": "Text-to-speech is unavailable: the spd-say command (speech-dispatcher) was not found.",
   "ui.update.installing": "Installing…",
   "ui.update.state-stale": "The update state went stale — check for updates again.",
-  "ui.update.relaunch-failed": "The new version failed to launch; this version is untouched."
+  "ui.update.relaunch-failed": "The new version failed to launch; this version is untouched.",
+  "ui.settings.language": "Language",
+  "ui.settings.language-system": "Follow System",
+  "ui.settings.language-note": "UI language; takes effect after relaunch.",
+  "ui.settings.relaunch": "Relaunch Now"
 }

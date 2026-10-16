@@ -256,6 +256,10 @@ enum L10n {
     "ui.update.installing": "正在安装…",
     "ui.update.state-stale": "更新状态已过期，请重新检查更新。",
     "ui.update.relaunch-failed": "新版本启动失败，当前版本未受影响。",
+    "ui.settings.language": "语言",
+    "ui.settings.language-system": "跟随系统",
+    "ui.settings.language-note": "界面语言，重启 PDFGist 后生效。",
+    "ui.settings.relaunch": "重新启动",
     ]
 
     private static let en: [String: String] = [
@@ -510,6 +514,10 @@ enum L10n {
     "ui.update.installing": "Installing…",
     "ui.update.state-stale": "The update state went stale — check for updates again.",
     "ui.update.relaunch-failed": "The new version failed to launch; this version is untouched.",
+    "ui.settings.language": "Language",
+    "ui.settings.language-system": "Follow System",
+    "ui.settings.language-note": "UI language; takes effect after relaunch.",
+    "ui.settings.relaunch": "Relaunch Now",
     ]
 
     /// Look up a key in the active language, falling back to zh then the key

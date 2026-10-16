@@ -60,6 +60,8 @@ jobs:
         run: bash scripts/check-release-version.sh "${{ github.ref_name }}"
       - name: Package
         run: raco rivet package
+      - name: Declare bundle localizations (zh-Hans + en system chrome)
+        run: bash scripts/localize-app.sh dist/pdfgist.app
       - name: Portable zip + checksum
         run: |
           VERSION="${GITHUB_REF_NAME#v}"

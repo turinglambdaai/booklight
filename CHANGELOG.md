@@ -5,6 +5,20 @@ All notable changes to PDFGist are documented here. Format follows
 The 1.x release era was retired in the version epoch reset below; its
 releases and tags were deleted and the history lives in git on `main`.
 
+## [0.3.3] - 2026-10-16
+
+### Fixed
+- **macOS: the interface no longer mixes Chinese and English.** The
+  bundle now declares its zh-Hans and en localizations, so every
+  system-provided string — About, Hide, Quit, Close, Enter Full
+  Screen — follows the user's language instead of falling back to the
+  development region. In-app strings already followed the system; the
+  two layers now agree.
+
+### Added
+- **Language setting** (Settings, ⌘,): Follow System / 中文 / English,
+  applied on relaunch, with a one-click relaunch button.
+
 ## [0.3.2] - 2026-10-16
 
 ### Changed

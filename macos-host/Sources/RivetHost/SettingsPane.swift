@@ -20,6 +20,7 @@ struct SettingsPane: View {
     @State private var busy = false
     @State private var loaded = false
     @State private var presetStash: [String: (url: String, model: String)] = [:]
+    @State private var loadedLanguage = "system"
 
     var body: some View {
         ScrollView {
@@ -28,11 +29,19 @@ struct SettingsPane: View {
                 Divider().overlay(Theme.border)
                 readingSection
                 Divider().overlay(Theme.border)
+                languageSection
+                Divider().overlay(Theme.border)
                 privacyFooter
             }
             .padding(12)
         }
-        .onAppear { if !loaded { loadFromSettings(); loaded = true } }
+        .onAppear {
+            if !loaded {
+                loadFromSettings()
+                loadedLanguage = app.languageSetting
+                loaded = true
+            }
+        }
     }
 
     // MARK: sections
@@ -139,6 +148,30 @@ struct SettingsPane: View {
                 Task { await save() }
             }
             .disabled(busy)
+        }
+    }
+
+    private var languageSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            settingLabel(L10n.t("ui.settings.language"))
+            Picker("", selection: Binding(
+                get: { app.languageSetting },
+                set: { app.setLanguage($0) })) {
+                Text(L10n.t("ui.settings.language-system")).tag("system")
+                Text("中文").tag("zh")
+                Text("English").tag("en")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            Text(L10n.t("ui.settings.language-note"))
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textFaint)
+            if app.languageSetting != loadedLanguage {
+                smallButton(L10n.t("ui.settings.relaunch")) {
+                    app.relaunchNow()
+                }
+            }
         }
     }
 

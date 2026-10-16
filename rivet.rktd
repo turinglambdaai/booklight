@@ -1,6 +1,6 @@
 #hasheq((name . "pdfgist")
         (display-name . "PDFGist")
-        (version . "0.3.2")
+        (version . "0.3.3")
         (build . 1)
         (identifier . "site.jrtx.pdfgist")
         (release-channel . stable)
