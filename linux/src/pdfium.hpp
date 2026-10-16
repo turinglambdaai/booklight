@@ -82,6 +82,10 @@ class Document {
   unsigned long last_error() const { return last_error_; }
   void* handle() const { return handle_; }
 
+  // Document metadata tag ("Title", "Author", …) as UTF-8; "" when the tag
+  // is absent or the loaded libpdfium lacks FPDF_GetMetaText.
+  std::string metadata(char const* tag);
+
   // Page size in points, rotation applied (matches what a rendered page
   // looks like).
   bool page_size(int index, double* width, double* height);

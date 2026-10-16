@@ -43,6 +43,12 @@ class PdfDocument {
 
   void* handle() const { return impl_ != nullptr ? impl_->handle() : nullptr; }
 
+  // Document metadata tag ("Title", "Author") as UTF-8; "" when absent.
+  // The shelf import reads this for catalog titles.
+  std::string metadata(char const* tag) {
+    return impl_ != nullptr ? impl_->metadata(tag) : std::string{};
+  }
+
   // Renders one page at `scale` device pixels per point into a fresh
   // ARGB32 cairo surface (viewer + thumbnails + printing; main thread only).
   // With `dark`, painted pixels invert and margins take the dark page
