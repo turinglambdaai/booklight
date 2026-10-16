@@ -109,7 +109,7 @@
                     update-key-id
                     (rollout-bucket)
                     maximum-download-bytes
-                    'app))))
+                    'app)))))
 
 (define (installer-extension)
   (case (system-type 'os)
