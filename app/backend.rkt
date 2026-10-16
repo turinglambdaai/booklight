@@ -210,14 +210,14 @@
   ;; (placeholder covers; real ones render on the next open).
   (with-handlers ([exn:fail? (lambda (_) (void))])
     (when (and (null? (library:shelf-books (library:load-shelf)))
-               (not (null? (pdfgist-settings-recent-files (load-settings)))))
+               (not (null? (settings-recent-files (load-settings)))))
       (define now (current-seconds))
       (library:update-shelf!
        (lambda (current)
          (struct-copy library:shelf current
                       [books
                        (for/list ([r (in-list
-                                      (pdfgist-settings-recent-files
+                                      (settings-recent-files
                                        (load-settings)))])
                          (define p (recents:recent-file-path r))
                          (library:book-entry
