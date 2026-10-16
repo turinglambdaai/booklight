@@ -205,6 +205,31 @@
 ;; Ensures the config directory exists; cheap warm-up for hosts.
 (define-rpc (initialize : Void)
   (migrate-legacy-config!)
+  ;; A migrated config carries recents but an empty shelf — seed the shelf
+  ;; from those recents so the first booklight launch shows familiar books
+  ;; (placeholder covers; real ones render on the next open).
+  (with-handlers ([exn:fail? (lambda (_) (void))])
+    (when (and (null? (library:shelf-books (library:load-shelf)))
+               (not (null? (pdfgist-settings-recent-files (load-settings)))))
+      (define now (current-seconds))
+      (library:update-shelf!
+       (lambda (current)
+         (struct-copy library:shelf current
+                      [books
+                       (for/list ([r (in-list
+                                      (pdfgist-settings-recent-files
+                                       (load-settings)))])
+                         (define p (recents:recent-file-path r))
+                         (library:book-entry
+                          p
+                          (recents:recent-file-title r)
+                          ""
+                          (if (regexp-match? #rx"\\.epub$" p) "epub" "pdf")
+                          1
+                          now
+                          ""
+                          '()
+                          (if (file-exists? p) "ok" "missing")))])))))
   (make-directory* (config-dir-path))
   (void))
 
