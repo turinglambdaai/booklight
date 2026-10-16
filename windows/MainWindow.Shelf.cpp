@@ -108,7 +108,8 @@ std::vector<std::uint8_t> EncodePng(pdfgist::PdfDocument::RenderedPage const& pa
   ::Microsoft::WRL::ComPtr<IStream> stream;
   if (FAILED(::CreateStreamOnHGlobal(nullptr, TRUE, &stream))) return png;
   ::Microsoft::WRL::ComPtr<IWICBitmapEncoder> encoder;
-  if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, GUID_NULL,
+  // vendor GUID is a pointer parameter; nullptr picks the default codec.
+  if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr,
                                     &encoder))) {
     return png;
   }
