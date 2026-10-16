@@ -332,7 +332,8 @@ void MainWindow::Bootstrap() {
     } catch (std::exception const& e) {
       failure = e.what();
     }
-    dispatcher.TryEnqueue([weak, backend, settings = std::move(settings),
+    dispatcher.TryEnqueue([weak, dispatcher, backend,
+                           settings = std::move(settings),
                            presets = std::move(presets),
                            recents = std::move(recents),
                            library = std::move(library),

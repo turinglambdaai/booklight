@@ -97,15 +97,17 @@ std::vector<std::uint8_t> EncodePng(pdfgist::PdfDocument::RenderedPage const& pa
   co.ok = SUCCEEDED(::CoInitializeEx(nullptr, COINIT_MULTITHREADED));
   if (!co.ok) return png;
 
-  Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
+  // Global scope qualifier: inside winrt::, plain Microsoft:: would resolve
+  // to winrt::Microsoft (the projection), not the WRL namespace.
+  ::Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
   if (FAILED(::CoCreateInstance(CLSID_WICImagingFactory, nullptr,
                                 CLSCTX_INPROC_SERVER,
                                 IID_PPV_ARGS(&factory)))) {
     return png;
   }
-  Microsoft::WRL::ComPtr<IStream> stream;
+  ::Microsoft::WRL::ComPtr<IStream> stream;
   if (FAILED(::CreateStreamOnHGlobal(nullptr, TRUE, &stream))) return png;
-  Microsoft::WRL::ComPtr<IWICBitmapEncoder> encoder;
+  ::Microsoft::WRL::ComPtr<IWICBitmapEncoder> encoder;
   if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, GUID_NULL,
                                     &encoder))) {
     return png;
@@ -113,7 +115,7 @@ std::vector<std::uint8_t> EncodePng(pdfgist::PdfDocument::RenderedPage const& pa
   if (FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) {
     return png;
   }
-  Microsoft::WRL::ComPtr<IWICBitmapFrameEncode> frame;
+  ::Microsoft::WRL::ComPtr<IWICBitmapFrameEncode> frame;
   if (FAILED(encoder->CreateNewFrame(&frame, nullptr))) return png;
   if (FAILED(frame->Initialize(nullptr))) return png;
   if (FAILED(frame->SetSize(static_cast<UINT>(page.width),
@@ -753,6 +755,7 @@ void MainWindow::ShelfRelink(rivet_app::LibraryEntry const& entry) {
     }
   }
   picker.FileTypeFilter().Append(L"*");  // any file: the book may have renamed
+  auto const weak = get_weak();
   picker.PickSingleFileAsync().Completed(
       [weak, entry](winrt::Windows::Foundation::IAsyncOperation<
                     winrt::Windows::Storage::StorageFile> const& sender,
