@@ -2,9 +2,6 @@
 #include "MainWindow.xaml.h"
 #include "I18n.h"
 
-#include <wincodec.h>
-#include <wrl/client.h>
-
 #include <algorithm>
 #include <cwctype>
 #include <fstream>
@@ -80,73 +77,7 @@ wu::Color TextColor(bool dark) {
 }
 
 // ---- PNG encode (WIC) --------------------------------------------------------
-// The cover render comes out of PDFium as top-down BGRA; WIC turns it into
-// the PNG the backend stores in its covers cache. Self-contained so the
-// import path has no UI dependencies.
-
-struct ComApartment {
-  bool ok = false;
-  ~ComApartment() {
-    if (ok) ::CoUninitialize();
-  }
-};
-
-std::vector<std::uint8_t> EncodePng(pdfgist::PdfDocument::RenderedPage const& page) {
-  std::vector<std::uint8_t> png;
-  ComApartment co;
-  co.ok = SUCCEEDED(::CoInitializeEx(nullptr, COINIT_MULTITHREADED));
-  if (!co.ok) return png;
-
-  // Global scope qualifier: inside winrt::, plain Microsoft:: would resolve
-  // to winrt::Microsoft (the projection), not the WRL namespace.
-  ::Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
-  if (FAILED(::CoCreateInstance(CLSID_WICImagingFactory, nullptr,
-                                CLSCTX_INPROC_SERVER,
-                                IID_PPV_ARGS(&factory)))) {
-    return png;
-  }
-  ::Microsoft::WRL::ComPtr<IStream> stream;
-  if (FAILED(::CreateStreamOnHGlobal(nullptr, TRUE, &stream))) return png;
-  ::Microsoft::WRL::ComPtr<IWICBitmapEncoder> encoder;
-  // vendor GUID is a pointer parameter; nullptr picks the default codec.
-  if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr,
-                                    &encoder))) {
-    return png;
-  }
-  if (FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) {
-    return png;
-  }
-  ::Microsoft::WRL::ComPtr<IWICBitmapFrameEncode> frame;
-  if (FAILED(encoder->CreateNewFrame(&frame, nullptr))) return png;
-  if (FAILED(frame->Initialize(nullptr))) return png;
-  if (FAILED(frame->SetSize(static_cast<UINT>(page.width),
-                            static_cast<UINT>(page.height)))) {
-    return png;
-  }
-  GUID format = GUID_WICPixelFormat32bppBGRA;
-  if (FAILED(frame->SetPixelFormat(&format))) return png;
-  if (FAILED(frame->WritePixels(
-          static_cast<UINT>(page.height), static_cast<UINT>(page.stride),
-          static_cast<UINT>(page.bgra.size()),
-          const_cast<BYTE*>(page.bgra.data())))) {
-    return png;
-  }
-  if (FAILED(frame->Commit())) return png;
-  if (FAILED(encoder->Commit())) return png;
-
-  STATSTG stat{};
-  if (FAILED(stream->Stat(&stat, STATFLAG_NONAME))) return png;
-  if (stat.cbSize.QuadPart <= 0) return png;
-  HGLOBAL global = nullptr;
-  if (FAILED(::GetHGlobalFromStream(stream.Get(), &global))) return png;
-  void const* data = ::GlobalLock(global);
-  if (data == nullptr) return png;
-  png.assign(static_cast<std::uint8_t const*>(data),
-             static_cast<std::uint8_t const*>(data) +
-                 static_cast<std::size_t>(stat.cbSize.QuadPart));
-  ::GlobalUnlock(global);
-  return png;
-}
+// Moved to pdfgist::EncodePng (PdfDocument) — the page-image export shares it.
 
 // Page-1 thumbnail as PNG bytes for the shelf cover cache: at most 320px
 // wide (mac coverPNG parity), never scaled past 4x for tiny pages.
@@ -157,7 +88,7 @@ rivet::Bytes CoverPng(pdfgist::PdfDocument const& doc) {
   double const scale = std::min(std::min(320.0 / w, 480.0 / h), 4.0);
   auto page = doc.RenderPage(0, scale, false);
   if (page.bgra.empty()) return {};
-  return EncodePng(page);
+  return pdfgist::EncodePng(page);
 }
 
 }  // namespace

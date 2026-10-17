@@ -136,4 +136,9 @@ class PdfDocument {
   mutable void* form_env_ = nullptr;   // FPDF_FORMHANDLE (opaque)
 };
 
+// Encodes a rendered page (top-down BGRA rows) as PNG bytes through WIC.
+// One encoder for every host-side bitmap export — shelf covers and the
+// page-image export ride the same path.
+std::vector<std::uint8_t> EncodePng(PdfDocument::RenderedPage const& page);
+
 }  // namespace pdfgist

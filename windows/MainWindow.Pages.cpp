@@ -206,32 +206,7 @@ void MainWindow::ReloadTabDocument(std::shared_ptr<PdfTab> tab,
 
 void MainWindow::SaveEditResult(std::vector<std::uint8_t> data,
                                 std::wstring const& default_name) {
-  auto picker = winrt::Windows::Storage::Pickers::FileSavePicker();
-  auto const window_native = try_as<::IWindowNative>();
-  if (window_native) {
-    HWND hwnd = nullptr;
-    if (SUCCEEDED(window_native->get_WindowHandle(&hwnd))) {
-      if (auto initializer = picker.try_as<::IInitializeWithWindow>()) {
-        initializer->Initialize(hwnd);
-      }
-    }
-  }
-  picker.SuggestedFileName(default_name);
-  picker.FileTypeChoices().Insert(
-      L"PDF", winrt::single_threaded_vector<winrt::hstring>({L".pdf"}));
-  picker.PickSaveFileAsync().Completed(
-      [data = std::move(data)](
-          winrt::Windows::Foundation::IAsyncOperation<
-              winrt::Windows::Storage::StorageFile> const& sender,
-          winrt::Windows::Foundation::AsyncStatus) mutable {
-        try {
-          auto const file = sender.GetResults();
-          if (file == nullptr) return;  // cancelled (mac saveEditResult)
-          winrt::Windows::Storage::FileIO::WriteBytesAsync(file, data).Completed(
-              [](auto const&, auto const&) {});
-        } catch (...) {
-        }
-      });
+  SaveData(std::move(data), default_name, L"PDF", L".pdf");
 }
 
 void MainWindow::PickPdfFile(std::function<void(std::wstring const&)> on_picked) {

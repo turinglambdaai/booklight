@@ -196,6 +196,12 @@ struct MainWindow : MainWindowT<MainWindow> {
                        winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void PrintButton_Click(winrt::Windows::Foundation::IInspectable const&,
                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void ToolsWatermark_Click(winrt::Windows::Foundation::IInspectable const&,
+                            winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void ToolsExportPage_Click(winrt::Windows::Foundation::IInspectable const&,
+                             winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void ToolsExportText_Click(winrt::Windows::Foundation::IInspectable const&,
+                             winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void RecentsFlyout_Opening(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Windows::Foundation::IInspectable const&);
@@ -451,6 +457,16 @@ struct MainWindow : MainWindowT<MainWindow> {
   void RunMergeDialog();
   void RunBakeDialog();
   void PickPdfFile(std::function<void(std::wstring const&)> on_picked);
+
+  // ---- tools (MainWindow.Tools.cpp) — watermark + exports ----
+  void ShowWatermarkDialog();
+  void ApplyWatermark(std::shared_ptr<PdfTab> tab, std::wstring const& text,
+                      int size, int opacity_percent);
+  void ExportPageImage();
+  void ExportDocumentText();
+  // One typed save panel for every export (mac saveData parity).
+  void SaveData(std::vector<std::uint8_t> data, std::wstring const& default_name,
+                std::wstring const& type_label, std::wstring const& extension);
 
   // ---- shelf (MainWindow.Shelf.cpp) — the Books-style launch surface ----
   // Sidebar selection: "home" | "all" | "want" | "finished" | "pdf" |

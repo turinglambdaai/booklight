@@ -78,6 +78,17 @@
                 ToolTipService.ToolTip="打印">
                 <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE749;" />
             </Button>
+            <!-- tools: watermark + exports (mac app-menu Tools section parity) -->
+            <Button x:Name="ToolsButton" ToolTipService.ToolTip="工具">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE90F;" />
+                <Button.Flyout>
+                    <MenuFlyout Placement="Bottom">
+                        <MenuFlyoutItem x:Name="ToolsWatermarkItem" Click="ToolsWatermark_Click" />
+                        <MenuFlyoutItem x:Name="ToolsExportPageItem" Click="ToolsExportPage_Click" />
+                        <MenuFlyoutItem x:Name="ToolsExportTextItem" Click="ToolsExportText_Click" />
+                    </MenuFlyout>
+                </Button.Flyout>
+            </Button>
             <ToggleButton
                 x:Name="AiToggle"
                 Click="AiToggle_Click"
