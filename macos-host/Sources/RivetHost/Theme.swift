@@ -1,23 +1,28 @@
 import SwiftUI
 import AppKit
 
-// Warm paper/terracotta palette lifted from the v1 web UI (src/style.css).
-// Colors are dynamic NSColors so every AppKit surface (PDFThumbnailView
-// background, context menus) resolves the same values as the SwiftUI chrome.
+// Color system: Apple semantic colors for every surface — window and
+// control backgrounds, separators, label hierarchy — so light mode reads
+// as white-on-black and dark mode follows the system automatically. The
+// only branded color is the terracotta accent, reserved for interactive
+// elements (selection, progress, buttons); reading surfaces stay neutral.
+// Annotation colors are content colors (the user chose them) and keep
+// their fixed palette.
+
 enum Theme {
-    static let bg = Color.dynamic(light: 0xF5F2ED, dark: 0x171412)
-    static let panel = Color.dynamic(light: 0xFFFFFF, dark: 0x231F1D)
-    static let panelAlt = Color.dynamic(light: 0xFAF8F5, dark: 0x2A2624)
-    static let border = Color.dynamic(light: 0xE7E5E4, dark: 0x3D3835)
-    static let borderStrong = Color.dynamic(light: 0xD6D3D1, dark: 0x4A4440)
-    static let text = Color.dynamic(light: 0x1C1917, dark: 0xE7E5E4)
-    static let textDim = Color.dynamic(light: 0x57534E, dark: 0xA8A29E)
-    static let textFaint = Color.dynamic(light: 0xA8A29E, dark: 0x78716C)
+    static let bg = Color(nsColor: .windowBackgroundColor)
+    static let panel = Color(nsColor: .controlBackgroundColor)
+    static let panelAlt = Color(nsColor: .quaternarySystemFill)
+    static let border = Color(nsColor: .separatorColor)
+    static let borderStrong = Color.primary.opacity(0.16)
+    static let text = Color.primary
+    static let textDim = Color(nsColor: .secondaryLabelColor)
+    static let textFaint = Color(nsColor: .tertiaryLabelColor)
     static let accent = Color.dynamic(light: 0xD97757, dark: 0xE8926A)
     static let accentHover = Color.dynamic(light: 0xC4623E, dark: 0xF0A07C)
-    static let accentSoft = Color.dynamic(light: 0xFFF7ED, dark: 0x2D2218)
-    static let accentBorder = Color.dynamic(light: 0xF1D5C4, dark: 0x4A3428)
-    static let danger = Color.dynamic(light: 0xB3261E, dark: 0xF2B8B5)
+    static let accentSoft = Color.accentNonLinear(0.12)
+    static let accentBorder = Color.accentNonLinear(0.28)
+    static let danger = Color(nsColor: .systemRed)
 
     // Annotation chips (v1 .note-dot colors).
     static func annotationColor(_ name: String) -> NSColor {
@@ -34,6 +39,12 @@ enum Theme {
 }
 
 extension Color {
+    /// Accent tint at the given opacity (keeps working across light/dark
+    /// because the accent itself is a dynamic color).
+    static func accentNonLinear(_ opacity: Double) -> Color {
+        Color.dynamic(light: 0xD97757, dark: 0xE8926A).opacity(opacity)
+    }
+
     static func dynamic(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -50,12 +61,4 @@ extension NSColor {
             blue: CGFloat(hex & 0xFF) / 255,
             alpha: alpha)
     }
-}
-
-// AppKit helpers tinted from the same palette.
-extension NSColor {
-    static var gistPanel: NSColor { NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(hex: 0x231F1D) : NSColor(hex: 0xFFFFFF)
-    } }
 }
