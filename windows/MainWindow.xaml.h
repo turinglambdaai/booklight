@@ -202,6 +202,11 @@ struct MainWindow : MainWindowT<MainWindow> {
                              winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void ToolsExportText_Click(winrt::Windows::Foundation::IInspectable const&,
                              winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void ContinuePill_Click(winrt::Windows::Foundation::IInspectable const&,
+                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void ContinuePillImport_Click(
+      winrt::Windows::Foundation::IInspectable const&,
+      winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void RecentsFlyout_Opening(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Windows::Foundation::IInspectable const&);
@@ -499,11 +504,6 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ShelfRelink(rivet_app::LibraryEntry const& entry);
   void ShelfRemove(rivet_app::LibraryEntry const& entry);
   void RevealInExplorer(std::wstring const& path);
-  void ContinuePill_Click(winrt::Windows::Foundation::IInspectable const&,
-                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
-  void ContinuePillImport_Click(
-      winrt::Windows::Foundation::IInspectable const&,
-      winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
 
   // ---- reading time (MainWindow.Shelf.cpp) — device-local, never synced ----
   // Live seconds toward the daily goal; buckets persist per day (mac
