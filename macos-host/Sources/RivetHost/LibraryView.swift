@@ -93,6 +93,8 @@ struct LibraryView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(Theme.bg)
         .sheet(isPresented: $newCollectionRequested) {
             NewCollectionSheet { name in
                 app.createCollection(name)

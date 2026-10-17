@@ -10,8 +10,11 @@ import AppKit
 // their fixed palette.
 
 enum Theme {
-    static let bg = Color(nsColor: .windowBackgroundColor)
-    static let panel = Color(nsColor: .controlBackgroundColor)
+    // iBooks form: the whole window reads as one white document surface
+    // (textBackgroundColor = white in light, near-black in dark); cards
+    // float on it as light gray.
+    static let bg = Color(nsColor: .textBackgroundColor)
+    static let panel = Color(nsColor: .windowBackgroundColor)
     static let panelAlt = Color(nsColor: .quaternarySystemFill)
     static let border = Color(nsColor: .separatorColor)
     static let borderStrong = Color.primary.opacity(0.16)

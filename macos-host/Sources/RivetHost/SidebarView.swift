@@ -21,8 +21,10 @@ struct ReaderSidebar: View {
                 emptyHint
             }
         }
-        // No custom background: the NavigationSplitView sidebar column
-        // provides the system sidebar material on its own.
+        // iBooks form: the sidebar is the same white as the content — no
+        // gray sidebar material.
+        .scrollContentBackground(.hidden)
+        .background(Theme.bg)
     }
 
     @ViewBuilder
