@@ -109,6 +109,24 @@ void save_pref_int(std::string const& key, int value) {
   persist_prefs();
 }
 
+int reading_minutes(std::string const& day) {
+  GError* error = nullptr;
+  int value =
+      g_key_file_get_integer(pref_file(), "reading", day.c_str(), &error);
+  if (error != nullptr) {
+    g_error_free(error);
+    return 0;
+  }
+  return value;
+}
+
+void add_reading_minutes(std::string const& day, int minutes) {
+  if (minutes <= 0) return;
+  g_key_file_set_integer(pref_file(), "reading", day.c_str(),
+                         reading_minutes(day) + minutes);
+  persist_prefs();
+}
+
 std::string format_positional(std::string const& pattern,
                               std::string const& arg0) {
   std::string out;

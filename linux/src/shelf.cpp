@@ -1,5 +1,6 @@
 // The bookshelf implementation — see shelf.hpp. The macOS host
-// (LibraryView.swift + AppModel.swift shelf section) is the behavior spec.
+// (LibraryView.swift + AppModel.swift shelf section) is the behavior spec:
+// a Books source-list sidebar over the home digest / cover grid.
 //
 // Threading: all GTK + PDFium work happens on the main loop. Backend
 // completions arrive on the runtime reader thread and dispatch back into
@@ -8,11 +9,13 @@
 // so a big drop never wedges the UI and one bad book skips to the next.
 #include "shelf.hpp"
 
+#include <cairo/cairo.h>
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 
 #include "host.hpp"
@@ -47,6 +50,16 @@ constexpr int kCoverWidth = 132;
 constexpr int kCoverHeight = 176;
 constexpr int kCoverPxWidth = 320;  // import cover render width (mac parity)
 
+// Books home digest geometry (mac HomeDigest).
+constexpr int kGaugeWidth = 320;
+constexpr int kGaugeHeight = 150;
+constexpr double kGaugeStroke = 10.0;
+constexpr int kGoalMinutes = 20;  // mac AppModel.goalMinutes
+
+// Fixed week symbols under the gauge — the mac side hardcodes the same
+// zh characters regardless of UI language (AppModel streakRow parity).
+constexpr char const* kWeekSymbols[7] = {"一", "二", "三", "四", "五", "六", "日"};
+
 std::string ascii_lower(std::string const& s) {
   std::string out = s;
   std::transform(out.begin(), out.end(), out.begin(),
@@ -75,6 +88,29 @@ std::string trim(std::string const& s) {
   if (begin == std::string::npos) return {};
   auto const end = s.find_last_not_of(" \t\r\n");
   return s.substr(begin, end - begin + 1);
+}
+
+// "YYYY-MM-DD" for the local day `offset_days` from today (the reading
+// ledger's key format, mac dayFormatter parity).
+std::string day_string(int offset_days) {
+  GDateTime* now = g_date_time_new_now_local();
+  GDateTime* day = g_date_time_add_days(now, offset_days);
+  gchar* text = g_date_time_format(day, "%Y-%m-%d");
+  std::string out = text != nullptr ? text : "";
+  g_free(text);
+  g_date_time_unref(day);
+  g_date_time_unref(now);
+  return out;
+}
+
+// The effective palette the host pinned in apply_theme (the headerbar and
+// covers already follow it); cairo can't read theme colors without the
+// deprecated style-context API, so the track color derives from this.
+bool host_theme_is_dark() {
+  gboolean dark = FALSE;
+  g_object_get(gtk_settings_get_default(),
+               "gtk-application-prefer-dark-theme", &dark, nullptr);
+  return dark == TRUE;
 }
 
 // Page-1 render as PNG bytes for the shelf cover cache (mac coverPNG:
@@ -110,7 +146,27 @@ constexpr char const* kShelfCss =
     "color: white; }\n"
     ".book-title { font-size: 12px; font-weight: 600; }\n"
     ".book-author { font-size: 11px; }\n"
-    ".book-progress-text { font-size: 10px; }\n";
+    ".book-progress-text { font-size: 10px; }\n"
+    // Books home digest (mac HomeDigest typography)
+    ".home-digest-title { font-size: 34px; font-weight: 700; }\n"
+    ".gauge-today { font-size: 15px; font-weight: 600; }\n"
+    ".gauge-minutes { font-size: 40px; font-weight: 700; }\n"
+    ".goal-hit-pill { font-size: 11px; font-weight: 600; "
+    "color: @theme_selected_bg_color; "
+    "background-color: alpha(@theme_selected_bg_color, 0.15); "
+    "border-radius: 9999px; padding: 2px 10px; }\n"
+    ".streak-day { font-size: 11px; font-weight: 600; "
+    "color: alpha(@theme_fg_color, 0.65); "
+    "background-color: alpha(@theme_fg_color, 0.08); "
+    "border: 1px solid alpha(@theme_fg_color, 0.15); "
+    "border-radius: 9999px; min-width: 30px; min-height: 30px; }\n"
+    ".streak-day-read { color: @theme_selected_fg_color; "
+    "background-color: @theme_selected_bg_color; "
+    "border-color: @theme_selected_bg_color; }\n"
+    ".shelf-section-title { font-size: 17px; font-weight: 600; }\n"
+    ".shelf-header-row { font-size: 11px; font-weight: 700; "
+    "color: alpha(@theme_fg_color, 0.6); padding: 2px 8px 1px; }\n"
+    ".shelf-nav-row { padding: 5px 8px; }\n";
 
 }  // namespace
 
@@ -134,31 +190,6 @@ Shelf::Shelf(Hooks hooks) : hooks_(std::move(hooks)) {
   header_spinner_ = gtk_spinner_new();
   gtk_widget_set_visible(header_spinner_, FALSE);
 
-  dropdown_ = GTK_DROP_DOWN(gtk_drop_down_new(nullptr, nullptr));
-  rebuild_filter_model();
-  gtk_widget_set_size_request(GTK_WIDGET(dropdown_), 150, -1);
-  header_filter_ = GTK_WIDGET(dropdown_);
-  hook(
-      dropdown_, "notify::selected",
-      +[](GObject* object, GParamSpec*, gpointer data) {
-        auto* self = static_cast<Shelf*>(data);
-        if (self->updating_filter_) return;
-        guint selected = 0;
-        g_object_get(object, "selected", &selected, nullptr);
-        auto const cols = self->collections();
-        if (selected == 0) {
-          self->filter_.clear();
-        } else if (selected == 1) {
-          self->filter_ = "unfiled";
-        } else if (static_cast<std::size_t>(selected) - 2 < cols.size()) {
-          self->filter_ = cols[static_cast<std::size_t>(selected) - 2];
-        } else {
-          self->filter_.clear();
-        }
-        self->rebuild();
-      },
-      this);
-
   search_entry_ = GTK_SEARCH_ENTRY(gtk_search_entry_new());
   gtk_search_entry_set_placeholder_text(search_entry_,
                                         Tr("ui.library.search").c_str());
@@ -174,10 +205,8 @@ Shelf::Shelf(Hooks hooks) : hooks_(std::move(hooks)) {
       },
       this);
 
-  // --- page: loading | grid | empty ---
-  page_ = gtk_stack_new();
-  gtk_stack_set_transition_type(GTK_STACK(page_),
-                                GTK_STACK_TRANSITION_TYPE_NONE);
+  // --- page: sidebar | detail(home | grid | empty | loading) ---
+  page_ = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
 
   grid_scroll_ = gtk_scrolled_window_new();
   flow_ = GTK_FLOW_BOX(gtk_flow_box_new());
@@ -204,20 +233,26 @@ Shelf::Shelf(Hooks hooks) : hooks_(std::move(hooks)) {
         self->hooks_.open(path);
       },
       this);
-  gtk_stack_add_named(GTK_STACK(page_), grid_scroll_, "grid");
-
   empty_state_ = build_empty_state();
-  gtk_stack_add_named(GTK_STACK(page_), empty_state_, "empty");
 
+  detail_ = GTK_STACK(gtk_stack_new());
+  gtk_stack_set_transition_type(detail_, GTK_STACK_TRANSITION_TYPE_NONE);
+  gtk_stack_add_named(detail_, build_home(), "home");
+  gtk_stack_add_named(detail_, grid_scroll_, "grid");
+  gtk_stack_add_named(detail_, empty_state_, "empty");
   auto* loading = gtk_label_new(Tr("ui.update.checking").c_str());
   gtk_widget_add_css_class(loading, "dim-label");
   gtk_widget_add_css_class(loading, "caption");
   gtk_widget_set_valign(loading, GTK_ALIGN_CENTER);
   gtk_widget_set_halign(loading, GTK_ALIGN_CENTER);
-  gtk_stack_add_named(GTK_STACK(page_), loading, "loading");
-  gtk_stack_set_visible_child_name(GTK_STACK(page_), "loading");
+  gtk_stack_add_named(detail_, loading, "loading");
 
-  // Rounded covers + gradient placeholders + missing scrim.
+  gtk_paned_set_start_child(GTK_PANED(page_), build_sidebar());
+  gtk_paned_set_shrink_start_child(GTK_PANED(page_), FALSE);
+  gtk_paned_set_end_child(GTK_PANED(page_), GTK_WIDGET(detail_));
+  gtk_paned_set_position(GTK_PANED(page_), 200);
+
+  // Rounded covers + gradient placeholders + missing scrim + digest card.
   auto* provider = gtk_css_provider_new();
   gtk_css_provider_load_from_string(provider, kShelfCss);
   gtk_style_context_add_provider_for_display(
@@ -225,11 +260,420 @@ Shelf::Shelf(Hooks hooks) : hooks_(std::move(hooks)) {
       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
   g_object_unref(provider);
 
+  // Reading-time ledger: one minute per 60 s tick while a reader tab is
+  // showing a document (mac startReadingClock parity).
+  refresh_reading_stats();
+  reading_tick_ = g_timeout_add_seconds(
+      60,
+      +[](gpointer data) -> int {
+        static_cast<Shelf*>(data)->tick_reading_minute();
+        return G_SOURCE_CONTINUE;
+      },
+      this);
+
   install_actions();
   set_active(active_);
 }
 
-Shelf::~Shelf() = default;
+Shelf::~Shelf() {
+  if (reading_tick_ != 0) g_source_remove(reading_tick_);
+}
+
+// ---------------------------------------------------------------------------
+// reading-time ledger (mac AppModel shelf section parity)
+// ---------------------------------------------------------------------------
+
+void Shelf::refresh_reading_stats() {
+  today_minutes_ = host::reading_minutes(day_string(0));
+  // calendar week Mon..Sun (GLib: 1 = Monday .. 7 = Sunday)
+  GDateTime* now = g_date_time_new_now_local();
+  int const weekday = g_date_time_get_day_of_week(now);
+  g_date_time_unref(now);
+  for (int i = 0; i < 7; ++i) {
+    week_minutes_[static_cast<std::size_t>(i)] =
+        host::reading_minutes(day_string(i - (weekday - 1)));
+  }
+  // current streak: consecutive reading days ending today, or yesterday
+  // when today hasn't started yet
+  int cursor = today_minutes_ > 0 ? 0 : -1;
+  streak_days_ = 0;
+  while (streak_days_ < 3650 &&
+         host::reading_minutes(day_string(cursor)) > 0) {
+    ++streak_days_;
+    --cursor;
+  }
+}
+
+void Shelf::tick_reading_minute() {
+  if (!hooks_.reading_active || !hooks_.reading_active()) return;
+  host::add_reading_minutes(day_string(0), 1);
+  refresh_reading_stats();
+  update_home_stats();
+}
+
+// ---------------------------------------------------------------------------
+// sidebar (mac shelfSidebar parity — Books source list)
+// ---------------------------------------------------------------------------
+
+GtkWidget* Shelf::build_sidebar() {
+  sidebar_scroll_ = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sidebar_scroll_),
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_size_request(sidebar_scroll_, 200, -1);
+  sidebar_ = GTK_LIST_BOX(gtk_list_box_new());
+  gtk_list_box_set_selection_mode(sidebar_, GTK_SELECTION_SINGLE);
+  gtk_list_box_set_activate_on_single_click(sidebar_, TRUE);
+  gtk_widget_add_css_class(GTK_WIDGET(sidebar_), "navigation-sidebar");
+  gtk_widget_add_css_class(GTK_WIDGET(sidebar_), "shelf-nav");
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sidebar_scroll_),
+                                GTK_WIDGET(sidebar_));
+  hook(
+      sidebar_, "selected-rows-changed",
+      +[](GtkListBox*, gpointer data) {
+        static_cast<Shelf*>(data)->on_sidebar_selection();
+      },
+      this);
+  rebuild_sidebar();
+  return sidebar_scroll_;
+}
+
+GtkWidget* Shelf::make_nav_row(char const* icon, std::string const& label,
+                               std::string const& nav) {
+  auto* row = gtk_list_box_row_new();
+  auto* box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_add_css_class(box, "shelf-nav-row");
+  gtk_widget_set_margin_top(box, 4);
+  gtk_widget_set_margin_bottom(box, 4);
+  auto* image = gtk_image_new_from_icon_name(icon);
+  gtk_image_set_pixel_size(GTK_IMAGE(image), 16);
+  auto* text = gtk_label_new(label.c_str());
+  gtk_label_set_ellipsize(GTK_LABEL(text), PANGO_ELLIPSIZE_END);
+  gtk_label_set_xalign(GTK_LABEL(text), 0.0f);
+  gtk_widget_set_hexpand(text, TRUE);
+  gtk_box_append(GTK_BOX(box), image);
+  gtk_box_append(GTK_BOX(box), text);
+  gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
+  char* owned = g_strdup(nav.c_str());
+  g_object_set_data_full(G_OBJECT(row), "shelf-nav", owned, g_free);
+  return row;
+}
+
+GtkWidget* Shelf::make_header_row(std::string const& label) {
+  auto* row = gtk_list_box_row_new();
+  auto* text = gtk_label_new(label.c_str());
+  gtk_label_set_xalign(GTK_LABEL(text), 0.0f);
+  gtk_widget_add_css_class(text, "shelf-header-row");
+  gtk_widget_set_margin_start(text, 8);
+  gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), text);
+  gtk_widget_set_sensitive(row, FALSE);  // headers never select
+  return row;
+}
+
+void Shelf::append_collection_rows() {
+  for (auto const& name : collections()) {
+    gtk_list_box_append(
+        sidebar_, make_nav_row("folder-symbolic", name, "c:" + name));
+  }
+  gtk_list_box_append(sidebar_,
+                      make_nav_row("list-add-symbolic",
+                                   Tr("ui.shelf.new-collection"),
+                                   "new-collection"));
+}
+
+void Shelf::rebuild_sidebar() {
+  auto const cols = collections();
+  if (cols == sidebar_collections_ &&
+      gtk_widget_get_first_child(GTK_WIDGET(sidebar_)) != nullptr) {
+    select_row_for(selection_);  // rows are fresh; just restore the selection
+    return;
+  }
+  updating_nav_ = true;
+  gtk_list_box_remove_all(sidebar_);
+  gtk_list_box_append(sidebar_, make_nav_row("system-search-symbolic",
+                                             Tr("ui.shelf.search"), "search"));
+  gtk_list_box_append(sidebar_,
+                      make_nav_row("user-home-symbolic", Tr("ui.shelf.home"),
+                                   "home"));
+  gtk_list_box_append(sidebar_, make_header_row(Tr("ui.shelf.lib")));
+  gtk_list_box_append(sidebar_,
+                      make_nav_row("view-grid-symbolic", Tr("ui.shelf.all"),
+                                   "all"));
+  gtk_list_box_append(sidebar_,
+                      make_nav_row("bookmark-new-symbolic", Tr("ui.shelf.want"),
+                                   "want"));
+  gtk_list_box_append(
+      sidebar_, make_nav_row("object-select-symbolic", Tr("ui.shelf.finished"),
+                             "finished"));
+  gtk_list_box_append(
+      sidebar_, make_nav_row("text-x-generic-symbolic", Tr("ui.shelf.pdf"),
+                             "pdf"));
+  gtk_list_box_append(sidebar_,
+                      make_nav_row("accessories-dictionary-symbolic",
+                                   Tr("ui.shelf.epub"), "epub"));
+  gtk_list_box_append(sidebar_, make_header_row(Tr("ui.shelf.mine")));
+  append_collection_rows();
+  sidebar_collections_ = cols;
+  select_row_for(selection_);
+  updating_nav_ = false;
+}
+
+void Shelf::select_row_for(std::string const& nav) {
+  updating_nav_ = true;
+  int index = 0;
+  GtkListBoxRow* row = nullptr;
+  while ((row = gtk_list_box_get_row_at_index(sidebar_, index++)) != nullptr) {
+    auto const* row_nav = static_cast<char const*>(
+        g_object_get_data(G_OBJECT(row), "shelf-nav"));
+    if (row_nav != nullptr && nav == row_nav) {
+      gtk_list_box_select_row(sidebar_, row);
+      break;
+    }
+  }
+  updating_nav_ = false;
+}
+
+void Shelf::on_sidebar_selection() {
+  if (updating_nav_) return;
+  auto* row = gtk_list_box_get_selected_row(sidebar_);
+  if (row == nullptr) return;
+  auto const* nav = static_cast<char const*>(
+      g_object_get_data(G_OBJECT(row), "shelf-nav"));
+  if (nav == nullptr) return;
+  std::string const target = nav;
+  if (target == "search") {
+    // the search row selects the all-scope and focuses its field
+    select_nav("all");
+    gtk_widget_grab_focus(header_search_);
+    return;
+  }
+  if (target == "new-collection") {
+    // action row: restore the semantic selection, then open the sheet
+    select_row_for(selection_);
+    run_new_collection_dialog([this](std::string const& name) {
+      create_collection_only(name);
+    });
+    return;
+  }
+  select_nav(target);
+}
+
+void Shelf::select_nav(std::string const& nav) {
+  if (selection_ == nav) {
+    select_row_for(nav);  // e.g. search clicked twice: move the highlight back
+    return;
+  }
+  selection_ = nav;
+  rebuild();
+  if (hooks_.title_changed) hooks_.title_changed();
+}
+
+std::string Shelf::current_title() const {
+  if (selection_ == "home") return Tr("ui.shelf.home");
+  if (selection_ == "want") return Tr("ui.shelf.want");
+  if (selection_ == "finished") return Tr("ui.shelf.finished");
+  if (selection_ == "pdf") return Tr("ui.shelf.pdf");
+  if (selection_ == "epub") return Tr("ui.shelf.epub");
+  if (selection_.rfind("c:", 0) == 0) return selection_.substr(2);
+  return Tr("ui.shelf.all");  // "all" — the search row selects all too
+}
+
+// ---------------------------------------------------------------------------
+// home digest (mac HomeDigest: goals gauge, streak, continue-reading)
+// ---------------------------------------------------------------------------
+
+GtkWidget* Shelf::build_home() {
+  home_scroll_ = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(home_scroll_),
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 24);
+  gtk_widget_set_margin_top(box, 28);
+  gtk_widget_set_margin_bottom(box, 32);
+  gtk_widget_set_margin_start(box, 32);
+  gtk_widget_set_margin_end(box, 32);
+
+  home_title_ = gtk_label_new(Tr("ui.shelf.home").c_str());
+  gtk_label_set_xalign(GTK_LABEL(home_title_), 0.0f);
+  gtk_widget_add_css_class(home_title_, "home-digest-title");
+  gtk_box_append(GTK_BOX(box), home_title_);
+
+  // goals card: gauge | separator | streak
+  auto* card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(card, "card");
+
+  auto* gauge_overlay = gtk_overlay_new();
+  gauge_area_ = gtk_drawing_area_new();
+  gtk_widget_set_size_request(gauge_area_, kGaugeWidth, kGaugeHeight);
+  gtk_widget_set_hexpand(gauge_area_, TRUE);
+  gtk_drawing_area_set_draw_func(
+      GTK_DRAWING_AREA(gauge_area_),
+      +[](GtkDrawingArea* area, cairo_t* cr, int width, int height,
+          gpointer data) {
+        auto* self = static_cast<Shelf*>(data);
+        double const ratio =
+            std::clamp(static_cast<double>(self->today_minutes_) /
+                           static_cast<double>(kGoalMinutes),
+                       0.0, 1.0);
+        cairo_set_line_width(cr, kGaugeStroke);
+        cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+        double const cx = width / 2.0;
+        double const cy = height - kGaugeStroke;
+        double const radius =
+            std::max(std::min(width / 2.0 - kGaugeStroke,
+                              height - 2.0 * kGaugeStroke),
+                     10.0);
+        // track: top-half arc from the left horizon to the right
+        if (host_theme_is_dark()) {
+          cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.15);
+        } else {
+          cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.12);
+        }
+        cairo_arc(cr, cx, cy, radius, M_PI, 2.0 * M_PI);
+        cairo_stroke(cr);
+        // progress fraction of the same arc (a zero day draws nothing —
+        // the empty track already reads as "not started")
+        if (ratio > 0.0) {
+          // #3584e4, the same accent the cover gradient uses
+          cairo_set_source_rgba(cr, 0.208, 0.518, 0.894, 1.0);
+          cairo_arc(cr, cx, cy, radius, M_PI, M_PI * (1.0 + ratio));
+          cairo_stroke(cr);
+        }
+        (void)area;
+      },
+      this, nullptr);
+
+  auto* gauge_center = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+  gtk_widget_set_halign(gauge_center, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(gauge_center, GTK_ALIGN_CENTER);
+  auto* today_label = gtk_label_new(Tr("ui.shelf.today").c_str());
+  gtk_widget_add_css_class(today_label, "gauge-today");
+  minutes_label_ = gtk_label_new(nullptr);
+  gtk_widget_add_css_class(minutes_label_, "gauge-minutes");
+  gtk_widget_add_css_class(minutes_label_, "numeric");
+  auto* goal_label = gtk_label_new(Tr("ui.shelf.goal-of").c_str());
+  gtk_widget_add_css_class(goal_label, "caption");
+  gtk_widget_add_css_class(goal_label, "dim-label");
+  goal_badge_ = gtk_label_new(Tr("ui.shelf.goal-hit").c_str());
+  gtk_widget_add_css_class(goal_badge_, "goal-hit-pill");
+  gtk_widget_set_visible(goal_badge_, FALSE);
+  gtk_box_append(GTK_BOX(gauge_center), today_label);
+  gtk_box_append(GTK_BOX(gauge_center), minutes_label_);
+  gtk_box_append(GTK_BOX(gauge_center), goal_label);
+  gtk_box_append(GTK_BOX(gauge_center), goal_badge_);
+  gtk_overlay_set_child(GTK_OVERLAY(gauge_overlay), gauge_area_);
+  gtk_overlay_add_overlay(GTK_OVERLAY(gauge_overlay), gauge_center);
+  gtk_box_append(GTK_BOX(card), gauge_overlay);
+
+  gtk_box_append(GTK_BOX(card), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+  auto* streak = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_margin_top(streak, 18);
+  gtk_widget_set_margin_bottom(streak, 18);
+  auto* days = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_set_halign(days, GTK_ALIGN_CENTER);
+  for (int i = 0; i < 7; ++i) {
+    auto* day = gtk_label_new(kWeekSymbols[i]);
+    gtk_widget_set_halign(day, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(day, GTK_ALIGN_CENTER);
+    gtk_widget_set_size_request(day, 30, 30);
+    gtk_widget_add_css_class(day, "streak-day");
+    streak_day_labels_[static_cast<std::size_t>(i)] = day;
+    gtk_box_append(GTK_BOX(days), day);
+  }
+  gtk_box_append(GTK_BOX(streak), days);
+  streak_text_ = gtk_label_new(nullptr);
+  gtk_widget_add_css_class(streak_text_, "caption");
+  gtk_widget_add_css_class(streak_text_, "dim-label");
+  gtk_widget_set_halign(streak_text_, GTK_ALIGN_CENTER);
+  gtk_box_append(GTK_BOX(streak), streak_text_);
+  gtk_box_append(GTK_BOX(card), streak);
+  gtk_box_append(GTK_BOX(box), card);
+
+  // continue-reading strip (mac continueRow): re-homes the cover cells
+  continue_title_ = gtk_label_new(Tr("ui.shelf.continue").c_str());
+  gtk_label_set_xalign(GTK_LABEL(continue_title_), 0.0f);
+  gtk_widget_add_css_class(continue_title_, "shelf-section-title");
+  gtk_box_append(GTK_BOX(box), continue_title_);
+  continue_scroll_ = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(continue_scroll_),
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
+  continue_box_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 22);
+  gtk_widget_set_margin_top(continue_box_, 4);
+  gtk_widget_set_margin_bottom(continue_box_, 4);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(continue_scroll_),
+                                continue_box_);
+  gtk_box_append(GTK_BOX(box), continue_scroll_);
+
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(home_scroll_), box);
+  return home_scroll_;
+}
+
+void Shelf::update_home_stats() {
+  gtk_label_set_text(GTK_LABEL(minutes_label_),
+                     (std::to_string(today_minutes_) + " " +
+                      Tr("ui.shelf.minutes"))
+                         .c_str());
+  double const ratio =
+      std::clamp(static_cast<double>(today_minutes_) /
+                     static_cast<double>(std::max(kGoalMinutes, 1)),
+                 0.0, 1.0);
+  gtk_widget_set_visible(goal_badge_, ratio >= 1.0);
+  for (int i = 0; i < 7; ++i) {
+    GtkWidget* day = streak_day_labels_[static_cast<std::size_t>(i)];
+    if (day == nullptr) continue;
+    bool const read = week_minutes_[static_cast<std::size_t>(i)] > 0;
+    if (read) {
+      gtk_widget_add_css_class(day, "streak-day-read");
+    } else {
+      gtk_widget_remove_css_class(day, "streak-day-read");
+    }
+  }
+  gtk_label_set_text(
+      GTK_LABEL(streak_text_),
+      (streak_days_ > 0 ? Trf("ui.shelf.streak-record",
+                              std::to_string(streak_days_))
+                        : Tr("ui.shelf.streak-start"))
+          .c_str());
+  gtk_widget_queue_draw(gauge_area_);
+}
+
+void Shelf::rebuild_continue_strip() {
+  GtkWidget* child = nullptr;
+  while ((child = gtk_widget_get_first_child(continue_box_)) != nullptr) {
+    gtk_box_remove(GTK_BOX(continue_box_), child);
+  }
+  bool any = false;
+  for (auto const& entry : library_) {
+    auto const progress = progress_for(entry);
+    if (!progress.has_value() || progress->first >= progress->second) continue;
+    GtkWidget* cell = build_cell(entry);
+    // Double-click opens; the grid gets that from the flow box's
+    // child-activated, the strip has no flow box to lean on.
+    auto* gesture = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture),
+                                  GDK_BUTTON_PRIMARY);
+    hook(
+        gesture, "pressed",
+        +[](GtkGestureClick* gesture, gint n_press, double, double,
+            gpointer data) {
+          if (n_press != 2) return;
+          auto* self = static_cast<Shelf*>(data);
+          auto* cell = gtk_event_controller_get_widget(
+              GTK_EVENT_CONTROLLER(gesture));
+          auto const* path = static_cast<char const*>(
+              g_object_get_data(G_OBJECT(cell), "shelf-path"));
+          if (path == nullptr) return;
+          auto const* entry = self->context_entry_of(path);
+          if (entry == nullptr || entry->status == "missing") return;
+          self->hooks_.open(path);
+        },
+        this);
+    gtk_widget_add_controller(cell, GTK_EVENT_CONTROLLER(gesture));
+    gtk_box_append(GTK_BOX(continue_box_), cell);
+    any = true;
+  }
+  gtk_widget_set_visible(continue_title_, any);
+  gtk_widget_set_visible(continue_scroll_, any);
+}
 
 // ---------------------------------------------------------------------------
 // model helpers (mac shelfCollections / shelfEntries / shelfProgress parity)
@@ -251,11 +695,20 @@ std::vector<rivet_app::LibraryEntry const*> Shelf::visible_entries() const {
   std::vector<rivet_app::LibraryEntry const*> rows;
   rows.reserve(library_.size());
   for (auto const& entry : library_) {
-    if (filter_ == "unfiled") {
-      if (!entry.collections.empty()) continue;
-    } else if (!filter_.empty()) {
+    // scope semantics (mac shelfEntries switch parity)
+    if (selection_ == "want") {
+      if (progress_for(entry).has_value()) continue;  // never opened
+    } else if (selection_ == "finished") {
+      auto const progress = progress_for(entry);
+      if (!progress.has_value() || progress->first < progress->second) {
+        continue;
+      }
+    } else if (selection_ == "pdf" || selection_ == "epub") {
+      if (entry.kind != selection_) continue;
+    } else if (selection_.rfind("c:", 0) == 0) {
+      std::string const name = selection_.substr(2);
       if (std::find(entry.collections.begin(), entry.collections.end(),
-                    filter_) == entry.collections.end()) {
+                    name) == entry.collections.end()) {
         continue;
       }
     }
@@ -305,8 +758,12 @@ void Shelf::set_active(bool active) {
   active_ = active;
   gtk_widget_set_visible(header_import_, active);
   gtk_widget_set_visible(header_spinner_, active && importing_);
-  gtk_widget_set_visible(header_filter_, active);
   gtk_widget_set_visible(header_search_, active);
+  if (active) {
+    // the day may have rolled over while the reader owned the window
+    refresh_reading_stats();
+    update_home_stats();
+  }
 }
 
 GtkWidget* Shelf::build_empty_state() {
@@ -336,49 +793,27 @@ GtkWidget* Shelf::build_empty_state() {
 }
 
 void Shelf::rebuild() {
-  rebuild_filter_model();
+  rebuild_sidebar();
   gtk_flow_box_remove_all(flow_);
   auto const rows = visible_entries();
   for (auto const* entry : rows) {
     gtk_flow_box_append(flow_, build_cell(*entry));
   }
-  if (!loaded_) {
-    gtk_stack_set_visible_child_name(GTK_STACK(page_), "loading");
+  char const* visible = "grid";
+  if (selection_ == "home") {
+    // the digest shows immediately (mac parity — the goals card does not
+    // wait for the library); the continue strip re-homes on each rebuild
+    rebuild_continue_strip();
+    update_home_stats();
+    visible = "home";
+  } else if (!loaded_) {
+    visible = "loading";
   } else if (rows.empty()) {
     gtk_widget_set_sensitive(GTK_WIDGET(empty_import_),
                              hooks_.api() != nullptr);
-    gtk_stack_set_visible_child_name(GTK_STACK(page_), "empty");
-  } else {
-    gtk_stack_set_visible_child_name(GTK_STACK(page_), "grid");
+    visible = "empty";
   }
-}
-
-void Shelf::rebuild_filter_model() {
-  updating_filter_ = true;
-  auto const cols = collections();
-  auto* strings = gtk_string_list_new(nullptr);
-  gtk_string_list_append(strings, Tr("ui.library.all").c_str());
-  gtk_string_list_append(strings, Tr("ui.library.unfiled").c_str());
-  for (auto const& name : cols) {
-    gtk_string_list_append(strings, name.c_str());
-  }
-  gtk_drop_down_set_model(dropdown_, G_LIST_MODEL(strings));
-  g_object_unref(strings);
-
-  guint selected = 0;
-  if (filter_ == "unfiled") {
-    selected = 1;
-  } else if (!filter_.empty()) {
-    for (std::size_t i = 0; i < cols.size(); ++i) {
-      if (cols[i] == filter_) {
-        selected = static_cast<guint>(2 + i);
-        break;
-      }
-    }
-    if (selected == 0) filter_.clear();  // the collection is gone
-  }
-  gtk_drop_down_set_selected(dropdown_, selected);
-  updating_filter_ = false;
+  gtk_stack_set_visible_child_name(detail_, visible);
 }
 
 GtkWidget* Shelf::build_cell(rivet_app::LibraryEntry const& entry) {
@@ -760,7 +1195,10 @@ void Shelf::install_actions() {
   };
   add("lib-new-collection",
       +[](GSimpleAction*, GVariant*, gpointer data) {
-        static_cast<Shelf*>(data)->new_collection_dialog();
+        auto* self = static_cast<Shelf*>(data);
+        self->run_new_collection_dialog([self](std::string const& name) {
+          self->create_collection_and_assign(name);
+        });
       }, this);
   add("lib-add-to",
       +[](GSimpleAction*, GVariant* value, gpointer data) {
@@ -907,7 +1345,24 @@ void Shelf::create_collection_and_assign(std::string const& name) {
       });
 }
 
-void Shelf::new_collection_dialog() {
+void Shelf::create_collection_only(std::string const& name) {
+  auto* api = hooks_.api();
+  if (api == nullptr || name.empty()) return;
+  (void)api->library_collection_create_async(
+      name, [this, name](rivet_app::Result<void>) {
+        host::dispatch_ui([this, name]() mutable {
+          // the sidebar rows list only collections books belong to (mac
+          // shelfCollections parity) — an empty one shows as an empty grid
+          // until a book joins
+          selection_ = "c:" + name;
+          refresh();
+          if (hooks_.title_changed) hooks_.title_changed();
+        });
+      });
+}
+
+void Shelf::run_new_collection_dialog(
+    std::function<void(std::string const&)> on_ok) {
   if (window_ == nullptr) return;
   auto* dialog = gtk_dialog_new_with_buttons(
       Tr("ui.library.new-collection").c_str(), window_,
@@ -928,20 +1383,25 @@ void Shelf::new_collection_dialog() {
   gtk_entry_set_activates_default(GTK_ENTRY(entry), TRUE);
   gtk_box_append(GTK_BOX(box), entry);
   gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+  auto* handler = new std::function<void(std::string const&)>(std::move(on_ok));
+  g_object_set_data_full(G_OBJECT(dialog), "shelf-on-ok", handler,
+                         +[](gpointer data) {
+                           delete static_cast<std::function<
+                               void(std::string const&)>*>(data);
+                         });
+  // The entry dies with the dialog; the response fires before destroy.
   hook(
       dialog, "response",
       +[](GtkDialog* dialog, int response, gpointer user_data) {
         auto* entry = GTK_ENTRY(user_data);
-        if (response == GTK_RESPONSE_OK) {
+        auto* self = static_cast<Shelf*>(
+            g_object_get_data(G_OBJECT(dialog), "shelf-owner"));
+        auto* on_ok = static_cast<std::function<void(std::string const&)>*>(
+            g_object_get_data(G_OBJECT(dialog), "shelf-on-ok"));
+        if (response == GTK_RESPONSE_OK && self != nullptr && on_ok != nullptr) {
           std::string const name =
               trim(gtk_editable_get_text(GTK_EDITABLE(entry)));
-          if (!name.empty()) {
-            // The Shelf pointer rides on the dialog (the entry dies with
-            // it, the shelf outlives it).
-            auto* self = static_cast<Shelf*>(
-                g_object_get_data(G_OBJECT(dialog), "shelf-owner"));
-            if (self != nullptr) self->create_collection_and_assign(name);
-          }
+          if (!name.empty()) (*on_ok)(name);
         }
         gtk_window_destroy(GTK_WINDOW(dialog));
       },
