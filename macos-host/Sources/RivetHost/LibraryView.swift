@@ -212,7 +212,30 @@ struct ShelfGrid: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 190)
                 .focused($searchFocused)
+            todayRing
         }
+    }
+
+    /// The Books toolbar mini-gauge: today's minutes over the goal.
+    private var todayRing: some View {
+        let ratio = min(1.0, Double(app.todaySeconds) / Double(app.dailyGoalSeconds))
+        return ZStack {
+            Circle()
+                .stroke(Theme.border, lineWidth: 2.5)
+            Circle()
+                .trim(from: 0, to: CGFloat(ratio))
+                .stroke(Theme.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            VStack(spacing: 0) {
+                Text("\(app.todaySeconds / 60)")
+                    .font(.system(size: 9, weight: .bold).monospacedDigit())
+                Text("/ \(app.dailyGoalSeconds / 60)")
+                    .font(.system(size: 7))
+                    .foregroundStyle(Theme.textFaint)
+            }
+        }
+        .frame(width: 30, height: 30)
+        .help(L10n.t("ui.shelf.today"))
     }
 }
 
@@ -227,6 +250,8 @@ struct HomeDigest: View {
                 Text(L10n.t("ui.shelf.home"))
                     .font(.system(size: 34, weight: .bold))
                     .padding(.top, 12)
+
+                goalsCard
 
                 if !readingNow.isEmpty {
                     Text(L10n.t("ui.shelf.continue"))
@@ -246,6 +271,110 @@ struct HomeDigest: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg)
         .foregroundStyle(Theme.text)
+    }
+
+    private var goalRatio: Double {
+        min(1.0, Double(app.todaySeconds) / Double(app.dailyGoalSeconds))
+    }
+
+    // MARK: goals card (Books form: gauge + daily-goal caption + black pill)
+
+    private var goalsCard: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                SemiGauge()
+                    .stroke(Theme.border, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                SemiGauge(trim: CGFloat(goalRatio))
+                    .stroke(Color.primary,
+                            style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                VStack(spacing: 4) {
+                    Text(L10n.t("ui.shelf.today"))
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(AppModel.mmss(app.todaySeconds))
+                        .font(.system(size: 46, weight: .bold).monospacedDigit())
+                    Text(L10n.t("ui.shelf.goal-of"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textDim)
+                    if goalRatio >= 1 {
+                        Text(L10n.t("ui.shelf.goal-hit"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Theme.accentSoft))
+                    }
+                }
+            }
+            .frame(height: 210)
+            .padding(.top, 24)
+
+            continuePill
+                .padding(.bottom, 24)
+
+            Divider().overlay(Theme.border)
+
+            streakRow
+                .padding(.vertical, 18)
+        }
+        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.panel))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
+        .frame(maxWidth: 760)
+    }
+
+    /// The Books card carries a black store button; ours opens the book the
+    /// user last read (or the open panel when there is none).
+    @ViewBuilder
+    private var continuePill: some View {
+        if let last = app.recents.first {
+            Button {
+                app.openWindow?(last.path)
+            } label: {
+                Text(L10n.t("ui.shelf.continue"))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 12)
+                    .background(Capsule().fill(Color.primary))
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button(L10n.t("ui.library.import")) {
+                app.pickAndOpen()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.accent)
+        }
+    }
+
+    private var streakRow: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                let symbols = ["一", "二", "三", "四", "五", "六", "日"]
+                ForEach(0..<7, id: \.self) { index in
+                    let read = app.weekSeconds.indices.contains(index)
+                        && app.weekSeconds[index] >= 60
+                    ZStack {
+                        Circle()
+                            .fill(read ? Color.primary : Theme.panelAlt)
+                            .overlay(Circle().stroke(Theme.border))
+                            .frame(width: 30, height: 30)
+                        Text(symbols[index])
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(read ? Color.white : Theme.textDim)
+                    }
+                }
+            }
+            if app.streakDays > 0 {
+                Text(L10n.t("ui.shelf.streak-record", "\(app.streakDays)"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textDim)
+            } else {
+                Text(L10n.t("ui.shelf.streak-start"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textDim)
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var readingNow: [RivetTypes.LibraryEntry] {
@@ -281,6 +410,22 @@ struct HomeDigest: View {
             }
             .padding(.vertical, 4)
         }
+    }
+}
+
+/// Top-half arc, starting at the left horizon sweeping right; `trim`
+/// fraction is relative to the half-circle.
+struct SemiGauge: Shape {
+    var trim: CGFloat = 1.0
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addArc(center: CGPoint(x: rect.midX, y: rect.maxY),
+                    radius: min(rect.width / 2, rect.height),
+                    startAngle: .degrees(180),
+                    endAngle: .degrees(0),
+                    clockwise: false)
+        return path.trimmedPath(from: 0.0001, to: max(0.0002, trim))
     }
 }
 

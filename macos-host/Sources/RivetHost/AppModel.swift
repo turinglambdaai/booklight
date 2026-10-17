@@ -79,6 +79,78 @@ final class AppModel: ObservableObject {
         return (Int(recent.page), max(1, Int(entry.pages)))
     }
 
+    // ---- reading time (Books-style: live seconds toward a daily goal) ----
+    // Persisted device-locally per day; cross-device merging through file
+    // sync would double-count, so this deliberately never leaves the machine.
+    @Published var todaySeconds = 0
+    @Published var weekSeconds: [Int] = Array(repeating: 0, count: 7) // Mon..Sun
+    @Published var streakDays = 0
+    let dailyGoalSeconds = 20 * 60
+
+    private var readingClock: Timer?
+    private let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    static func mmss(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    func startReadingClock() {
+        guard readingClock == nil else { return }
+        refreshReadingStats()
+        readingClock = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tickReadingSecond() }
+        }
+    }
+
+    private func readingActive() -> Bool {
+        activeReader?.hasDocument == true
+            && NSApp.windows.contains { $0.isVisible && $0.isKeyWindow }
+    }
+
+    private func tickReadingSecond() {
+        guard readingActive() else { return }
+        addReadingSeconds(1)
+    }
+
+    func addReadingSeconds(_ seconds: Int) {
+        let day = dayFormatter.string(from: Date())
+        var stats = UserDefaults.standard.dictionary(forKey: "booklight-reading-seconds")
+            as? [String: Int] ?? [:]
+        stats[day, default: 0] += seconds
+        UserDefaults.standard.set(stats, forKey: "booklight-reading-seconds")
+        refreshReadingStats()
+    }
+
+    func refreshReadingStats() {
+        let stats = UserDefaults.standard.dictionary(forKey: "booklight-reading-seconds")
+            as? [String: Int] ?? [:]
+        let today = dayFormatter.string(from: Date())
+        todaySeconds = stats[today] ?? 0
+        let cal = Calendar(identifier: .iso8601)
+        let week = cal.dateInterval(of: .weekOfYear, for: Date())!.start
+        weekSeconds = (0..<7).map { offset in
+            let day = dayFormatter.string(from: cal.date(byAdding: .day, value: offset, to: week)!)
+            return stats[day] ?? 0
+        }
+        // current streak: consecutive days with at least a minute of reading,
+        // ending today (or yesterday, if today hasn't started yet)
+        var streak = 0
+        var cursor = Date()
+        if (stats[dayFormatter.string(from: cursor)] ?? 0) < 60 {
+            cursor = cal.date(byAdding: .day, value: -1, to: cursor)!
+        }
+        while (stats[dayFormatter.string(from: cursor)] ?? 0) >= 60 {
+            streak += 1
+            cursor = cal.date(byAdding: .day, value: -1, to: cursor)!
+        }
+        streakDays = streak
+    }
+
     func loadLibrary() async {
         guard let api else { return }
         library = (try? await api.get_library()) ?? library
@@ -375,6 +447,7 @@ final class AppModel: ObservableObject {
             // Refresh missing statuses in the background; the shelf shows
             // whatever is known the moment it is on screen.
             Task { [weak self] in await self?.rescanShelf() }
+            startReadingClock()
             autoCheckForUpdates()
         } catch {
             ready = false
