@@ -1,8 +1,8 @@
-// The bookshelf: the launch surface (the notebook's empty state IS the
-// shelf). Cover grid over the backend's library catalog, collections
-// filter, search, host-side import (hosts own the renderers — PDF page-1
-// covers render here through PDFium/cairo) and the context actions
-// (collections, reveal, relink, remove).
+// The bookshelf, Books arrangement (mac LibraryView.swift parity): a
+// source-list sidebar (home / search / smart scopes / collections) over a
+// detail area that is either the Home page (continue-reading and
+// recently-added cover strips) or the cover grid for the selected scope.
+// Books are cataloged in place; nothing here ever copies or moves a file.
 //
 // The macOS host (macos-host/Sources/RivetHost/LibraryView.swift +
 // AppModel.swift shelf section) is the behavior spec: catalog state lives
@@ -32,6 +32,8 @@ class Shelf {
     std::function<rivet_app::API*()> api;          // null until backend ready
     std::function<std::vector<rivet_app::RecentEntry>()> recents;
     std::function<GtkWindow*()> window;
+    // The header-bar title follows the sidebar selection.
+    std::function<void()> title_changed;
   };
 
   explicit Shelf(Hooks hooks);
@@ -40,21 +42,23 @@ class Shelf {
   Shelf(Shelf const&) = delete;
   Shelf& operator=(Shelf const&) = delete;
 
-  // The stack page holding grid / empty state (goes under "shelf" in the
-  // window's main stack).
+  // The whole Books surface (GtkPaned: sidebar | detail) — goes under
+  // "shelf" in the window's main stack.
   GtkWidget* page() const { return page_; }
 
   // Header-bar widgets (packed by main.cpp; visibility follows set_active).
   GtkWidget* header_import() const { return header_import_; }
   GtkWidget* header_spinner() const { return header_spinner_; }
-  GtkWidget* header_filter() const { return header_filter_; }
   GtkWidget* header_search() const { return header_search_; }
+
+  // The sidebar selection as a header-bar title (mac navigationTitle).
+  std::string current_title() const;
 
   // Shelf is the active surface (nothing open in the notebook). Toggles the
   // shelf-only header controls.
   void set_active(bool active);
 
-  // Pulls get-library through the backend and rebuilds the grid. Safe to
+  // Pulls get-library through the backend and rebuilds the detail. Safe to
   // call any time; no-ops before the backend is ready.
   void refresh();
 
@@ -72,7 +76,21 @@ class Shelf {
   void import_book(std::string const& path);
 
  private:
-  // ---- view assembly ----
+  // ---- sidebar (Books source list) ----
+  GtkWidget* build_sidebar();
+  void rebuild_sidebar();
+  GtkWidget* make_nav_row(char const* icon, std::string const& label,
+                          std::string const& nav);
+  GtkWidget* make_header_row(std::string const& label);
+  void append_collection_rows();
+  void select_row_for(std::string const& nav);
+  void on_sidebar_selection();
+  void select_nav(std::string const& nav);
+
+  // ---- detail (home strips | grid | empty | loading) ----
+  GtkWidget* build_home();
+  void rebuild_home_strips();
+
   GtkWidget* build_empty_state();
   void rebuild();
   GtkWidget* build_cell(rivet_app::LibraryEntry const& entry);
@@ -80,10 +98,9 @@ class Shelf {
   void show_context_menu(GtkWidget* child, double x, double y);
   void install_actions();
 
-  // ---- filter state ----
+  // ---- scope state ----
   std::vector<std::string> collections() const;
   std::vector<rivet_app::LibraryEntry const*> visible_entries() const;
-  void rebuild_filter_model();
   std::optional<std::pair<int, int>> progress_for(
       rivet_app::LibraryEntry const& entry) const;
 
@@ -98,8 +115,10 @@ class Shelf {
   rivet_app::LibraryEntry const* context_entry() const;
   rivet_app::LibraryEntry const* context_entry_of(
       std::string const& path) const;
-  void new_collection_dialog();
+  void run_new_collection_dialog(
+      std::function<void(std::string const&)> on_ok);
   void create_collection_and_assign(std::string const& name);
+  void create_collection_only(std::string const& name);
   void relink_chooser();
   void reveal_entry();
   void remove_entry();
@@ -108,26 +127,41 @@ class Shelf {
   Hooks hooks_;
 
   // ---- widgets ----
-  GtkWidget* page_{nullptr};       // GtkStack: grid | empty | loading
+  GtkWidget* page_{nullptr};        // GtkPaned: sidebar | detail
+  GtkWidget* sidebar_scroll_{nullptr};
+  GtkListBox* sidebar_{nullptr};
+  GtkStack* detail_{nullptr};       // home | grid | empty | loading
   GtkWidget* grid_scroll_{nullptr};
   GtkFlowBox* flow_{nullptr};
   GtkWidget* empty_state_{nullptr};
   GtkWidget* header_import_{nullptr};
   GtkWidget* header_spinner_{nullptr};
-  GtkWidget* header_filter_{nullptr};
-  GtkDropDown* dropdown_{nullptr};
-  GtkWidget* header_search_{nullptr};
   GtkSearchEntry* search_entry_{nullptr};
+  GtkWidget* header_search_{nullptr};
   GtkButton* empty_import_{nullptr};
+
+  // home page widgets the strips rebuild in place
+  GtkWidget* home_scroll_{nullptr};
+  GtkWidget* home_title_{nullptr};
+  GtkWidget* continue_title_{nullptr};
+  GtkWidget* continue_scroll_{nullptr};
+  GtkWidget* continue_box_{nullptr};
+  GtkWidget* recent_title_{nullptr};
+  GtkWidget* recent_scroll_{nullptr};
+  GtkWidget* recent_box_{nullptr};
+
+  // ---- navigation state ("home" | "all" | "want" | "finished" | "pdf" |
+  // "epub" | "c:<collection name>"; the search row acts, never selects) ----
+  std::string selection_{"home"};
+  bool updating_nav_{false};
+  std::vector<std::string> sidebar_collections_;  // rows already built
 
   // ---- model ----
   std::vector<rivet_app::LibraryEntry> library_;
   bool loaded_{false};       // get-library answered at least once
   bool scanned_{false};      // background missing-status rescan done
-  std::string filter_;       // "" = all, "unfiled", or a collection name
   std::string search_;       // client-side title/author needle
   bool active_{true};
-  bool updating_filter_{false};
 
   // ---- context menu target (set when the popover opens) ----
   std::string context_path_;

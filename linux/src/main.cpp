@@ -297,9 +297,14 @@ void set_theme(std::string const& theme) {
 // ---------------------------------------------------------------------------
 
 void refresh_header_title() {
-  // Shelf surface (launch state): the window title names the shelf.
+  // Shelf surface (launch state): the title follows the sidebar selection
+  // (mac navigationTitle parity).
   if (g_host.shelf_visible) {
-    gtk_label_set_text(g_host.title_label, Tr("ui.library.title").c_str());
+    gtk_label_set_text(g_host.title_label,
+                       (g_host.shelf != nullptr
+                            ? g_host.shelf->current_title()
+                            : Tr("ui.library.title"))
+                           .c_str());
     gtk_label_set_text(g_host.subtitle_label, "");
     return;
   }
@@ -2973,8 +2978,7 @@ void on_activate(GtkApplication* app, gpointer) {
 
   // shelf header controls (visible only while the shelf is the active
   // surface — update_main_stack toggles them with the reader chrome).
-  // pack_end order paints right-to-left: menu | search | filter, the mac
-  // toolbar arrangement.
+  // pack_end paints right-to-left: menu | search, the mac toolbar row.
   g_host.shelf = std::make_unique<pdfgist::Shelf>(pdfgist::Shelf::Hooks{
       [](std::string const& p) { open_path(p); },
       [](std::string const& m) { host_alert(m); },
@@ -2984,6 +2988,7 @@ void on_activate(GtkApplication* app, gpointer) {
       },
       [] { return g_host.recents; },
       [] { return g_host.window; },
+      [] { refresh_header_title(); },
   });
   gtk_header_bar_pack_start(GTK_HEADER_BAR(header),
                             g_host.shelf->header_import());
@@ -2991,8 +2996,6 @@ void on_activate(GtkApplication* app, gpointer) {
                             g_host.shelf->header_spinner());
   gtk_header_bar_pack_end(GTK_HEADER_BAR(header),
                           g_host.shelf->header_search());
-  gtk_header_bar_pack_end(GTK_HEADER_BAR(header),
-                          g_host.shelf->header_filter());
 
   auto* title_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   // launch state is the shelf; refresh_header_title keeps it in sync
@@ -3073,8 +3076,8 @@ void on_activate(GtkApplication* app, gpointer) {
                                 GTK_STACK_TRANSITION_TYPE_NONE);
   gtk_box_append(GTK_BOX(root), main_stack);
 
-  // shelf page: cover grid over the backend library (collections filter and
-  // search live in the header bar, packed above).
+  // shelf page: the Books surface (source-list sidebar over the home
+  // digest / cover grid; search lives in the header bar, packed above).
   gtk_stack_add_named(GTK_STACK(main_stack), g_host.shelf->page(), "shelf");
 
   // reader page: left sidebar | notebook | AI panel
