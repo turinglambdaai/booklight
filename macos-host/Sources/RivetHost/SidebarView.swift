@@ -21,7 +21,8 @@ struct ReaderSidebar: View {
                 emptyHint
             }
         }
-        .background(Theme.panel)
+        // No custom background: the NavigationSplitView sidebar column
+        // provides the system sidebar material on its own.
     }
 
     @ViewBuilder
