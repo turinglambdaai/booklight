@@ -166,7 +166,7 @@
                         ItemInvoked="ShelfNav_ItemInvoked">
                         <!-- menu items are built in code: the collections section is dynamic -->
                         <Grid>
-                            <!-- home digest: today's goal gauge, streak, continue-reading -->
+                            <!-- home digest: continue-reading + recently added -->
                             <ScrollViewer x:Name="HomePane">
                                 <StackPanel Padding="32,16,32,32" Spacing="24">
                                     <TextBlock
@@ -174,78 +174,6 @@
                                         FontSize="34"
                                         FontWeight="Bold"
                                         Margin="0,12,0,0" />
-                                    <Border
-                                        x:Name="GoalsCard"
-                                        CornerRadius="14"
-                                        BorderThickness="1"
-                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                        MaxWidth="760"
-                                        HorizontalAlignment="Left">
-                                        <StackPanel>
-                                            <Grid
-                                                Width="280"
-                                                Height="150"
-                                                HorizontalAlignment="Center"
-                                                Margin="0,8,0,12">
-                                                <Path
-                                                    x:Name="GoalTrackPath"
-                                                    StrokeThickness="10"
-                                                    StrokeStartLineCap="Round"
-                                                    StrokeEndLineCap="Round" />
-                                                <Path
-                                                    x:Name="GoalProgressPath"
-                                                    StrokeThickness="10"
-                                                    StrokeStartLineCap="Round"
-                                                    StrokeEndLineCap="Round"
-                                                    Visibility="Collapsed" />
-                                                <StackPanel
-                                                    x:Name="GoalCenter"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center"
-                                                    Spacing="4"
-                                                    Margin="0,14,0,0">
-                                                    <TextBlock
-                                                        x:Name="GoalTodayLabel"
-                                                        FontSize="15"
-                                                        FontWeight="SemiBold"
-                                                        HorizontalAlignment="Center" />
-                                                    <TextBlock
-                                                        x:Name="GoalMinutes"
-                                                        FontSize="44"
-                                                        FontWeight="Bold"
-                                                        HorizontalAlignment="Center" />
-                                                    <TextBlock
-                                                        x:Name="GoalOfLabel"
-                                                        FontSize="12"
-                                                        Opacity="0.6"
-                                                        HorizontalAlignment="Center" />
-                                                    <Border
-                                                        x:Name="GoalHitBadge"
-                                                        CornerRadius="10"
-                                                        Padding="8,2"
-                                                        HorizontalAlignment="Center"
-                                                        Visibility="Collapsed">
-                                                        <TextBlock x:Name="GoalHitText" FontSize="11" FontWeight="SemiBold" />
-                                                    </Border>
-                                                </StackPanel>
-                                            </Grid>
-                                            <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                                            <StackPanel Margin="0,18">
-                                                <StackPanel
-                                                    x:Name="StreakRow"
-                                                    Orientation="Horizontal"
-                                                    Spacing="10"
-                                                    HorizontalAlignment="Center" />
-                                                <TextBlock
-                                                    x:Name="StreakLabel"
-                                                    FontSize="12"
-                                                    Opacity="0.6"
-                                                    HorizontalAlignment="Center"
-                                                    Margin="0,8,0,0" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
                                     <TextBlock
                                         x:Name="ContinueHeader"
                                         FontSize="17"
@@ -259,6 +187,20 @@
                                         VerticalScrollBarVisibility="Disabled"
                                         Visibility="Collapsed">
                                         <StackPanel x:Name="ContinueRow" Orientation="Horizontal" Spacing="22" Margin="0,4" />
+                                    </ScrollViewer>
+                                    <TextBlock
+                                        x:Name="RecentHeader"
+                                        FontSize="17"
+                                        FontWeight="SemiBold"
+                                        Visibility="Collapsed" />
+                                    <ScrollViewer
+                                        x:Name="RecentScroll"
+                                        HorizontalAlignment="Left"
+                                        HorizontalScrollBarVisibility="Auto"
+                                        HorizontalScrollMode="Auto"
+                                        VerticalScrollBarVisibility="Disabled"
+                                        Visibility="Collapsed">
+                                        <StackPanel x:Name="RecentRow" Orientation="Horizontal" Spacing="22" Margin="0,4" />
                                     </ScrollViewer>
                                 </StackPanel>
                             </ScrollViewer>

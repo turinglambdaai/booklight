@@ -484,16 +484,6 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ShelfRemove(rivet_app::LibraryEntry const& entry);
   void RevealInExplorer(std::wstring const& path);
 
-  // ---- reading time (MainWindow.Shelf.cpp) — device-local, never synced ----
-  std::wstring ReadingMinutesPath() const;
-  void LoadReadingStats();
-  void SaveReadingStats();
-  void RefreshReadingStats();
-  void AddReadingMinutes(int minutes);
-  void TickReadingMinute();
-  void StartReadingClock();
-  int LookupMinutes(std::wstring const& day) const;
-
   std::vector<rivet_app::LibraryEntry> library_;
   bool library_loaded_ = false;
   bool library_importing_ = false;
@@ -503,14 +493,6 @@ struct MainWindow : MainWindowT<MainWindow> {
   std::map<std::wstring,
            winrt::Microsoft::UI::Xaml::Controls::NavigationViewItem>
       shelf_nav_items_;
-
-  // minute buckets keyed "yyyy-MM-dd" (mac booklight-reading-minutes parity)
-  std::map<std::wstring, int> reading_minutes_;
-  int today_minutes_ = 0;
-  std::array<int, 7> week_minutes_{};  // Mon..Sun
-  int streak_days_ = 0;
-  static constexpr int kGoalMinutes = 20;
-  winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer reading_timer_{nullptr};
 
   // ---- AcroForm pane (MainWindow.Forms.cpp) ----
   void BuildFormsPane();

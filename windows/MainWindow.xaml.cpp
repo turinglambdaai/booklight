@@ -174,9 +174,8 @@ MainWindow::MainWindow() {
   ChatInput().PlaceholderText(pdfgist::Tr("ui.chat.placeholder"));
 
   // shelf chrome must exist before ApplyTheme, which refreshes the shelf
-  // so code-built colors re-resolve (nav rows, gauge, streak circles).
+  // so code-built colors re-resolve (nav rows, home rows).
   RebuildShelfNav();
-  LoadReadingStats();
 
   LoadHostPrefs();
   ApplyTheme();
@@ -225,8 +224,6 @@ MainWindow::MainWindow() {
       }
     }
   });
-
-  StartReadingClock();
 
   InitializeBackendAsync();
 }
@@ -467,7 +464,7 @@ void MainWindow::ApplyTheme() {
   }
   if (epub_) ApplyEpubTheme(*epub_);
   RelayoutActive();
-  // code-built shelf colors (nav rows, gauge, streak circles) resolve per
+  // code-built shelf colors (nav rows, home strip cells) resolve per
   // scheme; rebuild so a toggle never leaves a stale scheme on the shelf.
   RefreshShelf();
 }
