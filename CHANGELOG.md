@@ -3,6 +3,19 @@
 All notable changes to Booklight are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semver.
 
+## [Unreleased]
+
+### Added
+- Windows host: a Help menu in the command bar with the Check for
+  Updates…/About pair — the manual check had been missing on Windows
+  (only the silent launch check existed); About mirrors the settings
+  pane's facts.
+
+### Changed
+- "Check for Updates…" moved next to About per the family menu
+  convention on every platform (macOS App menu, Windows/Linux Help
+  menu).
+
 ## [0.1.0] - 2026-10-16
 
 The first release of **Booklight** — the reading-first rebuild of what

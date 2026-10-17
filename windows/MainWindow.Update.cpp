@@ -204,6 +204,26 @@ std::wstring FormatSize(std::int64_t bytes) {
 // Startup path: a few seconds after ready, fire the throttled silent check.
 // The backend enforces the daily window (check-updates force=false answers
 // "throttled" without a network round trip beyond the manifest).
+// Help-menu entries (family menu convention: Check for Updates… and
+// About are a pair). The manual check bypasses the launch throttle; the
+// About facts mirror the settings pane's footer.
+void MainWindow::MenuCheckUpdates_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  RunUpdateCheck(/*manual=*/true);
+}
+
+void MainWindow::MenuAbout_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  ShowDialog(pdfgist::Tr("ui.menu.about"),
+             pdfgist::Tr("ui.about.blurb") + L"\n\n" +
+                 std::wstring(L"Booklight v") +
+                 winrt::to_hstring(rivet_app::kVersion) + L"\n" +
+                 pdfgist::Tr("ui.about.license"),
+             L"", pdfgist::Tr("ui.update.close"));
+}
+
 void MainWindow::StartAutoUpdateCheck() {
   if (backend_ == nullptr || !backend_->running()) {
     return;

@@ -502,6 +502,10 @@ struct MainWindow : MainWindowT<MainWindow> {
   // ---- updates (MainWindow.Update.cpp) ----
   void StartAutoUpdateCheck();
   void RunUpdateCheck(bool manual);
+  void MenuCheckUpdates_Click(winrt::Windows::Foundation::IInspectable const& sender,
+                              Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void MenuAbout_Click(winrt::Windows::Foundation::IInspectable const& sender,
+                       Microsoft::UI::Xaml::RoutedEventArgs const& args);
   void StartUpdateDownload(std::int64_t size_bytes, std::wstring const& version);
   void PollUpdateState(std::shared_ptr<rivet::windows::Backend> const& backend);
   void HandleUpdatePoll(std::string const& payload);

@@ -90,6 +90,22 @@
                 ToolTipService.ToolTip="深色 / 浅色">
                 <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE706;" />
             </Button>
+            <!-- Family menu convention: Check for Updates… and About live
+                 together in the Help menu. -->
+            <Button x:Name="HelpButton" ToolTipService.ToolTip="Help">
+                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE897;" />
+                <Button.Flyout>
+                    <MenuFlyout>
+                        <MenuFlyoutItem x:Name="MenuCheckUpdates" Click="MenuCheckUpdates_Click">
+                            <MenuFlyoutItem.KeyboardAccelerators>
+                                <KeyboardAccelerator Modifiers="Control" Key="U" />
+                            </MenuFlyoutItem.KeyboardAccelerators>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem x:Name="MenuAbout" Click="MenuAbout_Click" />
+                    </MenuFlyout>
+                </Button.Flyout>
+            </Button>
         </StackPanel>
 
         <Grid Grid.Row="2" x:Name="MainArea">

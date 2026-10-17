@@ -85,6 +85,7 @@
   "ui.forms.type-check": "Check",
   "ui.forms.type-choice": "Choice",
   "ui.forms.type-text": "Text",
+  "ui.menu.help": "Help",
   "ui.menu.about": "About Booklight",
   "ui.menu.close-tab": "Close Tab",
   "ui.menu.copy": "Copy",

@@ -158,6 +158,9 @@ MainWindow::MainWindow() {
   set_tip(AiToggle(), pdfgist::Tr("ui.toolbar.ai"));
   set_tip(ThemeButton(), pdfgist::Tr("ui.toolbar.theme-light") + L" / " +
                              pdfgist::Tr("ui.toolbar.theme-dark"));
+  set_tip(HelpButton(), pdfgist::Tr("ui.menu.help"));
+  MenuCheckUpdates().Text(pdfgist::Tr("ui.update.check-menu"));
+  MenuAbout().Text(pdfgist::Tr("ui.menu.about"));
   ThumbsModeLabel().Text(pdfgist::Tr("ui.viewer.thumbs"));
   OutlineModeLabel().Text(pdfgist::Tr("ui.viewer.outline"));
   NotesModeLabel().Text(pdfgist::Tr("ui.sidebar.annotations"));
