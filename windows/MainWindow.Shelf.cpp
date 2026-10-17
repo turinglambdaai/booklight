@@ -217,8 +217,9 @@ media::Geometry SemiArcGeometry(double fraction) {
 
   media::ArcSegment segment;
   double const angle = kPi * (1.0 - std::clamp(fraction, 0.0, 1.0));  // π → 0
-  segment.Point({kCenterX + kRadius * std::cos(angle),
-                 kCenterY - kRadius * std::sin(angle)});
+  // Point members are float; the cos/sin results need explicit narrowing.
+  segment.Point({static_cast<float>(kCenterX + kRadius * std::cos(angle)),
+                 static_cast<float>(kCenterY - kRadius * std::sin(angle))});
   segment.Size({kRadius, kRadius});
   segment.RotationAngle(0);
   segment.IsLargeArc(false);
@@ -1276,7 +1277,7 @@ void MainWindow::LoadReadingStats() {
     if (!file) return;
     std::string json((std::istreambuf_iterator<char>(file)),
                      std::istreambuf_iterator<char>());
-    static std::regex const pattern("\\\"(\\d{4}-\\d{2}-\\d{2})\\\"\\s*:\\s*(\\d+)");
+    static std::regex const pattern("\"(\\d{4}-\\d{2}-\\d{2})\"\\s*:\\s*(\\d+)");
     for (std::sregex_iterator it(json.begin(), json.end(), pattern), end;
          it != end; ++it) {
       reading_minutes_[to_wide((*it)[1].str())] = std::stoi((*it)[2].str());

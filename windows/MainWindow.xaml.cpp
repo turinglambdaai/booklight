@@ -175,7 +175,7 @@ MainWindow::MainWindow() {
 
   // shelf chrome must exist before ApplyTheme, which refreshes the shelf
   // so code-built colors re-resolve (nav rows, gauge, streak circles).
-  BuildShelfNav();
+  RebuildShelfNav();
   LoadReadingStats();
 
   LoadHostPrefs();
