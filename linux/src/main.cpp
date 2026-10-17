@@ -1840,15 +1840,83 @@ void page_extract_save(PdfTab* tab, rivet::Bytes bytes) {
   gtk_native_dialog_show(GTK_NATIVE_DIALOG(chooser));
 }
 
-void page_watermark_pick() {
+// ---------------------------------------------------------------------------
+// tools (mac Tools menu / ReaderModel parity: watermark + the two exports)
+// ---------------------------------------------------------------------------
+
+// "book.pdf" → "book" — the export default names are <stem>-<page>.png and
+// <stem>.txt (mac saveData nameFieldStringValue parity).
+std::string title_stem(std::string const& title) {
+  std::size_t const dot = title.rfind('.');
+  return dot == std::string::npos ? title : title.substr(0, dot);
+}
+
+std::string ascii_trim(std::string const& s) {
+  auto const begin = s.find_first_not_of(" \t\r\n");
+  if (begin == std::string::npos) return {};
+  auto const end = s.find_last_not_of(" \t\r\n");
+  return s.substr(begin, end - begin + 1);
+}
+
+// Shared typed save dialog (mac ReaderModel.saveData parity): the default
+// name is prefilled, GTK confirms overwrites, and the bytes ride the
+// closure — owned by the destroy notify, freed when the chooser dies.
+void save_bytes_dialog(std::string const& title,
+                       std::string const& default_name, rivet::Bytes data) {
+  auto* chooser = gtk_file_chooser_native_new(
+      title.c_str(), g_host.window, GTK_FILE_CHOOSER_ACTION_SAVE,
+      Tr("ui.dialog.save").c_str(), Tr("ui.password.cancel").c_str());
+  // No explicit overwrite toggle: the setter left the GTK headers in 4.20,
+  // and the portal chooser (every real desktop) confirms overwrites itself,
+  // which is the mac NSSavePanel behavior too.
+  gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(chooser),
+                                    default_name.c_str());
+  auto* payload = new rivet::Bytes(std::move(data));
+  hook(
+      chooser, "response",
+      +[](GtkNativeDialog* native, int response, gpointer user_data) {
+        auto* data = static_cast<rivet::Bytes*>(user_data);
+        if (response == GTK_RESPONSE_ACCEPT) {
+          if (GFile* file =
+                  gtk_file_chooser_get_file(GTK_FILE_CHOOSER(native));
+              file != nullptr) {
+            gchar* path = g_file_get_path(file);
+            g_object_unref(file);
+            if (path != nullptr) {
+              GError* error = nullptr;
+              g_file_set_contents(path,
+                                  reinterpret_cast<char const*>(data->data()),
+                                  static_cast<gssize>(data->size()), &error);
+              if (error != nullptr) {
+                std::string message = error->message;
+                g_error_free(error);
+                host_alert(Trf("ui.export.failed", message));
+              }
+              g_free(path);
+            }
+          }
+        }
+        g_object_unref(native);  // the destroy notify then frees the bytes
+      },
+      payload,
+      +[](gpointer p, GClosure*) { delete static_cast<rivet::Bytes*>(p); },
+      static_cast<GConnectFlags>(0));
+  gtk_native_dialog_show(GTK_NATIVE_DIALOG(chooser));
+}
+
+// Tools > Add Watermark (mac WatermarkSheet parity): watermark text, a
+// 12..144 pt size stepper, a 5..100% opacity slider with a live percent
+// label — baked in-memory through edit-bake-text (opacity in milli-percent
+// = percent * 1000) and reloaded like the other page edits.
+void tools_watermark_dialog() {
   auto* tab = g_host.active_pdf_only();
   if (tab == nullptr || g_host.api == nullptr) return;
   auto* dialog = gtk_dialog_new_with_buttons(
-      Tr("ui.pages.bake").c_str(), g_host.window,
+      Tr("ui.tools.watermark").c_str(), g_host.window,
       static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
                                   GTK_DIALOG_DESTROY_WITH_PARENT),
       Tr("ui.password.cancel").c_str(), GTK_RESPONSE_CANCEL,
-      Tr("ui.dialog.bake").c_str(), GTK_RESPONSE_OK, nullptr);
+      Tr("ui.watermark.apply").c_str(), GTK_RESPONSE_OK, nullptr);
   auto* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
   auto* grid = gtk_grid_new();
   gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
@@ -1863,14 +1931,44 @@ void page_watermark_pick() {
     gtk_grid_attach(GTK_GRID(grid), field, 1, row, 1, 1);
   };
   auto* text = gtk_entry_new();
-  gtk_entry_set_placeholder_text(GTK_ENTRY(text), "CONFIDENTIAL");
-  attach(0, Tr("ui.pages.bake-text").c_str(), text);
-  auto* size = gtk_spin_button_new_with_range(6, 200, 1);
+  // the sheet ships with a starter watermark (mac @State text = "机密";
+  // deliberately not localized, the mac default is the same constant)
+  gtk_editable_set_text(GTK_EDITABLE(text), "机密");
+  attach(0, Tr("ui.watermark.text").c_str(), text);
+  auto* size = gtk_spin_button_new_with_range(12, 144, 1);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(size), 48);
-  attach(1, Tr("ui.pages.bake-size-label").c_str(), size);
-  auto* opacity = gtk_spin_button_new_with_range(0, 100, 1);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(opacity), 15);
-  attach(2, Tr("ui.pages.bake-opacity").c_str(), opacity);
+  attach(1, Tr("ui.watermark.size").c_str(), size);
+  auto* opacity = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 5, 100,
+                                           1);
+  gtk_range_set_value(GTK_RANGE(opacity), 30);
+  gtk_scale_set_draw_value(GTK_SCALE(opacity), FALSE);
+  gtk_widget_set_hexpand(opacity, TRUE);
+  auto* percent = gtk_label_new("30%");
+  gtk_widget_set_size_request(percent, 40, -1);
+  gtk_widget_set_halign(percent, GTK_ALIGN_END);
+  hook(
+      opacity, "value-changed",
+      +[](GtkRange* range, gpointer user_data) {
+        std::string const label =
+            std::to_string(static_cast<int>(gtk_range_get_value(range))) + "%";
+        gtk_label_set_text(GTK_LABEL(user_data), label.c_str());
+      },
+      percent);
+  auto* opacity_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_box_append(GTK_BOX(opacity_row), opacity);
+  gtk_box_append(GTK_BOX(opacity_row), percent);
+  attach(2, Tr("ui.watermark.opacity").c_str(), opacity_row);
+
+  // Apply stays insensitive while the watermark text is blank (mac
+  // .disabled(text.trimmed.isEmpty) parity).
+  auto sync_apply = +[](GtkEditable* editable, gpointer user_data) {
+    std::string const value = gtk_editable_get_text(editable);
+    gtk_dialog_set_response_sensitive(GTK_DIALOG(user_data), GTK_RESPONSE_OK,
+                                      !ascii_trim(value).empty());
+  };
+  sync_apply(GTK_EDITABLE(text), dialog);
+  hook(text, "changed", sync_apply, dialog);
+
   hook(
       dialog, "response",
       +[](GtkDialog* dialog, int response, gpointer user_data) {
@@ -1879,16 +1977,16 @@ void page_watermark_pick() {
           auto* tab2 = g_host.active_pdf_only();
           std::string const watermark = gtk_editable_get_text(
               GTK_EDITABLE((*widgets)[0]));
-          if (tab2 != nullptr && !watermark.empty()) {
+          if (tab2 != nullptr && g_host.api != nullptr &&
+              !watermark.empty()) {
             int const size_points = static_cast<int>(
                 gtk_spin_button_get_value(
                     GTK_SPIN_BUTTON((*widgets)[1])));
             int const opacity_percent = static_cast<int>(
-                gtk_spin_button_get_value(
-                    GTK_SPIN_BUTTON((*widgets)[2])));
+                gtk_range_get_value(GTK_RANGE((*widgets)[2])));
             (void)g_host.api->edit_bake_text_async(
                 tab2->path(), watermark, size_points,
-                opacity_percent * 10, {},
+                opacity_percent * 1000, {},
                 [tab2](rivet_app::Result<rivet::Bytes> result) {
                   host::dispatch_ui([tab2, result]() mutable {
                     if (result.succeeded()) {
@@ -1906,6 +2004,63 @@ void page_watermark_pick() {
       },
       new std::vector<GtkWidget*>{text, size, opacity});
   gtk_window_present(GTK_WINDOW(dialog));
+}
+
+// Tools > Export Current Page as Image: the visible page rendered at 2x
+// (2 device pixels per point, natural colors — no dark inversion), PNG
+// bytes through cairo, then the shared save dialog.
+void tools_export_page_image() {
+  auto* tab = g_host.active_pdf_only();
+  if (tab == nullptr) return;
+  int const page = tab->current_page();
+  cairo_surface_t* surface =
+      tab->document()->render(page - 1, 2.0, false, nullptr, nullptr);
+  if (surface == nullptr) {
+    host_alert(Trf("ui.export.failed", std::string("render")));
+    return;
+  }
+  rivet::Bytes png;
+  cairo_status_t const rc = cairo_surface_write_to_png_stream(
+      surface,
+      +[](void* closure, unsigned char const* data,
+          unsigned int length) -> cairo_status_t {
+        auto* out = static_cast<rivet::Bytes*>(closure);
+        out->insert(out->end(), data, data + length);
+        return CAIRO_STATUS_SUCCESS;
+      },
+      &png);
+  cairo_surface_destroy(surface);
+  if (rc != CAIRO_STATUS_SUCCESS) {
+    host_alert(Trf("ui.export.failed", std::string("png")));
+    return;
+  }
+  save_bytes_dialog(Tr("ui.tools.export-page"),
+                    title_stem(tab->title()) + "-" + std::to_string(page) +
+                        ".png",
+                    std::move(png));
+}
+
+// Tools > Export Text: the whole document's text layer as .txt (mac
+// exportDocumentText — a whitespace-only document reports ui.need.text).
+void tools_export_text() {
+  auto* tab = g_host.active_pdf_only();
+  if (tab == nullptr) return;
+  int const pages = tab->document()->page_count();
+  std::string joined;
+  for (int i = 1; i <= pages; ++i) {
+    std::string const text = tab->page_text(i);
+    if (text.empty()) continue;
+    joined += text;
+    joined += '\n';
+  }
+  std::string const text = ascii_trim(joined);
+  if (text.empty()) {
+    host_alert(Tr("ui.need.text"));
+    return;
+  }
+  save_bytes_dialog(Tr("ui.tools.export-text"),
+                    title_stem(tab->title()) + ".txt",
+                    rivet::Bytes(text.begin(), text.end()));
 }
 
 
@@ -2634,9 +2789,17 @@ void install_actions(GtkApplication* app) {
   add("page-merge", +[](GSimpleAction*, GVariant*, gpointer) {
         page_merge_pick();
       }, nullptr);
-  add("page-watermark",
+  add("tools-watermark",
       +[](GSimpleAction*, GVariant*, gpointer) {
-        page_watermark_pick();
+        tools_watermark_dialog();
+      }, nullptr);
+  add("tools-export-page",
+      +[](GSimpleAction*, GVariant*, gpointer) {
+        tools_export_page_image();
+      }, nullptr);
+  add("tools-export-text",
+      +[](GSimpleAction*, GVariant*, gpointer) {
+        tools_export_text();
       }, nullptr);
   add("epub-chapter", +[](GSimpleAction*, GVariant* value,
                                       gpointer) {
@@ -2812,7 +2975,11 @@ void build_primary_menu() {
   g_menu_append(pages, Tr("ui.pages.blank").c_str(), "app.page-blank");
   g_menu_append(pages, Tr("ui.pages.extract").c_str(), "app.page-extract");
   g_menu_append(pages, Tr("ui.pages.merge").c_str(), "app.page-merge");
-  g_menu_append(pages, Tr("ui.pages.bake").c_str(), "app.page-watermark");
+  g_menu_append(pages, Tr("ui.tools.watermark").c_str(), "app.tools-watermark");
+  g_menu_append(pages, Tr("ui.tools.export-page").c_str(),
+                "app.tools-export-page");
+  g_menu_append(pages, Tr("ui.tools.export-text").c_str(),
+                "app.tools-export-text");
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(pages));
   g_object_unref(pages);
 
@@ -2842,9 +3009,17 @@ void build_page_edit_menu(GtkMenuButton* button) {
   auto* section2 = g_menu_new();
   g_menu_append(section2, Tr("ui.pages.extract").c_str(), "app.page-extract");
   g_menu_append(section2, Tr("ui.pages.merge").c_str(), "app.page-merge");
-  g_menu_append(section2, Tr("ui.pages.bake").c_str(), "app.page-watermark");
   g_menu_append_section(menu, nullptr, G_MENU_MODEL(section2));
   g_object_unref(section2);
+  // tools (mac Tools menu parity: watermark, then the two exports)
+  auto* tools = g_menu_new();
+  g_menu_append(tools, Tr("ui.tools.watermark").c_str(), "app.tools-watermark");
+  g_menu_append(tools, Tr("ui.tools.export-page").c_str(),
+                "app.tools-export-page");
+  g_menu_append(tools, Tr("ui.tools.export-text").c_str(),
+                "app.tools-export-text");
+  g_menu_append_section(menu, nullptr, G_MENU_MODEL(tools));
+  g_object_unref(tools);
   gtk_menu_button_set_menu_model(button, G_MENU_MODEL(menu));
   g_object_unref(menu);
 }
