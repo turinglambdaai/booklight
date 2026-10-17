@@ -155,6 +155,10 @@ MainWindow::MainWindow() {
   set_tip(SplitToggle(), pdfgist::Tr("ui.toolbar.split"));
   set_tip(TtsButton(), pdfgist::Tr("ui.toolbar.tts"));
   set_tip(PrintButton(), pdfgist::Winize(pdfgist::Tr("ui.toolbar.print")));
+  set_tip(ToolsButton(), pdfgist::Tr("ui.menu.tools"));
+  ToolsWatermarkItem().Text(pdfgist::Tr("ui.tools.watermark"));
+  ToolsExportPageItem().Text(pdfgist::Tr("ui.tools.export-page"));
+  ToolsExportTextItem().Text(pdfgist::Tr("ui.tools.export-text"));
   set_tip(AiToggle(), pdfgist::Tr("ui.toolbar.ai"));
   set_tip(ThemeButton(), pdfgist::Tr("ui.toolbar.theme-light") + L" / " +
                              pdfgist::Tr("ui.toolbar.theme-dark"));
@@ -498,6 +502,7 @@ void MainWindow::UpdateChrome() {
   SplitToggle().Visibility(reader_vis);
   TtsButton().Visibility(reader_vis);
   PrintButton().Visibility(reader_vis);
+  ToolsButton().Visibility(reader_vis);
   if (shelf && library_loaded_) {
     RefreshShelf();  // progress bars catch up on return to the shelf
   }

@@ -125,6 +125,7 @@
     <ClCompile Include="MainWindow.Epub.cpp" />
     <ClCompile Include="MainWindow.Shelf.cpp" />
     <ClCompile Include="MainWindow.Pages.cpp" />
+    <ClCompile Include="MainWindow.Tools.cpp" />
     <ClCompile Include="MainWindow.Annotations.cpp" />
     <ClCompile Include="MainWindow.Tts.cpp" />
     <ClCompile Include="MainWindow.Print.cpp" />
