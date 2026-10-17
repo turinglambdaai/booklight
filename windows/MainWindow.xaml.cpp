@@ -156,6 +156,7 @@ MainWindow::MainWindow() {
   set_tip(TtsButton(), pdfgist::Tr("ui.toolbar.tts"));
   set_tip(PrintButton(), pdfgist::Winize(pdfgist::Tr("ui.toolbar.print")));
   set_tip(ToolsButton(), pdfgist::Tr("ui.menu.tools"));
+  set_tip(TodayRing(), pdfgist::Tr("ui.shelf.today"));
   ToolsWatermarkItem().Text(pdfgist::Tr("ui.tools.watermark"));
   ToolsExportPageItem().Text(pdfgist::Tr("ui.tools.export-page"));
   ToolsExportTextItem().Text(pdfgist::Tr("ui.tools.export-text"));
@@ -180,6 +181,7 @@ MainWindow::MainWindow() {
   // shelf chrome must exist before ApplyTheme, which refreshes the shelf
   // so code-built colors re-resolve (nav rows, home rows).
   RebuildShelfNav();
+  LoadReadingStats();
 
   LoadHostPrefs();
   ApplyTheme();
@@ -228,6 +230,8 @@ MainWindow::MainWindow() {
       }
     }
   });
+
+  StartReadingClock();
 
   InitializeBackendAsync();
 }
