@@ -23,8 +23,9 @@ final class AppModel: ObservableObject {
     @Published var libraryLoaded = false
     @Published var libraryImporting = false
     @Published var shelfSearch = ""
-    /// nil = all books; "unfiled" = no collection; otherwise a collection name.
-    @Published var shelfFilter: String?
+    /// Books-style sidebar selection: "home" | "search" | "all" | "want" |
+    /// "reading" | "finished" | "pdf" | "epub" | "c:<collection name>".
+    @Published var shelfSelection = "home"
 
     var shelfCollections: [String] {
         var seen = Set<String>()
@@ -37,15 +38,29 @@ final class AppModel: ObservableObject {
         return out
     }
 
-    /// The shelf rows after the search box and the collection filter.
+    /// The shelf rows after the sidebar selection and the search box.
     var shelfEntries: [RivetTypes.LibraryEntry] {
         var rows = library
-        if let filter = shelfFilter {
-            rows = rows.filter { entry in
-                filter == "unfiled"
-                    ? entry.collections.isEmpty
-                    : entry.collections.contains(filter)
+        switch shelfSelection {
+        case "want":
+            rows = rows.filter { shelfProgress($0) == nil }
+        case "reading":
+            rows = rows.filter {
+                if let p = shelfProgress($0) { return p.page < p.of }
+                return false
             }
+        case "finished":
+            rows = rows.filter {
+                if let p = shelfProgress($0) { return p.page >= p.of }
+                return false
+            }
+        case "pdf", "epub":
+            rows = rows.filter { $0.kind == shelfSelection }
+        case let sel where sel.hasPrefix("c:"):
+            let name = String(sel.dropFirst(2))
+            rows = rows.filter { $0.collections.contains(name) }
+        default:
+            break // "all" / home-scope grids
         }
         let needle = shelfSearch.trimmingCharacters(in: .whitespaces).lowercased()
         if !needle.isEmpty {
@@ -62,6 +77,74 @@ final class AppModel: ObservableObject {
         let recent = recents.first { $0.path == entry.path }
         guard let recent, recent.page > 1 || entry.pages > 0 else { return nil }
         return (Int(recent.page), max(1, Int(entry.pages)))
+    }
+
+    // ---- reading time (device-local: minutes per day, Books-style goals) ----
+    /// Persisted in UserDefaults on this device only — cross-device minute
+    /// merging through file sync would double-count, so this deliberately
+    /// never rides the sync drive.
+    @Published var todayMinutes = 0
+    @Published var weekMinutes: [Int] = Array(repeating: 0, count: 7) // Mon..Sun
+    @Published var streakDays = 0
+    @Published var goalMinutes = 20
+
+    private var readingClock: Timer?
+    private let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    func startReadingClock() {
+        guard readingClock == nil else { return }
+        refreshReadingStats()
+        readingClock = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tickReadingMinute() }
+        }
+    }
+
+    /// One minute of reading accrues when a reader window is key and showing
+    /// a document (the shelf idles don't count).
+    private func tickReadingMinute() {
+        let readingNow = activeReader?.hasDocument == true
+            && NSApp.windows.contains { $0.isVisible && $0.isKeyWindow }
+        guard readingNow else { return }
+        addReadingMinutes(1)
+    }
+
+    func addReadingMinutes(_ minutes: Int) {
+        let day = dayFormatter.string(from: Date())
+        var stats = UserDefaults.standard.dictionary(forKey: "booklight-reading-minutes")
+            as? [String: Int] ?? [:]
+        stats[day, default: 0] += minutes
+        UserDefaults.standard.set(stats, forKey: "booklight-reading-minutes")
+        refreshReadingStats()
+    }
+
+    func refreshReadingStats() {
+        let stats = UserDefaults.standard.dictionary(forKey: "booklight-reading-minutes")
+            as? [String: Int] ?? [:]
+        let today = dayFormatter.string(from: Date())
+        todayMinutes = stats[today] ?? 0
+        // calendar week Mon..Sun
+        let cal = Calendar(identifier: .iso8601)
+        let week = cal.dateInterval(of: .weekOfYear, for: Date())!.start
+        weekMinutes = (0..<7).map { offset in
+            let day = dayFormatter.string(from: cal.date(byAdding: .day, value: offset, to: week)!)
+            return stats[day] ?? 0
+        }
+        // current streak: consecutive reading days ending today or yesterday
+        var streak = 0
+        var cursor = Date()
+        if (stats[dayFormatter.string(from: cursor)] ?? 0) == 0 {
+            cursor = cal.date(byAdding: .day, value: -1, to: cursor)!
+        }
+        while (stats[dayFormatter.string(from: cursor)] ?? 0) > 0 {
+            streak += 1
+            cursor = cal.date(byAdding: .day, value: -1, to: cursor)!
+        }
+        streakDays = streak
     }
 
     func loadLibrary() async {
@@ -104,6 +187,11 @@ final class AppModel: ObservableObject {
             cover: entry.cover, collections: entry.collections + [name],
             status: entry.status))
         Task { try? await api?.library_book_collection(path: entry.path, name: name, add: true) }
+    }
+
+    func createCollection(_ name: String) {
+        guard !shelfCollections.contains(name) else { return }
+        Task { try? await api?.library_collection_create(name: name) }
     }
 
     func removeFromCollection(_ entry: RivetTypes.LibraryEntry, name: String) {
@@ -355,6 +443,7 @@ final class AppModel: ObservableObject {
             // Refresh missing statuses in the background; the shelf shows
             // whatever is known the moment it is on screen.
             Task { [weak self] in await self?.rescanShelf() }
+            startReadingClock()
             autoCheckForUpdates()
         } catch {
             ready = false

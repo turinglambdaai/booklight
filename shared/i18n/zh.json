@@ -275,5 +275,22 @@
   "ui.library.relink": "重新链接…",
   "ui.library.importing": "正在导入…",
   "ui.library.progress": "第 {0} 页，共 {1} 页",
-  "ui.library.chapter-progress": "第 {0} 章，共 {1} 章"
+  "ui.library.chapter-progress": "第 {0} 章，共 {1} 章",
+  "ui.shelf.home": "主页",
+  "ui.shelf.search": "搜索",
+  "ui.shelf.lib": "书库",
+  "ui.shelf.all": "全部",
+  "ui.shelf.want": "欲读清单",
+  "ui.shelf.finished": "已读完",
+  "ui.shelf.pdf": "PDF",
+  "ui.shelf.epub": "EPUB",
+  "ui.shelf.mine": "我的收藏集",
+  "ui.shelf.new-collection": "新建收藏集",
+  "ui.shelf.today": "今日阅读",
+  "ui.shelf.goal-of": "今日目标 20 分钟",
+  "ui.shelf.streak-start": "开始新的连续阅读。",
+  "ui.shelf.streak-record": "连续阅读纪录：{0} 天",
+  "ui.shelf.continue": "继续阅读",
+  "ui.shelf.minutes": "分钟",
+  "ui.shelf.goal-hit": "目标达成！"
 }

@@ -275,5 +275,22 @@
   "ui.library.relink": "Relocate…",
   "ui.library.importing": "Importing…",
   "ui.library.progress": "Page {0} of {1}",
-  "ui.library.chapter-progress": "Chapter {0} of {1}"
+  "ui.library.chapter-progress": "Chapter {0} of {1}",
+  "ui.shelf.home": "Home",
+  "ui.shelf.search": "Search",
+  "ui.shelf.lib": "Library",
+  "ui.shelf.all": "All",
+  "ui.shelf.want": "Want to Read",
+  "ui.shelf.finished": "Finished",
+  "ui.shelf.pdf": "PDF",
+  "ui.shelf.epub": "EPUB",
+  "ui.shelf.mine": "My Collections",
+  "ui.shelf.new-collection": "New Collection",
+  "ui.shelf.today": "Today's Reading",
+  "ui.shelf.goal-of": "of your 20-minute goal",
+  "ui.shelf.streak-start": "Start a new streak.",
+  "ui.shelf.streak-record": "Your record is {0} days.",
+  "ui.shelf.continue": "Continue Reading",
+  "ui.shelf.minutes": "min",
+  "ui.shelf.goal-hit": "Goal reached!"
 }
