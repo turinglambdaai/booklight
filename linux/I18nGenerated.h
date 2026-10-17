@@ -270,6 +270,7 @@ inline constexpr struct LinuxStringEntry {
     {"ui.menu.tools", "工具", "Tools"},
     {"ui.sidebar.forms", "表单", "Forms"},
     {"ui.menu.fill-forms", "填写表单", "Fill Form…"},
+    {"ui.home.recent", "最近添加", "Recently Added"},
     {"ui.library.title", "书架", "Library"},
     {"ui.library.import", "导入书籍", "Import Books"},
     {"ui.menu.import-books", "导入书籍…", "Import Books…"},

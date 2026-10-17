@@ -269,6 +269,7 @@ inline constexpr struct WinStringEntry {
     {"ui.menu.tools", L"工具", L"Tools"},
     {"ui.sidebar.forms", L"表单", L"Forms"},
     {"ui.menu.fill-forms", L"填写表单", L"Fill Form…"},
+    {"ui.home.recent", L"最近添加", L"Recently Added"},
     {"ui.library.title", L"书架", L"Library"},
     {"ui.library.import", L"导入书籍", L"Import Books"},
     {"ui.menu.import-books", L"导入书籍…", L"Import Books…"},
