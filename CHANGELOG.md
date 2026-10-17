@@ -3,6 +3,34 @@
 All notable changes to Booklight are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semver.
 
+## [0.2.0] - 2026-10-17
+
+### Added
+
+- **The Books home layout on all three platforms** — a source-list
+  sidebar (home / smart groups: want-to-read, finished, PDF, EPUB /
+  my collections with creation) over a home digest (continue-reading
+  and recently-added cover strips) or the cover grid for the selected
+  scope. Closing the last book returns to the shelf.
+- **Tools menu, all platforms**: watermark baking (text / size /
+  opacity), export the current page as an image, export the document
+  text as .txt — alongside page surgery and AcroForm filling.
+- **Interface language setting** (follow system / 中文 / English).
+
+### Changed
+
+- **All-white reading chrome** — every surface uses Apple semantic
+  colors; the terracotta accent is reserved for interactive elements.
+  Dark mode follows the system.
+- The reading timer from the early shelf build is gone — not this
+  product's story.
+
+### Fixed
+
+- Windows: the update flow can no longer wedge the app (poller rides
+  out transient RPC errors; installs only end the old process after
+  the new one is confirmed running); SIGTERM works again.
+
 ## [0.1.0] - 2026-10-16
 
 The first release of **Booklight** — the reading-first rebuild of what
