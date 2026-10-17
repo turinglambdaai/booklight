@@ -1,6 +1,6 @@
 // The bookshelf implementation — see shelf.hpp. The macOS host
 // (LibraryView.swift + AppModel.swift shelf section) is the behavior spec:
-// a Books source-list sidebar over the home digest / cover grid.
+// a Books source-list sidebar over the home page / cover grid.
 //
 // Threading: all GTK + PDFium work happens on the main loop. Backend
 // completions arrive on the runtime reader thread and dispatch back into
@@ -15,7 +15,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <filesystem>
 
 #include "host.hpp"
@@ -50,15 +49,8 @@ constexpr int kCoverWidth = 132;
 constexpr int kCoverHeight = 176;
 constexpr int kCoverPxWidth = 320;  // import cover render width (mac parity)
 
-// Books home digest geometry (mac HomeDigest).
-constexpr int kGaugeWidth = 320;
-constexpr int kGaugeHeight = 150;
-constexpr double kGaugeStroke = 10.0;
-constexpr int kGoalMinutes = 20;  // mac AppModel.goalMinutes
-
-// Fixed week symbols under the gauge — the mac side hardcodes the same
-// zh characters regardless of UI language (AppModel streakRow parity).
-constexpr char const* kWeekSymbols[7] = {"一", "二", "三", "四", "五", "六", "日"};
+// Recently-added strip size (most recent 12 books, added_at descending).
+constexpr std::size_t kRecentLimit = 12;
 
 std::string ascii_lower(std::string const& s) {
   std::string out = s;
@@ -88,29 +80,6 @@ std::string trim(std::string const& s) {
   if (begin == std::string::npos) return {};
   auto const end = s.find_last_not_of(" \t\r\n");
   return s.substr(begin, end - begin + 1);
-}
-
-// "YYYY-MM-DD" for the local day `offset_days` from today (the reading
-// ledger's key format, mac dayFormatter parity).
-std::string day_string(int offset_days) {
-  GDateTime* now = g_date_time_new_now_local();
-  GDateTime* day = g_date_time_add_days(now, offset_days);
-  gchar* text = g_date_time_format(day, "%Y-%m-%d");
-  std::string out = text != nullptr ? text : "";
-  g_free(text);
-  g_date_time_unref(day);
-  g_date_time_unref(now);
-  return out;
-}
-
-// The effective palette the host pinned in apply_theme (the headerbar and
-// covers already follow it); cairo can't read theme colors without the
-// deprecated style-context API, so the track color derives from this.
-bool host_theme_is_dark() {
-  gboolean dark = FALSE;
-  g_object_get(gtk_settings_get_default(),
-               "gtk-application-prefer-dark-theme", &dark, nullptr);
-  return dark == TRUE;
 }
 
 // Page-1 render as PNG bytes for the shelf cover cache (mac coverPNG:
@@ -147,22 +116,8 @@ constexpr char const* kShelfCss =
     ".book-title { font-size: 12px; font-weight: 600; }\n"
     ".book-author { font-size: 11px; }\n"
     ".book-progress-text { font-size: 10px; }\n"
-    // Books home digest (mac HomeDigest typography)
+    // Home page typography (Books-style big title + strip headers)
     ".home-digest-title { font-size: 34px; font-weight: 700; }\n"
-    ".gauge-today { font-size: 15px; font-weight: 600; }\n"
-    ".gauge-minutes { font-size: 40px; font-weight: 700; }\n"
-    ".goal-hit-pill { font-size: 11px; font-weight: 600; "
-    "color: @theme_selected_bg_color; "
-    "background-color: alpha(@theme_selected_bg_color, 0.15); "
-    "border-radius: 9999px; padding: 2px 10px; }\n"
-    ".streak-day { font-size: 11px; font-weight: 600; "
-    "color: alpha(@theme_fg_color, 0.65); "
-    "background-color: alpha(@theme_fg_color, 0.08); "
-    "border: 1px solid alpha(@theme_fg_color, 0.15); "
-    "border-radius: 9999px; min-width: 30px; min-height: 30px; }\n"
-    ".streak-day-read { color: @theme_selected_fg_color; "
-    "background-color: @theme_selected_bg_color; "
-    "border-color: @theme_selected_bg_color; }\n"
     ".shelf-section-title { font-size: 17px; font-weight: 600; }\n"
     ".shelf-header-row { font-size: 11px; font-weight: 700; "
     "color: alpha(@theme_fg_color, 0.6); padding: 2px 8px 1px; }\n"
@@ -252,7 +207,7 @@ Shelf::Shelf(Hooks hooks) : hooks_(std::move(hooks)) {
   gtk_paned_set_end_child(GTK_PANED(page_), GTK_WIDGET(detail_));
   gtk_paned_set_position(GTK_PANED(page_), 200);
 
-  // Rounded covers + gradient placeholders + missing scrim + digest card.
+  // Rounded covers + gradient placeholders + missing scrim.
   auto* provider = gtk_css_provider_new();
   gtk_css_provider_load_from_string(provider, kShelfCss);
   gtk_style_context_add_provider_for_display(
@@ -260,56 +215,11 @@ Shelf::Shelf(Hooks hooks) : hooks_(std::move(hooks)) {
       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
   g_object_unref(provider);
 
-  // Reading-time ledger: one minute per 60 s tick while a reader tab is
-  // showing a document (mac startReadingClock parity).
-  refresh_reading_stats();
-  reading_tick_ = g_timeout_add_seconds(
-      60,
-      +[](gpointer data) -> int {
-        static_cast<Shelf*>(data)->tick_reading_minute();
-        return G_SOURCE_CONTINUE;
-      },
-      this);
-
   install_actions();
   set_active(active_);
 }
 
-Shelf::~Shelf() {
-  if (reading_tick_ != 0) g_source_remove(reading_tick_);
-}
-
-// ---------------------------------------------------------------------------
-// reading-time ledger (mac AppModel shelf section parity)
-// ---------------------------------------------------------------------------
-
-void Shelf::refresh_reading_stats() {
-  today_minutes_ = host::reading_minutes(day_string(0));
-  // calendar week Mon..Sun (GLib: 1 = Monday .. 7 = Sunday)
-  GDateTime* now = g_date_time_new_now_local();
-  int const weekday = g_date_time_get_day_of_week(now);
-  g_date_time_unref(now);
-  for (int i = 0; i < 7; ++i) {
-    week_minutes_[static_cast<std::size_t>(i)] =
-        host::reading_minutes(day_string(i - (weekday - 1)));
-  }
-  // current streak: consecutive reading days ending today, or yesterday
-  // when today hasn't started yet
-  int cursor = today_minutes_ > 0 ? 0 : -1;
-  streak_days_ = 0;
-  while (streak_days_ < 3650 &&
-         host::reading_minutes(day_string(cursor)) > 0) {
-    ++streak_days_;
-    --cursor;
-  }
-}
-
-void Shelf::tick_reading_minute() {
-  if (!hooks_.reading_active || !hooks_.reading_active()) return;
-  host::add_reading_minutes(day_string(0), 1);
-  refresh_reading_stats();
-  update_home_stats();
-}
+Shelf::~Shelf() = default;
 
 // ---------------------------------------------------------------------------
 // sidebar (mac shelfSidebar parity — Books source list)
@@ -478,8 +388,21 @@ std::string Shelf::current_title() const {
 }
 
 // ---------------------------------------------------------------------------
-// home digest (mac HomeDigest: goals gauge, streak, continue-reading)
+// home page (two cover strips: continue-reading, recently-added)
 // ---------------------------------------------------------------------------
+
+namespace {
+
+// Clears every child of a strip's container box (GTK4 has no
+// gtk_box_remove_all).
+void clear_box(GtkWidget* box) {
+  GtkWidget* child = nullptr;
+  while ((child = gtk_widget_get_first_child(box)) != nullptr) {
+    gtk_box_remove(GTK_BOX(box), child);
+  }
+}
+
+}  // namespace
 
 GtkWidget* Shelf::build_home() {
   home_scroll_ = gtk_scrolled_window_new();
@@ -496,158 +419,44 @@ GtkWidget* Shelf::build_home() {
   gtk_widget_add_css_class(home_title_, "home-digest-title");
   gtk_box_append(GTK_BOX(box), home_title_);
 
-  // goals card: gauge | separator | streak
-  auto* card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-  gtk_widget_add_css_class(card, "card");
-
-  auto* gauge_overlay = gtk_overlay_new();
-  gauge_area_ = gtk_drawing_area_new();
-  gtk_widget_set_size_request(gauge_area_, kGaugeWidth, kGaugeHeight);
-  gtk_widget_set_hexpand(gauge_area_, TRUE);
-  gtk_drawing_area_set_draw_func(
-      GTK_DRAWING_AREA(gauge_area_),
-      +[](GtkDrawingArea* area, cairo_t* cr, int width, int height,
-          gpointer data) {
-        auto* self = static_cast<Shelf*>(data);
-        double const ratio =
-            std::clamp(static_cast<double>(self->today_minutes_) /
-                           static_cast<double>(kGoalMinutes),
-                       0.0, 1.0);
-        cairo_set_line_width(cr, kGaugeStroke);
-        cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-        double const cx = width / 2.0;
-        double const cy = height - kGaugeStroke;
-        double const radius =
-            std::max(std::min(width / 2.0 - kGaugeStroke,
-                              height - 2.0 * kGaugeStroke),
-                     10.0);
-        // track: top-half arc from the left horizon to the right
-        if (host_theme_is_dark()) {
-          cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.15);
-        } else {
-          cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.12);
-        }
-        cairo_arc(cr, cx, cy, radius, M_PI, 2.0 * M_PI);
-        cairo_stroke(cr);
-        // progress fraction of the same arc (a zero day draws nothing —
-        // the empty track already reads as "not started")
-        if (ratio > 0.0) {
-          // #3584e4, the same accent the cover gradient uses
-          cairo_set_source_rgba(cr, 0.208, 0.518, 0.894, 1.0);
-          cairo_arc(cr, cx, cy, radius, M_PI, M_PI * (1.0 + ratio));
-          cairo_stroke(cr);
-        }
-        (void)area;
-      },
-      this, nullptr);
-
-  auto* gauge_center = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-  gtk_widget_set_halign(gauge_center, GTK_ALIGN_CENTER);
-  gtk_widget_set_valign(gauge_center, GTK_ALIGN_CENTER);
-  auto* today_label = gtk_label_new(Tr("ui.shelf.today").c_str());
-  gtk_widget_add_css_class(today_label, "gauge-today");
-  minutes_label_ = gtk_label_new(nullptr);
-  gtk_widget_add_css_class(minutes_label_, "gauge-minutes");
-  gtk_widget_add_css_class(minutes_label_, "numeric");
-  auto* goal_label = gtk_label_new(Tr("ui.shelf.goal-of").c_str());
-  gtk_widget_add_css_class(goal_label, "caption");
-  gtk_widget_add_css_class(goal_label, "dim-label");
-  goal_badge_ = gtk_label_new(Tr("ui.shelf.goal-hit").c_str());
-  gtk_widget_add_css_class(goal_badge_, "goal-hit-pill");
-  gtk_widget_set_visible(goal_badge_, FALSE);
-  gtk_box_append(GTK_BOX(gauge_center), today_label);
-  gtk_box_append(GTK_BOX(gauge_center), minutes_label_);
-  gtk_box_append(GTK_BOX(gauge_center), goal_label);
-  gtk_box_append(GTK_BOX(gauge_center), goal_badge_);
-  gtk_overlay_set_child(GTK_OVERLAY(gauge_overlay), gauge_area_);
-  gtk_overlay_add_overlay(GTK_OVERLAY(gauge_overlay), gauge_center);
-  gtk_box_append(GTK_BOX(card), gauge_overlay);
-
-  gtk_box_append(GTK_BOX(card), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-
-  auto* streak = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-  gtk_widget_set_margin_top(streak, 18);
-  gtk_widget_set_margin_bottom(streak, 18);
-  auto* days = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-  gtk_widget_set_halign(days, GTK_ALIGN_CENTER);
-  for (int i = 0; i < 7; ++i) {
-    auto* day = gtk_label_new(kWeekSymbols[i]);
-    gtk_widget_set_halign(day, GTK_ALIGN_CENTER);
-    gtk_widget_set_valign(day, GTK_ALIGN_CENTER);
-    gtk_widget_set_size_request(day, 30, 30);
-    gtk_widget_add_css_class(day, "streak-day");
-    streak_day_labels_[static_cast<std::size_t>(i)] = day;
-    gtk_box_append(GTK_BOX(days), day);
-  }
-  gtk_box_append(GTK_BOX(streak), days);
-  streak_text_ = gtk_label_new(nullptr);
-  gtk_widget_add_css_class(streak_text_, "caption");
-  gtk_widget_add_css_class(streak_text_, "dim-label");
-  gtk_widget_set_halign(streak_text_, GTK_ALIGN_CENTER);
-  gtk_box_append(GTK_BOX(streak), streak_text_);
-  gtk_box_append(GTK_BOX(card), streak);
-  gtk_box_append(GTK_BOX(box), card);
-
-  // continue-reading strip (mac continueRow): re-homes the cover cells
-  continue_title_ = gtk_label_new(Tr("ui.shelf.continue").c_str());
-  gtk_label_set_xalign(GTK_LABEL(continue_title_), 0.0f);
-  gtk_widget_add_css_class(continue_title_, "shelf-section-title");
-  gtk_box_append(GTK_BOX(box), continue_title_);
-  continue_scroll_ = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(continue_scroll_),
-                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
-  continue_box_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 22);
-  gtk_widget_set_margin_top(continue_box_, 4);
-  gtk_widget_set_margin_bottom(continue_box_, 4);
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(continue_scroll_),
-                                continue_box_);
-  gtk_box_append(GTK_BOX(box), continue_scroll_);
+  // strip sections (title + horizontal cover scroll, kept tight)
+  auto make_section = [](char const* title, GtkWidget** section_title,
+                             GtkWidget** section_scroll,
+                             GtkWidget** section_box) {
+    auto* section = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    *section_title = gtk_label_new(title);
+    gtk_label_set_xalign(GTK_LABEL(*section_title), 0.0f);
+    gtk_widget_add_css_class(*section_title, "shelf-section-title");
+    gtk_box_append(GTK_BOX(section), *section_title);
+    *section_scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(*section_scroll),
+                                   GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
+    *section_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 22);
+    gtk_widget_set_margin_top(*section_box, 4);
+    gtk_widget_set_margin_bottom(*section_box, 4);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(*section_scroll),
+                                  *section_box);
+    gtk_box_append(GTK_BOX(section), *section_scroll);
+    return section;
+  };
+  gtk_box_append(GTK_BOX(box),
+                 make_section(Tr("ui.shelf.continue").c_str(), &continue_title_,
+                              &continue_scroll_, &continue_box_));
+  gtk_box_append(GTK_BOX(box),
+                 make_section(Tr("ui.home.recent").c_str(), &recent_title_,
+                              &recent_scroll_, &recent_box_));
 
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(home_scroll_), box);
   return home_scroll_;
 }
 
-void Shelf::update_home_stats() {
-  gtk_label_set_text(GTK_LABEL(minutes_label_),
-                     (std::to_string(today_minutes_) + " " +
-                      Tr("ui.shelf.minutes"))
-                         .c_str());
-  double const ratio =
-      std::clamp(static_cast<double>(today_minutes_) /
-                     static_cast<double>(std::max(kGoalMinutes, 1)),
-                 0.0, 1.0);
-  gtk_widget_set_visible(goal_badge_, ratio >= 1.0);
-  for (int i = 0; i < 7; ++i) {
-    GtkWidget* day = streak_day_labels_[static_cast<std::size_t>(i)];
-    if (day == nullptr) continue;
-    bool const read = week_minutes_[static_cast<std::size_t>(i)] > 0;
-    if (read) {
-      gtk_widget_add_css_class(day, "streak-day-read");
-    } else {
-      gtk_widget_remove_css_class(day, "streak-day-read");
-    }
-  }
-  gtk_label_set_text(
-      GTK_LABEL(streak_text_),
-      (streak_days_ > 0 ? Trf("ui.shelf.streak-record",
-                              std::to_string(streak_days_))
-                        : Tr("ui.shelf.streak-start"))
-          .c_str());
-  gtk_widget_queue_draw(gauge_area_);
-}
+void Shelf::rebuild_home_strips() {
+  clear_box(continue_box_);
+  clear_box(recent_box_);
 
-void Shelf::rebuild_continue_strip() {
-  GtkWidget* child = nullptr;
-  while ((child = gtk_widget_get_first_child(continue_box_)) != nullptr) {
-    gtk_box_remove(GTK_BOX(continue_box_), child);
-  }
-  bool any = false;
-  for (auto const& entry : library_) {
-    auto const progress = progress_for(entry);
-    if (!progress.has_value() || progress->first >= progress->second) continue;
-    GtkWidget* cell = build_cell(entry);
-    // Double-click opens; the grid gets that from the flow box's
-    // child-activated, the strip has no flow box to lean on.
+  // strip cells open on double click (the grid gets that from the flow
+  // box's child-activated; strips have no flow box to lean on)
+  auto append_cell = [this](GtkWidget* box, GtkWidget* cell) {
     auto* gesture = gtk_gesture_click_new();
     gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture),
                                   GDK_BUTTON_PRIMARY);
@@ -668,11 +477,41 @@ void Shelf::rebuild_continue_strip() {
         },
         this);
     gtk_widget_add_controller(cell, GTK_EVENT_CONTROLLER(gesture));
-    gtk_box_append(GTK_BOX(continue_box_), cell);
-    any = true;
+    gtk_box_append(GTK_BOX(box), cell);
+  };
+
+  // continue-reading: everything opened but not finished (mac continueRow)
+  bool any_reading = false;
+  for (auto const& entry : library_) {
+    auto const progress = progress_for(entry);
+    if (!progress.has_value() || progress->first >= progress->second) continue;
+    append_cell(continue_box_, build_cell(entry));
+    any_reading = true;
   }
-  gtk_widget_set_visible(continue_title_, any);
-  gtk_widget_set_visible(continue_scroll_, any);
+
+  // recently added: the latest 12 cataloged books, added_at descending
+  // (path tiebreak keeps the order stable across rebuilds)
+  std::vector<rivet_app::LibraryEntry const*> recent;
+  recent.reserve(library_.size());
+  for (auto const& entry : library_) recent.push_back(&entry);
+  std::sort(recent.begin(), recent.end(),
+            [](auto const* a, auto const* b) {
+              if (a->added_at_ms != b->added_at_ms) {
+                return a->added_at_ms > b->added_at_ms;
+              }
+              return a->path < b->path;
+            });
+  bool any_recent = false;
+  for (std::size_t i = 0;
+       i < recent.size() && i < kRecentLimit; ++i) {
+    append_cell(recent_box_, build_cell(*recent[i]));
+    any_recent = true;
+  }
+
+  gtk_widget_set_visible(continue_title_, any_reading);
+  gtk_widget_set_visible(continue_scroll_, any_reading);
+  gtk_widget_set_visible(recent_title_, any_recent);
+  gtk_widget_set_visible(recent_scroll_, any_recent);
 }
 
 // ---------------------------------------------------------------------------
@@ -759,11 +598,6 @@ void Shelf::set_active(bool active) {
   gtk_widget_set_visible(header_import_, active);
   gtk_widget_set_visible(header_spinner_, active && importing_);
   gtk_widget_set_visible(header_search_, active);
-  if (active) {
-    // the day may have rolled over while the reader owned the window
-    refresh_reading_stats();
-    update_home_stats();
-  }
 }
 
 GtkWidget* Shelf::build_empty_state() {
@@ -801,10 +635,9 @@ void Shelf::rebuild() {
   }
   char const* visible = "grid";
   if (selection_ == "home") {
-    // the digest shows immediately (mac parity — the goals card does not
-    // wait for the library); the continue strip re-homes on each rebuild
-    rebuild_continue_strip();
-    update_home_stats();
+    // the home page shows immediately (the strips do not wait for the
+    // library); both re-home on each rebuild
+    rebuild_home_strips();
     visible = "home";
   } else if (!loaded_) {
     visible = "loading";

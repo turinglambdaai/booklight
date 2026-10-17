@@ -1,8 +1,8 @@
 // The bookshelf, Books arrangement (mac LibraryView.swift parity): a
 // source-list sidebar (home / search / smart scopes / collections) over a
-// detail area that is either the Home digest (today's reading gauge, streak,
-// continue-reading) or the cover grid for the selected scope. Books are
-// cataloged in place; nothing here ever copies or moves a file.
+// detail area that is either the Home page (continue-reading and
+// recently-added cover strips) or the cover grid for the selected scope.
+// Books are cataloged in place; nothing here ever copies or moves a file.
 //
 // The macOS host (macos-host/Sources/RivetHost/LibraryView.swift +
 // AppModel.swift shelf section) is the behavior spec: catalog state lives
@@ -12,7 +12,6 @@
 
 #include <gtk/gtk.h>
 
-#include <array>
 #include <deque>
 #include <functional>
 #include <optional>
@@ -33,9 +32,6 @@ class Shelf {
     std::function<rivet_app::API*()> api;          // null until backend ready
     std::function<std::vector<rivet_app::RecentEntry>()> recents;
     std::function<GtkWindow*()> window;
-    // True while a reader tab owns the window and shows a document (the
-    // shelf idles don't accrue reading time) and the window is visible.
-    std::function<bool()> reading_active;
     // The header-bar title follows the sidebar selection.
     std::function<void()> title_changed;
   };
@@ -59,8 +55,7 @@ class Shelf {
   std::string current_title() const;
 
   // Shelf is the active surface (nothing open in the notebook). Toggles the
-  // shelf-only header controls and re-reads the reading stats (the day may
-  // have rolled over while the reader owned the window).
+  // shelf-only header controls.
   void set_active(bool active);
 
   // Pulls get-library through the backend and rebuilds the detail. Safe to
@@ -92,11 +87,9 @@ class Shelf {
   void on_sidebar_selection();
   void select_nav(std::string const& nav);
 
-  // ---- detail (home digest | grid | empty | loading) ----
+  // ---- detail (home strips | grid | empty | loading) ----
   GtkWidget* build_home();
-  void update_home_stats();
-  void rebuild_continue_strip();
-  void refresh_reading_stats();
+  void rebuild_home_strips();
 
   GtkWidget* build_empty_state();
   void rebuild();
@@ -104,9 +97,6 @@ class Shelf {
   void load_cover(GtkWidget* child);
   void show_context_menu(GtkWidget* child, double x, double y);
   void install_actions();
-
-  // ---- reading-time ledger (device-local minutes per day) ----
-  void tick_reading_minute();
 
   // ---- scope state ----
   std::vector<std::string> collections() const;
@@ -150,29 +140,21 @@ class Shelf {
   GtkWidget* header_search_{nullptr};
   GtkButton* empty_import_{nullptr};
 
-  // home digest widgets the 60 s tick updates in place
+  // home page widgets the strips rebuild in place
   GtkWidget* home_scroll_{nullptr};
   GtkWidget* home_title_{nullptr};
-  GtkWidget* gauge_area_{nullptr};
-  GtkWidget* minutes_label_{nullptr};
-  GtkWidget* goal_badge_{nullptr};
-  std::array<GtkWidget*, 7> streak_day_labels_{};
-  GtkWidget* streak_text_{nullptr};
   GtkWidget* continue_title_{nullptr};
   GtkWidget* continue_scroll_{nullptr};
   GtkWidget* continue_box_{nullptr};
+  GtkWidget* recent_title_{nullptr};
+  GtkWidget* recent_scroll_{nullptr};
+  GtkWidget* recent_box_{nullptr};
 
   // ---- navigation state ("home" | "all" | "want" | "finished" | "pdf" |
   // "epub" | "c:<collection name>"; the search row acts, never selects) ----
   std::string selection_{"home"};
   bool updating_nav_{false};
   std::vector<std::string> sidebar_collections_;  // rows already built
-
-  // ---- reading-time stats (refreshed from host.conf) ----
-  int today_minutes_{0};
-  std::array<int, 7> week_minutes_{};  // Mon..Sun
-  int streak_days_{0};
-  guint reading_tick_{0};  // g_timeout_add_seconds(60)
 
   // ---- model ----
   std::vector<rivet_app::LibraryEntry> library_;

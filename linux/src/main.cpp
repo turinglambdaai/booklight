@@ -2988,14 +2988,6 @@ void on_activate(GtkApplication* app, gpointer) {
       },
       [] { return g_host.recents; },
       [] { return g_host.window; },
-      [] {
-        // a reader tab owns the window and the window shows it (mac
-        // tickReadingMinute: activeReader.hasDocument && a visible key
-        // window — the shelf idling never accrues minutes)
-        return g_host.window != nullptr &&
-               gtk_widget_get_visible(GTK_WIDGET(g_host.window)) &&
-               !g_host.shelf_visible;
-      },
       [] { refresh_header_title(); },
   });
   gtk_header_bar_pack_start(GTK_HEADER_BAR(header),
