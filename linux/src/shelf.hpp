@@ -12,6 +12,7 @@
 
 #include <gtk/gtk.h>
 
+#include <array>
 #include <deque>
 #include <functional>
 #include <optional>
@@ -32,6 +33,9 @@ class Shelf {
     std::function<rivet_app::API*()> api;          // null until backend ready
     std::function<std::vector<rivet_app::RecentEntry>()> recents;
     std::function<GtkWindow*()> window;
+    // True while a reader tab owns the window and shows a document (the
+    // shelf idling never accrues reading time) and the window is visible.
+    std::function<bool()> reading_active;
     // The header-bar title follows the sidebar selection.
     std::function<void()> title_changed;
   };
@@ -50,6 +54,8 @@ class Shelf {
   GtkWidget* header_import() const { return header_import_; }
   GtkWidget* header_spinner() const { return header_spinner_; }
   GtkWidget* header_search() const { return header_search_; }
+  // The Books toolbar mini-gauge: today's seconds against the daily goal.
+  GtkWidget* header_ring() const { return header_ring_; }
 
   // The sidebar selection as a header-bar title (mac navigationTitle).
   std::string current_title() const;
@@ -87,9 +93,13 @@ class Shelf {
   void on_sidebar_selection();
   void select_nav(std::string const& nav);
 
-  // ---- detail (home strips | grid | empty | loading) ----
+  // ---- detail (home | grid | empty | loading) ----
   GtkWidget* build_home();
+  GtkWidget* build_goals_card();
+  GtkWidget* build_header_ring();
   void rebuild_home_strips();
+  void update_reading_widgets();
+  void open_last_read_book();
 
   GtkWidget* build_empty_state();
   void rebuild();
@@ -97,6 +107,11 @@ class Shelf {
   void load_cover(GtkWidget* child);
   void show_context_menu(GtkWidget* child, double x, double y);
   void install_actions();
+
+  // ---- reading-time ledger (live seconds toward the daily goal; mac
+  // AppModel reading section parity) ----
+  void refresh_reading_stats();
+  void tick_reading_second();
 
   // ---- scope state ----
   std::vector<std::string> collections() const;
@@ -138,6 +153,7 @@ class Shelf {
   GtkWidget* header_spinner_{nullptr};
   GtkSearchEntry* search_entry_{nullptr};
   GtkWidget* header_search_{nullptr};
+  GtkWidget* header_ring_{nullptr};
   GtkButton* empty_import_{nullptr};
 
   // home page widgets the strips rebuild in place
@@ -150,11 +166,26 @@ class Shelf {
   GtkWidget* recent_scroll_{nullptr};
   GtkWidget* recent_box_{nullptr};
 
+  // goals-card widgets the 1 s tick updates in place
+  GtkWidget* gauge_area_{nullptr};
+  GtkWidget* mmss_label_{nullptr};
+  GtkWidget* goal_badge_{nullptr};
+  std::array<GtkWidget*, 7> streak_day_labels_{};
+  GtkWidget* streak_text_{nullptr};
+  GtkWidget* continue_pill_{nullptr};   // opens the last-read book
+  GtkWidget* card_import_{nullptr};     // import button when no recents
+
   // ---- navigation state ("home" | "all" | "want" | "finished" | "pdf" |
   // "epub" | "c:<collection name>"; the search row acts, never selects) ----
   std::string selection_{"home"};
   bool updating_nav_{false};
   std::vector<std::string> sidebar_collections_;  // rows already built
+
+  // ---- reading-time stats (live seconds, refreshed from host.conf) ----
+  int today_seconds_{0};
+  std::array<int, 7> week_seconds_{};  // Mon..Sun
+  int streak_days_{0};
+  guint reading_tick_{0};  // g_timeout_add_seconds(1)
 
   // ---- model ----
   std::vector<rivet_app::LibraryEntry> library_;

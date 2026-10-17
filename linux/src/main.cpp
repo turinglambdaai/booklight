@@ -3163,12 +3163,24 @@ void on_activate(GtkApplication* app, gpointer) {
       },
       [] { return g_host.recents; },
       [] { return g_host.window; },
+      [] {
+        // a reader tab owns the window and the window shows it (mac
+        // readingActive: activeReader.hasDocument && a visible key window
+        // — the shelf idling never accrues seconds)
+        return g_host.window != nullptr &&
+               gtk_widget_get_visible(GTK_WIDGET(g_host.window)) &&
+               !g_host.shelf_visible;
+      },
       [] { refresh_header_title(); },
   });
   gtk_header_bar_pack_start(GTK_HEADER_BAR(header),
                             g_host.shelf->header_import());
   gtk_header_bar_pack_start(GTK_HEADER_BAR(header),
                             g_host.shelf->header_spinner());
+  // pack_end fills from the right edge inward, so the ring lands
+  // rightmost of the shelf group: ring | search, the mac toolbar row.
+  gtk_header_bar_pack_end(GTK_HEADER_BAR(header),
+                          g_host.shelf->header_ring());
   gtk_header_bar_pack_end(GTK_HEADER_BAR(header),
                           g_host.shelf->header_search());
 
