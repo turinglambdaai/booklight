@@ -3,36 +3,180 @@ import AppKit
 import PDFKit
 import UniformTypeIdentifiers
 
-// MARK: - the shelf (library-first launch window)
+// MARK: - the shelf window (Books model)
 //
-// The launch window IS the shelf: cover grid, collections filter, search,
-// import. Double-clicking a cover opens the reading window (one document
-// per window — the Preview model). The shelf catalogs books in place;
-// nothing here ever copies or moves a file.
+// Sidebar navigation (home / smart groups / PDF / EPUB / collections) over
+// a detail area that is either the Home digest (today's reading, streak,
+// continue-reading) or a cover grid for the selected scope. Books are
+// cataloged in place; nothing here ever copies or moves a file.
 
 struct LibraryView: View {
     @EnvironmentObject private var app: AppModel
+    @State private var newCollectionRequested = false
+
+    var body: some View {
+        NavigationSplitView {
+            shelfSidebar
+                .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
+        } detail: {
+            Group {
+                if app.shelfSelection == "home" {
+                    HomeDigest()
+                } else {
+                    ShelfGrid()
+                }
+            }
+            .navigationTitle(titleFor(app.shelfSelection))
+        }
+    }
+
+    private func titleFor(_ selection: String) -> String {
+        switch selection {
+        case "home": return L10n.t("ui.shelf.home")
+        case "search", "all": return L10n.t("ui.shelf.all")
+        case "want": return L10n.t("ui.shelf.want")
+        case "reading": return L10n.t("ui.shelf.continue")
+        case "finished": return L10n.t("ui.shelf.finished")
+        case "pdf": return L10n.t("ui.shelf.pdf")
+        case "epub": return L10n.t("ui.shelf.epub")
+        case let sel where sel.hasPrefix("c:"): return String(sel.dropFirst(2))
+        default: return L10n.t("ui.shelf.all")
+        }
+    }
+
+    // MARK: sidebar (source-list, Books arrangement)
+
+    @ViewBuilder
+    private var shelfSidebar: some View {
+        List(selection: Binding(
+            get: { app.shelfSelection },
+            set: { newValue in
+                if newValue == "search" {
+                    // the search row selects the all-scope and focuses its field
+                    app.shelfSelection = "all"
+                    return
+                }
+                if newValue == "new-collection" {
+                    newCollectionRequested = true
+                    return
+                }
+                app.shelfSelection = newValue
+            })) {
+            Label(L10n.t("ui.shelf.search"), systemImage: "magnifyingglass")
+                .tag("search")
+
+            Section(L10n.t("ui.shelf.home")) {
+                Label(L10n.t("ui.shelf.home"), systemImage: "house")
+                    .tag("home")
+            }
+
+            Section(L10n.t("ui.shelf.lib")) {
+                Label(L10n.t("ui.shelf.all"), systemImage: "books.vertical")
+                    .tag("all")
+                Label(L10n.t("ui.shelf.want"), systemImage: "circle.dashed")
+                    .tag("want")
+                Label(L10n.t("ui.shelf.finished"), systemImage: "checkmark.circle")
+                    .tag("finished")
+                Label(L10n.t("ui.shelf.pdf"), systemImage: "doc.richtext")
+                    .tag("pdf")
+                Label(L10n.t("ui.shelf.epub"), systemImage: "book")
+                    .tag("epub")
+            }
+
+            Section(L10n.t("ui.shelf.mine")) {
+                ForEach(app.shelfCollections, id: \.self) { name in
+                    Label(name, systemImage: "folder")
+                        .tag("c:\(name)")
+                }
+                Label(L10n.t("ui.shelf.new-collection"), systemImage: "plus")
+                    .tag("new-collection")
+            }
+        }
+        .listStyle(.sidebar)
+        .sheet(isPresented: $newCollectionRequested) {
+            NewCollectionSheet { name in
+                app.createCollection(name)
+                app.shelfSelection = "c:\(name)"
+            }
+        }
+    }
+}
+
+// MARK: - new collection sheet
+
+struct NewCollectionSheet: View {
+    let oncreate: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text(L10n.t("ui.shelf.new-collection"))
+                .font(.system(size: 14, weight: .semibold))
+            TextField(L10n.t("ui.shelf.new-collection"), text: $name)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 240)
+                .onSubmit { commit() }
+            HStack(spacing: 10) {
+                Button(L10n.t("ui.password.cancel")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(L10n.t("ui.password.ok")) { commit() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 320)
+    }
+
+    private func commit() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        dismiss()
+        oncreate(trimmed)
+    }
+}
+
+// MARK: - grid detail (every non-home scope)
+
+struct ShelfGrid: View {
+    @EnvironmentObject private var app: AppModel
+    @FocusState var searchFocused: Bool
+
     var body: some View {
         ZStack {
             Theme.bg.frame(maxWidth: .infinity, maxHeight: .infinity)
-            shelfContent
+            gridContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg)
         .foregroundStyle(Theme.text)
-        .navigationTitle(L10n.t("ui.library.title"))
-        .toolbar { shelfToolbar }
-        .task { await app.loadLibrary() }
+        .toolbar { gridToolbar }
     }
 
-    // MARK: content
-
     @ViewBuilder
-    private var shelfContent: some View {
+    private var gridContent: some View {
         if !app.ready {
             EmptyHint(L10n.t("ui.update.checking"))
         } else if app.shelfEntries.isEmpty {
-            emptyState
+            VStack(spacing: 12) {
+                Image(systemName: "books.vertical")
+                    .font(.system(size: 44))
+                    .foregroundStyle(Theme.accent)
+                Text(L10n.t("ui.library.empty"))
+                    .font(.system(size: 17, weight: .semibold))
+                Text(L10n.t("ui.library.empty-hint"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textDim)
+                Button(L10n.t("ui.library.import")) {
+                    app.pickAndOpen()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.accent)
+                .disabled(!app.ready)
+                .padding(.top, 6)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 136, maximum: 180), spacing: 22)],
@@ -47,32 +191,9 @@ struct LibraryView: View {
         }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "books.vertical")
-                .font(.system(size: 44))
-                .foregroundStyle(Theme.accent)
-            Text(L10n.t("ui.library.empty"))
-                .font(.system(size: 17, weight: .semibold))
-            Text(L10n.t("ui.library.empty-hint"))
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.textDim)
-            Button(L10n.t("ui.library.import")) {
-                app.pickAndOpen()
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.accent)
-            .disabled(!app.ready)
-            .padding(.top, 6)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // MARK: toolbar
-
     @ToolbarContentBuilder
-    private var shelfToolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
+    private var gridToolbar: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 app.pickAndOpen()
             } label: {
@@ -85,21 +206,157 @@ struct LibraryView: View {
             if app.libraryImporting {
                 ProgressView().controlSize(.small)
             }
-            Picker("", selection: $app.shelfFilter) {
-                Text(L10n.t("ui.library.all")).tag(String?.none)
-                Text(L10n.t("ui.library.unfiled")).tag("unfiled" as String?)
-                ForEach(app.shelfCollections, id: \.self) { name in
-                    Text(name).tag(name as String?)
-                }
-            }
-            .labelsHidden()
-            .frame(width: 150)
             TextField(L10n.t("ui.library.search"), text: $app.shelfSearch)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 190)
+                .focused($searchFocused)
         }
     }
 }
+
+// MARK: - home digest (today's reading, streak, continue-reading)
+
+struct HomeDigest: View {
+    @EnvironmentObject private var app: AppModel
+
+    private var goalRatio: Double {
+        min(1.0, Double(app.todayMinutes) / Double(max(app.goalMinutes, 1)))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text(L10n.t("ui.shelf.home"))
+                    .font(.system(size: 34, weight: .bold))
+                    .padding(.top, 12)
+
+                goalsCard
+
+                if !readingNow.isEmpty {
+                    Text(L10n.t("ui.shelf.continue"))
+                        .font(.system(size: 17, weight: .semibold))
+                    continueRow
+                }
+            }
+            .padding(.horizontal, 32)
+            .padding(.bottom, 32)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg)
+        .foregroundStyle(Theme.text)
+    }
+
+    private var readingNow: [RivetTypes.LibraryEntry] {
+        app.library.filter { entry in
+            guard let p = app.shelfProgress(entry) else { return false }
+            return p.page < p.of
+        }
+    }
+
+    // MARK: goals card
+
+    private var goalsCard: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                // track + progress semicircles
+                SemiGauge()
+                    .stroke(Theme.border, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                SemiGauge(trim: CGFloat(goalRatio))
+                    .stroke(Theme.accent,
+                            style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                VStack(spacing: 4) {
+                    Text(L10n.t("ui.shelf.today"))
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("\(app.todayMinutes) \(L10n.t("ui.shelf.minutes"))")
+                        .font(.system(size: 44, weight: .bold).monospacedDigit())
+                    Text(L10n.t("ui.shelf.goal-of"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textDim)
+                    if goalRatio >= 1 {
+                        Text(L10n.t("ui.shelf.goal-hit"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Theme.accentSoft))
+                    }
+                }
+            }
+            .frame(height: 210)
+            .padding(.top, 8)
+
+            Divider().overlay(Theme.border)
+
+            streakRow
+                .padding(.vertical, 18)
+        }
+        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.panel))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
+        .frame(maxWidth: 760)
+    }
+
+    private var streakRow: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                let symbols = ["一", "二", "三", "四", "五", "六", "日"]
+                ForEach(0..<7, id: \.self) { index in
+                    let read = app.weekMinutes.indices.contains(index)
+                        && app.weekMinutes[index] > 0
+                    ZStack {
+                        Circle()
+                            .fill(read ? Theme.accent : Theme.panelAlt)
+                            .overlay(Circle().stroke(Theme.border))
+                            .frame(width: 30, height: 30)
+                        Text(symbols[index])
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(read ? Color.white : Theme.textDim)
+                    }
+                }
+            }
+            if app.streakDays > 0 {
+                Text(L10n.t("ui.shelf.streak-record", "\(app.streakDays)"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textDim)
+            } else {
+                Text(L10n.t("ui.shelf.streak-start"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textDim)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: continue-reading row
+
+    private var continueRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 22) {
+                ForEach(readingNow, id: \.path) { entry in
+                    BookCoverView(entry: entry)
+                        .frame(width: 150)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
+
+/// Top-half arc, starting at the left horizon sweeping right; `trim`
+/// fraction is relative to the half-circle.
+struct SemiGauge: Shape {
+    var trim: CGFloat = 1.0
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addArc(center: CGPoint(x: rect.midX, y: rect.maxY),
+                    radius: min(rect.width / 2, rect.height),
+                    startAngle: .degrees(180),
+                    endAngle: .degrees(0),
+                    clockwise: false)
+        return path.trimmedPath(from: 0.0001, to: max(0.0002, trim))
+    }
+}
+
 
 // MARK: - one shelf cell
 
@@ -135,8 +392,6 @@ struct BookCoverView: View {
         .sheet(isPresented: $newCollectionSheet) { newCollectionSheetView }
         .help(isMissing ? L10n.t("ui.library.missing") : entry.title)
     }
-
-    // MARK: cover art
 
     @ViewBuilder
     private var cover: some View {
@@ -209,8 +464,6 @@ struct BookCoverView: View {
         }
     }
 
-    // MARK: actions
-
     private func open() {
         guard !isMissing else { return }
         app.openWindow?(entry.path)
@@ -223,7 +476,7 @@ struct BookCoverView: View {
             Divider()
         }
         Menu(L10n.t("ui.library.add-to")) {
-            Button(L10n.t("ui.library.new-collection")) { newCollectionSheet = true }
+            Button(L10n.t("ui.shelf.new-collection")) { newCollectionSheet = true }
             if !app.shelfCollections.isEmpty { Divider() }
             ForEach(app.shelfCollections, id: \.self) { name in
                 Button(name) { app.addToCollection(entry, name: name) }
@@ -247,36 +500,13 @@ struct BookCoverView: View {
     }
 
     private var newCollectionSheetView: some View {
-        VStack(spacing: 14) {
-            Text(L10n.t("ui.library.new-collection"))
-                .font(.system(size: 14, weight: .semibold))
-            TextField(L10n.t("ui.library.new-collection"), text: $newCollectionName)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 240)
-                .onSubmit { createAndAssign() }
-            HStack(spacing: 10) {
-                Button(L10n.t("ui.password.cancel")) { newCollectionSheet = false }
-                    .keyboardShortcut(.cancelAction)
-                Button(L10n.t("ui.password.ok")) { createAndAssign() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(newCollectionName.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
+        NewCollectionSheet { name in
+            app.addToCollection(entry, name: name)
         }
-        .padding(24)
-        .frame(width: 320)
-    }
-
-    private func createAndAssign() {
-        let name = newCollectionName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-        newCollectionSheet = false
-        app.addToCollection(entry, name: name)
-        newCollectionName = ""
     }
 }
-
 extension AppModel {
-    /// Tools-style relocate flow for a missing book: pick the moved file,
+    /// Books-style relocate flow for a missing book: pick the moved file,
     /// the shelf re-links to it (books are never re-copied).
     func relocateEntry(_ entry: RivetTypes.LibraryEntry) {
         let panel = NSOpenPanel()
