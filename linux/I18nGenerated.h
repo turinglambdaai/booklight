@@ -307,6 +307,16 @@ inline constexpr struct LinuxStringEntry {
     {"ui.shelf.continue", "继续阅读", "Continue Reading"},
     {"ui.shelf.minutes", "分钟", "min"},
     {"ui.shelf.goal-hit", "目标达成！", "Goal reached!"},
+    {"ui.tools.watermark", "添加水印…", "Add Watermark…"},
+    {"ui.tools.export-page", "导出当前页为图片…", "Export Current Page as Image…"},
+    {"ui.tools.export-text", "导出文本…", "Export Text…"},
+    {"ui.watermark.text", "水印文字", "Watermark text"},
+    {"ui.watermark.size", "字号", "Size"},
+    {"ui.watermark.opacity", "不透明度（%）", "Opacity (%)"},
+    {"ui.watermark.apply", "应用水印", "Apply Watermark"},
+    {"ui.watermark.applying", "正在烘焙水印…", "Baking watermark…"},
+    {"ui.export.failed", "导出失败：{0}", "Export failed: {0}"},
+    {"ui.need.text", "当前页没有可导出的文本。", "This page has no text to export."},
 };
 
 }  // namespace pdfgist
