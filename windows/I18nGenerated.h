@@ -306,6 +306,16 @@ inline constexpr struct WinStringEntry {
     {"ui.shelf.continue", L"继续阅读", L"Continue Reading"},
     {"ui.shelf.minutes", L"分钟", L"min"},
     {"ui.shelf.goal-hit", L"目标达成！", L"Goal reached!"},
+    {"ui.tools.watermark", L"添加水印…", L"Add Watermark…"},
+    {"ui.tools.export-page", L"导出当前页为图片…", L"Export Current Page as Image…"},
+    {"ui.tools.export-text", L"导出文本…", L"Export Text…"},
+    {"ui.watermark.text", L"水印文字", L"Watermark text"},
+    {"ui.watermark.size", L"字号", L"Size"},
+    {"ui.watermark.opacity", L"不透明度（%）", L"Opacity (%)"},
+    {"ui.watermark.apply", L"应用水印", L"Apply Watermark"},
+    {"ui.watermark.applying", L"正在烘焙水印…", L"Baking watermark…"},
+    {"ui.export.failed", L"导出失败：{0}", L"Export failed: {0}"},
+    {"ui.need.text", L"当前页没有可导出的文本。", L"This page has no text to export."},
 };
 
 }  // namespace pdfgist
