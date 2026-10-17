@@ -299,6 +299,17 @@ enum L10n {
     "ui.shelf.continue": "继续阅读",
     "ui.shelf.minutes": "分钟",
     "ui.shelf.goal-hit": "目标达成！",
+    "ui.tools.watermark": "添加水印…",
+    "ui.tools.export-page": "导出当前页为图片…",
+    "ui.tools.export-text": "导出文本…",
+    "ui.watermark.text": "水印文字",
+    "ui.watermark.size": "字号",
+    "ui.watermark.opacity": "不透明度（%）",
+    "ui.watermark.apply": "应用水印",
+    "ui.watermark.applying": "正在烘焙水印…",
+    "ui.export.failed": "导出失败：{0}",
+    "ui.home.recent": "最近添加",
+    "ui.need.text": "当前页没有可导出的文本。",
     ]
 
     private static let en: [String: String] = [
@@ -596,6 +607,17 @@ enum L10n {
     "ui.shelf.continue": "Continue Reading",
     "ui.shelf.minutes": "min",
     "ui.shelf.goal-hit": "Goal reached!",
+    "ui.tools.watermark": "Add Watermark…",
+    "ui.tools.export-page": "Export Current Page as Image…",
+    "ui.tools.export-text": "Export Text…",
+    "ui.watermark.text": "Watermark text",
+    "ui.watermark.size": "Size",
+    "ui.watermark.opacity": "Opacity (%)",
+    "ui.watermark.apply": "Apply Watermark",
+    "ui.watermark.applying": "Baking watermark…",
+    "ui.export.failed": "Export failed: {0}",
+    "ui.home.recent": "Recently Added",
+    "ui.need.text": "This page has no text to export.",
     ]
 
     /// Look up a key in the active language, falling back to zh then the key

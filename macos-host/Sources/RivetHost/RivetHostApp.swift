@@ -144,6 +144,16 @@ struct AppCommands: Commands {
                 HostActions.mergePDF?()
             }
             Divider()
+            Button(L10n.t("ui.tools.watermark")) {
+                HostActions.showWatermark?()
+            }
+            Button(L10n.t("ui.tools.export-page")) {
+                HostActions.exportPageImage?()
+            }
+            Button(L10n.t("ui.tools.export-text")) {
+                HostActions.exportText?()
+            }
+            Divider()
             Button(L10n.t("ui.menu.fill-forms")) {
                 HostActions.showForms?()
             }

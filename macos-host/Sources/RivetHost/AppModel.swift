@@ -79,74 +79,6 @@ final class AppModel: ObservableObject {
         return (Int(recent.page), max(1, Int(entry.pages)))
     }
 
-    // ---- reading time (device-local: minutes per day, Books-style goals) ----
-    /// Persisted in UserDefaults on this device only — cross-device minute
-    /// merging through file sync would double-count, so this deliberately
-    /// never rides the sync drive.
-    @Published var todayMinutes = 0
-    @Published var weekMinutes: [Int] = Array(repeating: 0, count: 7) // Mon..Sun
-    @Published var streakDays = 0
-    @Published var goalMinutes = 20
-
-    private var readingClock: Timer?
-    private let dayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    func startReadingClock() {
-        guard readingClock == nil else { return }
-        refreshReadingStats()
-        readingClock = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tickReadingMinute() }
-        }
-    }
-
-    /// One minute of reading accrues when a reader window is key and showing
-    /// a document (the shelf idles don't count).
-    private func tickReadingMinute() {
-        let readingNow = activeReader?.hasDocument == true
-            && NSApp.windows.contains { $0.isVisible && $0.isKeyWindow }
-        guard readingNow else { return }
-        addReadingMinutes(1)
-    }
-
-    func addReadingMinutes(_ minutes: Int) {
-        let day = dayFormatter.string(from: Date())
-        var stats = UserDefaults.standard.dictionary(forKey: "booklight-reading-minutes")
-            as? [String: Int] ?? [:]
-        stats[day, default: 0] += minutes
-        UserDefaults.standard.set(stats, forKey: "booklight-reading-minutes")
-        refreshReadingStats()
-    }
-
-    func refreshReadingStats() {
-        let stats = UserDefaults.standard.dictionary(forKey: "booklight-reading-minutes")
-            as? [String: Int] ?? [:]
-        let today = dayFormatter.string(from: Date())
-        todayMinutes = stats[today] ?? 0
-        // calendar week Mon..Sun
-        let cal = Calendar(identifier: .iso8601)
-        let week = cal.dateInterval(of: .weekOfYear, for: Date())!.start
-        weekMinutes = (0..<7).map { offset in
-            let day = dayFormatter.string(from: cal.date(byAdding: .day, value: offset, to: week)!)
-            return stats[day] ?? 0
-        }
-        // current streak: consecutive reading days ending today or yesterday
-        var streak = 0
-        var cursor = Date()
-        if (stats[dayFormatter.string(from: cursor)] ?? 0) == 0 {
-            cursor = cal.date(byAdding: .day, value: -1, to: cursor)!
-        }
-        while (stats[dayFormatter.string(from: cursor)] ?? 0) > 0 {
-            streak += 1
-            cursor = cal.date(byAdding: .day, value: -1, to: cursor)!
-        }
-        streakDays = streak
-    }
-
     func loadLibrary() async {
         guard let api else { return }
         library = (try? await api.get_library()) ?? library
@@ -443,7 +375,6 @@ final class AppModel: ObservableObject {
             // Refresh missing statuses in the background; the shelf shows
             // whatever is known the moment it is on screen.
             Task { [weak self] in await self?.rescanShelf() }
-            startReadingClock()
             autoCheckForUpdates()
         } catch {
             ready = false
@@ -764,6 +695,9 @@ final class AppModel: ObservableObject {
         HostActions.pageEdit = { [weak self] op in self?.activeReader?.runPageEdit(op) }
         HostActions.mergePDF = { [weak self] in self?.activeReader?.pickAndMergePDF() }
         HostActions.showForms = { [weak self] in self?.activeReader?.showForms() }
+        HostActions.showWatermark = { [weak self] in self?.activeReader?.showWatermarkDialog() }
+        HostActions.exportPageImage = { [weak self] in self?.activeReader?.exportCurrentPageImage() }
+        HostActions.exportText = { [weak self] in self?.activeReader?.exportDocumentText() }
     }
 
     /// Open panel shared by the menu and the welcome state. Empty reader
@@ -824,6 +758,16 @@ enum HostActions {
     nonisolated(unsafe) static var pageEdit: ((PageEditOp) -> Void)?
     nonisolated(unsafe) static var mergePDF: (() -> Void)?
     nonisolated(unsafe) static var showForms: (() -> Void)?
+    nonisolated(unsafe) static var showWatermark: (() -> Void)?
+    nonisolated(unsafe) static var exportPageImage: (() -> Void)?
+    nonisolated(unsafe) static var exportText: (() -> Void)?
+}
+
+/// Fields of the watermark sheet; applied through edit-bake-text.
+struct WatermarkDraft: Equatable {
+    var text: String = "机密"
+    var size: Int = 48
+    var opacityPercent: Int = 30
 }
 
 /// RVT1 event bridge: events arrive on a background hop and are delivered to

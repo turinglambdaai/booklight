@@ -214,14 +214,10 @@ struct ShelfGrid: View {
     }
 }
 
-// MARK: - home digest (today's reading, streak, continue-reading)
+// MARK: - home digest (continue-reading + recently added)
 
 struct HomeDigest: View {
     @EnvironmentObject private var app: AppModel
-
-    private var goalRatio: Double {
-        min(1.0, Double(app.todayMinutes) / Double(max(app.goalMinutes, 1)))
-    }
 
     var body: some View {
         ScrollView {
@@ -230,12 +226,16 @@ struct HomeDigest: View {
                     .font(.system(size: 34, weight: .bold))
                     .padding(.top, 12)
 
-                goalsCard
-
                 if !readingNow.isEmpty {
                     Text(L10n.t("ui.shelf.continue"))
                         .font(.system(size: 17, weight: .semibold))
                     continueRow
+                }
+
+                if !recentlyAdded.isEmpty {
+                    Text(L10n.t("ui.home.recent"))
+                        .font(.system(size: 17, weight: .semibold))
+                    recentRow
                 }
             }
             .padding(.horizontal, 32)
@@ -253,80 +253,9 @@ struct HomeDigest: View {
         }
     }
 
-    // MARK: goals card
-
-    private var goalsCard: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                // track + progress semicircles
-                SemiGauge()
-                    .stroke(Theme.border, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                SemiGauge(trim: CGFloat(goalRatio))
-                    .stroke(Theme.accent,
-                            style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                VStack(spacing: 4) {
-                    Text(L10n.t("ui.shelf.today"))
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("\(app.todayMinutes) \(L10n.t("ui.shelf.minutes"))")
-                        .font(.system(size: 44, weight: .bold).monospacedDigit())
-                    Text(L10n.t("ui.shelf.goal-of"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.textDim)
-                    if goalRatio >= 1 {
-                        Text(L10n.t("ui.shelf.goal-hit"))
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Theme.accent)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Theme.accentSoft))
-                    }
-                }
-            }
-            .frame(height: 210)
-            .padding(.top, 8)
-
-            Divider().overlay(Theme.border)
-
-            streakRow
-                .padding(.vertical, 18)
-        }
-        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.panel))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
-        .frame(maxWidth: 760)
+    private var recentlyAdded: [RivetTypes.LibraryEntry] {
+        app.library.sorted { $0.added_at_ms > $1.added_at_ms }.prefix(12).map { $0 }
     }
-
-    private var streakRow: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                let symbols = ["一", "二", "三", "四", "五", "六", "日"]
-                ForEach(0..<7, id: \.self) { index in
-                    let read = app.weekMinutes.indices.contains(index)
-                        && app.weekMinutes[index] > 0
-                    ZStack {
-                        Circle()
-                            .fill(read ? Theme.accent : Theme.panelAlt)
-                            .overlay(Circle().stroke(Theme.border))
-                            .frame(width: 30, height: 30)
-                        Text(symbols[index])
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(read ? Color.white : Theme.textDim)
-                    }
-                }
-            }
-            if app.streakDays > 0 {
-                Text(L10n.t("ui.shelf.streak-record", "\(app.streakDays)"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.textDim)
-            } else {
-                Text(L10n.t("ui.shelf.streak-start"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.textDim)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: continue-reading row
 
     private var continueRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -339,21 +268,17 @@ struct HomeDigest: View {
             .padding(.vertical, 4)
         }
     }
-}
 
-/// Top-half arc, starting at the left horizon sweeping right; `trim`
-/// fraction is relative to the half-circle.
-struct SemiGauge: Shape {
-    var trim: CGFloat = 1.0
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.addArc(center: CGPoint(x: rect.midX, y: rect.maxY),
-                    radius: min(rect.width / 2, rect.height),
-                    startAngle: .degrees(180),
-                    endAngle: .degrees(0),
-                    clockwise: false)
-        return path.trimmedPath(from: 0.0001, to: max(0.0002, trim))
+    private var recentRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 22) {
+                ForEach(recentlyAdded, id: \.path) { entry in
+                    BookCoverView(entry: entry)
+                        .frame(width: 150)
+                }
+            }
+            .padding(.vertical, 4)
+        }
     }
 }
 

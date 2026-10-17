@@ -181,6 +181,9 @@ struct ReaderWindowView: View {
             set: { app.showUpdateSheet = $0 })) {
             UpdateView()
         }
+        .sheet(isPresented: $reader.showWatermark) {
+            WatermarkSheet(reader: reader)
+        }
         .onChange(of: reader.sidebarMode) { _ in
             // Picking a view — from the toolbar picker or the Tools menu —
             // while the sidebar is collapsed opens it.
@@ -536,5 +539,69 @@ struct PasswordSheet: View {
         guard !password.isEmpty else { return }
         reader.submitPassword(password)
         password = ""
+    }
+}
+
+
+// MARK: - watermark sheet (Tools > Add Watermark)
+
+struct WatermarkSheet: View {
+    @ObservedObject var reader: ReaderModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = "机密"
+    @State private var size = 48
+    @State private var opacityPercent = 30
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text(L10n.t("ui.tools.watermark"))
+                .font(.system(size: 14, weight: .semibold))
+            TextField(L10n.t("ui.watermark.text"), text: $text)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 260)
+            HStack(spacing: 10) {
+                Text(L10n.t("ui.watermark.size"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textDim)
+                Stepper("\(size)", value: $size, in: 12...144)
+                    .font(.system(size: 12))
+                Spacer()
+            }
+            .frame(width: 260)
+            HStack(spacing: 10) {
+                Text(L10n.t("ui.watermark.opacity"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textDim)
+                Slider(value: Binding(
+                    get: { Double(opacityPercent) },
+                    set: { opacityPercent = Int($0) }), in: 5...100)
+                Text("\(opacityPercent)%")
+                    .font(.system(size: 12).monospacedDigit())
+                    .frame(width: 40)
+            }
+            .frame(width: 260)
+            HStack(spacing: 10) {
+                Button(L10n.t("ui.password.cancel")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(L10n.t("ui.watermark.apply")) {
+                    dismiss()
+                    reader.applyWatermark(WatermarkDraft(
+                        text: text,
+                        size: size,
+                        opacityPercent: opacityPercent))
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 340)
+        .onAppear {
+            if let draft = reader.watermarkDraft {
+                text = draft.text
+                size = draft.size
+                opacityPercent = draft.opacityPercent
+            }
+        }
     }
 }

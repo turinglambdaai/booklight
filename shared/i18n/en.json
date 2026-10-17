@@ -292,5 +292,16 @@
   "ui.shelf.streak-record": "Your record is {0} days.",
   "ui.shelf.continue": "Continue Reading",
   "ui.shelf.minutes": "min",
-  "ui.shelf.goal-hit": "Goal reached!"
+  "ui.shelf.goal-hit": "Goal reached!",
+  "ui.tools.watermark": "Add Watermark…",
+  "ui.tools.export-page": "Export Current Page as Image…",
+  "ui.tools.export-text": "Export Text…",
+  "ui.watermark.text": "Watermark text",
+  "ui.watermark.size": "Size",
+  "ui.watermark.opacity": "Opacity (%)",
+  "ui.watermark.apply": "Apply Watermark",
+  "ui.watermark.applying": "Baking watermark…",
+  "ui.export.failed": "Export failed: {0}",
+  "ui.home.recent": "Recently Added",
+  "ui.need.text": "This page has no text to export."
 }
