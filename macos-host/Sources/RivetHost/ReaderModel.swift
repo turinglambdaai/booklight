@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import AVFoundation
+import UniformTypeIdentifiers
 import PDFKit
 import WebKit
 import RivetRuntime
@@ -348,6 +349,85 @@ final class ReaderModel: ObservableObject {
     func showForms() {
         guard pdf != nil else { return }
         sidebarMode = 3
+    }
+
+    /// Tools > Add Watermark: sheet fields, then edit-bake-text (in-memory).
+    @Published var showWatermark = false
+    @Published var watermarkDraft: WatermarkDraft?
+
+    func showWatermarkDialog() {
+        guard pdf != nil else { return }
+        watermarkDraft = WatermarkDraft()
+    }
+
+    func applyWatermark(_ draft: WatermarkDraft) {
+        guard let tab = pdf, let api = app?.api else { return }
+        watermarkDraft = nil
+        Task { [weak self] in
+            do {
+                let data = try await api.edit_bake_text(
+                    path: tab.path,
+                    watermark_text: draft.text,
+                    watermark_size: Int64(draft.size),
+                    watermark_opacity_milli: Int64(draft.opacityPercent) * 1000,
+                    boxes: [])
+                await MainActor.run { self?.reloadTabDocument(tab, data: data) }
+            } catch {
+                await MainActor.run {
+                    self?.alert(L10n.t("ui.pages.edit-failed", AppModel.cleanError(error)))
+                }
+            }
+        }
+    }
+
+    /// Tools > Export Current Page as Image: the visible page at 2x.
+    func exportCurrentPageImage() {
+        guard let tab = pdf, let page = tab.pdfView.currentPage else { return }
+        let bounds = page.bounds(for: .mediaBox)
+        let scale: CGFloat = 2
+        let thumb = page.thumbnail(
+            of: CGSize(width: bounds.width * scale, height: bounds.height * scale),
+            for: .mediaBox)
+        guard let tiff = thumb.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else {
+            alert(L10n.t("ui.export.failed", "render"))
+            return
+        }
+        let stem = (tab.title as NSString).deletingPathExtension
+        saveData(png, defaultName: "\(stem)-\(tab.currentPage).png", type: .png)
+    }
+
+    /// Tools > Export Text: the whole document's text layer as .txt.
+    func exportDocumentText() {
+        guard let tab = pdf, let doc = tab.document else { return }
+        guard let text = doc.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else {
+            alert(L10n.t("ui.need.text"))
+            return
+        }
+        let stem = (tab.title as NSString).deletingPathExtension
+        saveData(Data(text.utf8), defaultName: stem + ".txt", type: .plainText)
+    }
+
+    /// Shared typed save panel (page image / text export).
+    func saveData(_ data: Data, defaultName: String, type: UTType) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [type]
+        panel.nameFieldStringValue = defaultName
+        let handle: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try data.write(to: url)
+            } catch {
+                self?.alert(L10n.t("ui.export.failed", error.localizedDescription))
+            }
+        }
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: handle)
+        } else {
+            handle(panel.runModal())
+        }
     }
 
     func openFind() {

@@ -292,5 +292,16 @@
   "ui.shelf.streak-record": "连续阅读纪录：{0} 天",
   "ui.shelf.continue": "继续阅读",
   "ui.shelf.minutes": "分钟",
-  "ui.shelf.goal-hit": "目标达成！"
+  "ui.shelf.goal-hit": "目标达成！",
+  "ui.tools.watermark": "添加水印…",
+  "ui.tools.export-page": "导出当前页为图片…",
+  "ui.tools.export-text": "导出文本…",
+  "ui.watermark.text": "水印文字",
+  "ui.watermark.size": "字号",
+  "ui.watermark.opacity": "不透明度（%）",
+  "ui.watermark.apply": "应用水印",
+  "ui.watermark.applying": "正在烘焙水印…",
+  "ui.export.failed": "导出失败：{0}",
+  "ui.home.recent": "最近添加",
+  "ui.need.text": "当前页没有可导出的文本。"
 }
