@@ -291,6 +291,7 @@
   "ui.shelf.goal-of": "of your 20-minute goal",
   "ui.shelf.streak-start": "Start a new streak.",
   "ui.shelf.streak-record": "Your record is {0} days.",
+  "ui.shelf.recent": "Recently Added",
   "ui.shelf.continue": "Continue Reading",
   "ui.shelf.minutes": "min",
   "ui.shelf.goal-hit": "Goal reached!",

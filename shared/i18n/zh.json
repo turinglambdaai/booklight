@@ -291,6 +291,7 @@
   "ui.shelf.goal-of": "今日目标 20 分钟",
   "ui.shelf.streak-start": "开始新的连续阅读。",
   "ui.shelf.streak-record": "连续阅读纪录：{0} 天",
+  "ui.shelf.recent": "最近添加",
   "ui.shelf.continue": "继续阅读",
   "ui.shelf.minutes": "分钟",
   "ui.shelf.goal-hit": "目标达成！",

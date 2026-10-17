@@ -297,6 +297,7 @@ enum L10n {
     "ui.shelf.goal-of": "今日目标 20 分钟",
     "ui.shelf.streak-start": "开始新的连续阅读。",
     "ui.shelf.streak-record": "连续阅读纪录：{0} 天",
+    "ui.shelf.recent": "最近添加",
     "ui.shelf.continue": "继续阅读",
     "ui.shelf.minutes": "分钟",
     "ui.shelf.goal-hit": "目标达成！",
@@ -309,7 +310,6 @@ enum L10n {
     "ui.watermark.apply": "应用水印",
     "ui.watermark.applying": "正在烘焙水印…",
     "ui.export.failed": "导出失败：{0}",
-    "ui.home.recent": "最近添加",
     "ui.need.text": "当前页没有可导出的文本。",
     ]
 
@@ -606,6 +606,7 @@ enum L10n {
     "ui.shelf.goal-of": "of your 20-minute goal",
     "ui.shelf.streak-start": "Start a new streak.",
     "ui.shelf.streak-record": "Your record is {0} days.",
+    "ui.shelf.recent": "Recently Added",
     "ui.shelf.continue": "Continue Reading",
     "ui.shelf.minutes": "min",
     "ui.shelf.goal-hit": "Goal reached!",
@@ -618,7 +619,6 @@ enum L10n {
     "ui.watermark.apply": "Apply Watermark",
     "ui.watermark.applying": "Baking watermark…",
     "ui.export.failed": "Export failed: {0}",
-    "ui.home.recent": "Recently Added",
     "ui.need.text": "This page has no text to export.",
     ]
 

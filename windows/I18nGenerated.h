@@ -303,6 +303,7 @@ inline constexpr struct WinStringEntry {
     {"ui.shelf.goal-of", L"今日目标 20 分钟", L"of your 20-minute goal"},
     {"ui.shelf.streak-start", L"开始新的连续阅读。", L"Start a new streak."},
     {"ui.shelf.streak-record", L"连续阅读纪录：{0} 天", L"Your record is {0} days."},
+    {"ui.shelf.recent", L"最近添加", L"Recently Added"},
     {"ui.shelf.continue", L"继续阅读", L"Continue Reading"},
     {"ui.shelf.minutes", L"分钟", L"min"},
     {"ui.shelf.goal-hit", L"目标达成！", L"Goal reached!"},

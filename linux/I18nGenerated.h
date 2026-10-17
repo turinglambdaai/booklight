@@ -304,6 +304,7 @@ inline constexpr struct LinuxStringEntry {
     {"ui.shelf.goal-of", "今日目标 20 分钟", "of your 20-minute goal"},
     {"ui.shelf.streak-start", "开始新的连续阅读。", "Start a new streak."},
     {"ui.shelf.streak-record", "连续阅读纪录：{0} 天", "Your record is {0} days."},
+    {"ui.shelf.recent", "最近添加", "Recently Added"},
     {"ui.shelf.continue", "继续阅读", "Continue Reading"},
     {"ui.shelf.minutes", "分钟", "min"},
     {"ui.shelf.goal-hit", "目标达成！", "Goal reached!"},

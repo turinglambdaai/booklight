@@ -173,6 +173,10 @@ MainWindow::MainWindow() {
   ChatStopLabel().Text(pdfgist::Tr("ui.chat.stop"));
   ChatInput().PlaceholderText(pdfgist::Tr("ui.chat.placeholder"));
 
+  // shelf chrome must exist before ApplyTheme, which refreshes the shelf
+  // so code-built colors re-resolve (nav rows, home rows).
+  RebuildShelfNav();
+
   LoadHostPrefs();
   ApplyTheme();
   BuildAiSidebar();
@@ -460,6 +464,9 @@ void MainWindow::ApplyTheme() {
   }
   if (epub_) ApplyEpubTheme(*epub_);
   RelayoutActive();
+  // code-built shelf colors (nav rows, home strip cells) resolve per
+  // scheme; rebuild so a toggle never leaves a stale scheme on the shelf.
+  RefreshShelf();
 }
 
 void MainWindow::ToggleTheme() {
