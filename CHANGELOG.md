@@ -3,6 +3,23 @@
 All notable changes to Booklight are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semver.
 
+## [0.3.0] - 2026-10-17
+
+### Added
+
+- **The reading timer returns — live.** The Books-style reading home
+  ships on all three platforms: a per-second timer (mm:ss) toward a
+  20-minute daily goal on a semicircular gauge, a weekday streak row
+  (a day counts after a full minute), a black continue-reading pill
+  that opens your last book, and a toolbar mini-ring tracking today's
+  progress. Reading minutes accrue only while a reader window is
+  focused, and stay device-local by design.
+
+### Fixed
+
+- Linux: the legacy watermark dialog sent opacity in the wrong unit
+  (×10 instead of ×1000) — the same fix the newer sheet already had.
+
 ## [0.2.0] - 2026-10-17
 
 ### Added

@@ -1,6 +1,6 @@
 #hasheq((name . "booklight")
         (display-name . "Booklight")
-        (version . "0.2.0")
+        (version . "0.3.0")
         (build . 1)
         (identifier . "site.jrtx.booklight")
         (release-channel . stable)
