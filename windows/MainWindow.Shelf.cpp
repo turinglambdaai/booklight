@@ -6,6 +6,9 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <ctime>
 #include <cwctype>
 #include <fstream>
 #include <set>
@@ -78,6 +81,9 @@ wu::Color TextDimColor(bool dark) {
 wu::Color TextColor(bool dark) {
   return dark ? wu::Color{0xFF, 0xE7, 0xE5, 0xE4} : wu::Color{0xFF, 0x1C, 0x19, 0x17};
 }
+// The Booklight accent (duplicate of MainWindow.xaml.cpp's file-local
+// helper — every part file keeps its own small color table).
+wu::Color AccentColor() { return wu::Color{0xFF, 0xB4, 0x53, 0x09}; }
 
 // ---- PNG encode (WIC) --------------------------------------------------------
 // The cover render comes out of PDFium as top-down BGRA; WIC turns it into
@@ -160,26 +166,257 @@ rivet::Bytes CoverPng(pdfgist::PdfDocument const& doc) {
   return EncodePng(page);
 }
 
+// ---- day stamps (device-local minute buckets) ---------------------------------------
+// yyyy-MM-dd keys carried with a serial UTC day number. The conversion is
+// anchored at noon before going through UTC math, so DST transitions can
+// never skew the ±1-day arithmetic (mac ISO-8601 calendar parity).
+
+struct DayStamp {
+  std::wstring key;
+  long long serial = 0;
+  int weekday = 0;  // 0 = Sunday (tm_wday convention)
+};
+
+long long SerialFromTm(struct tm const& parts) {
+  struct tm copy = parts;
+  std::time_t const t = ::_mkgmtime(&copy);
+  return t < 0 ? 0 : static_cast<long long>(t / 86400);
+}
+
+DayStamp DayAt(long long serial) {
+  std::time_t const t = static_cast<std::time_t>(serial * 86400);
+  struct tm out{};
+  ::_gmtime64_s(&out, &t);
+  wchar_t buffer[16]{};
+  swprintf_s(buffer, L"%04d-%02d-%02d", out.tm_year + 1900, out.tm_mon + 1,
+             out.tm_mday);
+  return {std::wstring(buffer), serial, out.tm_wday};
+}
+
+DayStamp Today() {
+  SYSTEMTIME st{};
+  ::GetLocalTime(&st);
+  struct tm parts{};
+  parts.tm_year = st.wYear - 1900;
+  parts.tm_mon = st.wMonth - 1;
+  parts.tm_mday = st.wDay;
+  parts.tm_hour = 12;  // noon anchor
+  return DayAt(SerialFromTm(parts));
+}
+
+// ---- goals-card arc geometry ---------------------------------------------------------
+
+// Top-half arc starting at the left horizon sweeping right; `fraction` is
+// relative to the half-circle (mac SemiGauge parity, drawn with a WinUI
+// Path/ArcSegment — no composition renderer needed).
+media::Geometry SemiArcGeometry(double fraction) {
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kCenterX = 140.0;
+  constexpr double kCenterY = 140.0;
+  constexpr double kRadius = 115.0;
+
+  media::ArcSegment segment;
+  double const angle = kPi * (1.0 - std::clamp(fraction, 0.0, 1.0));  // π → 0
+  segment.Point({kCenterX + kRadius * std::cos(angle),
+                 kCenterY - kRadius * std::sin(angle)});
+  segment.Size({kRadius, kRadius});
+  segment.RotationAngle(0);
+  segment.IsLargeArc(false);
+  segment.SweepDirection(media::SweepDirection::Clockwise);
+  media::PathFigure figure;
+  figure.IsClosed(false);
+  figure.StartPoint({kCenterX - kRadius, kCenterY});
+  figure.Segments().Append(segment);
+  media::PathFigureCollection figures;
+  figures.Append(figure);
+  media::PathGeometry geometry;
+  geometry.Figures(figures);
+  return geometry;
+}
+
 }  // namespace
 
-// ---- rows (filter + search) --------------------------------------------------------
+// ---- sidebar (Books arrangement) -----------------------------------------------------
 
-// The shelf rows after the collections filter and the search box (mac
+// The NavigationView menu, rebuilt from scratch on every shelf refresh: the
+// collections section is derived from the entries (mac shelfCollections
+// parity — a collection exists once a book carries it). Search and
+// 新建收藏集 are action rows and never hold the selection.
+void MainWindow::RebuildShelfNav() {
+  bool const dark = Root().ActualTheme() == mux::ElementTheme::Dark;
+  shelf_nav_updating_ = true;
+  try {
+    auto menu = ShelfNav().MenuItems();
+    menu.Clear();
+    shelf_nav_items_.clear();
+    auto add_item = [&](std::wstring const& tag, std::wstring const& label,
+                        wchar_t const* glyph, bool selectable) {
+      auto item = muxc::NavigationViewItem();
+      item.Content(winrt::box_value(label));
+      item.Tag(winrt::box_value(winrt::hstring(tag)));
+      item.SelectsOnInvoked(selectable);
+      muxc::FontIcon icon;
+      icon.FontFamily(media::FontFamily(L"Segoe Fluent Icons"));
+      icon.FontSize(16);
+      icon.Glyph(glyph);
+      item.Icon(icon);
+      menu.Append(item);
+      shelf_nav_items_.emplace(tag, item);
+    };
+    auto add_header = [&](std::wstring const& label) {
+      auto item = muxc::NavigationViewItem();
+      item.Content(winrt::box_value(label));
+      item.SelectsOnInvoked(false);
+      item.FontSize(12);
+      item.Foreground(Brush(TextDimColor(dark)));
+      menu.Append(item);
+    };
+
+    add_item(L"search", pdfgist::Tr("ui.shelf.search"), L"\uE721", false);
+    add_item(L"home", pdfgist::Tr("ui.shelf.home"), L"\uE80F", true);
+    add_header(pdfgist::Tr("ui.shelf.lib"));
+    add_item(L"all", pdfgist::Tr("ui.shelf.all"), L"\uE8F1", true);
+    add_item(L"want", pdfgist::Tr("ui.shelf.want"), L"\uE823", true);
+    add_item(L"finished", pdfgist::Tr("ui.shelf.finished"), L"\uE73E", true);
+    add_item(L"pdf", pdfgist::Tr("ui.shelf.pdf"), L"\uE8A5", true);
+    add_item(L"epub", pdfgist::Tr("ui.shelf.epub"), L"\uE736", true);
+    add_header(pdfgist::Tr("ui.shelf.mine"));
+    std::set<std::string> seen;
+    for (auto const& entry : library_) {
+      for (auto const& name : entry.collections) {
+        if (!seen.insert(name).second) continue;
+        add_item(L"c:" + to_wide(name), to_wide(name), L"\uE8B7", true);
+      }
+    }
+    add_item(L"new-collection", pdfgist::Tr("ui.shelf.new-collection"),
+             L"\uE710", false);
+
+    SelectShelfNavItem(shelf_selection_);
+  } catch (...) {
+  }
+  shelf_nav_updating_ = false;
+}
+
+// Keep the highlighted row in step with the selection even when the row
+// itself does not exist (a freshly created empty collection shows no row
+// until a book joins it — mac binding behavior).
+void MainWindow::SelectShelfNavItem(std::wstring const& tag) {
+  shelf_nav_updating_ = true;
+  try {
+    auto const found = shelf_nav_items_.find(tag);
+    ShelfNav().SelectedItem(found == shelf_nav_items_.end()
+                                ? muxc::NavigationViewItem{nullptr}
+                                : found->second);
+  } catch (...) {
+  }
+  shelf_nav_updating_ = false;
+}
+
+std::wstring MainWindow::ShelfTitleFor(std::wstring const& selection) const {
+  if (selection == L"want") return pdfgist::Tr("ui.shelf.want");
+  if (selection == L"finished") return pdfgist::Tr("ui.shelf.finished");
+  if (selection == L"pdf") return pdfgist::Tr("ui.shelf.pdf");
+  if (selection == L"epub") return pdfgist::Tr("ui.shelf.epub");
+  if (selection.rfind(L"c:", 0) == 0) return selection.substr(2);
+  return pdfgist::Tr("ui.shelf.all");  // all / search (mac titleFor parity)
+}
+
+void MainWindow::ShelfNav_ItemInvoked(
+    winrt::Windows::Foundation::IInspectable const&,
+    muxc::NavigationViewItemInvokedEventArgs const& args) {
+  if (shelf_nav_updating_) return;
+  try {
+    auto const item =
+        args.InvokedItemContainer().try_as<muxc::NavigationViewItem>();
+    if (!item) return;
+    auto const boxed_tag = item.Tag();
+    if (boxed_tag == nullptr) return;
+    std::wstring const tag = std::wstring(winrt::unbox_value<winrt::hstring>(boxed_tag));
+    if (tag == L"search") {
+      // the search row selects the all-scope and focuses the field (mac parity)
+      shelf_selection_ = L"all";
+      ShowShelfDetail();
+      ShelfSearch().Focus(mux::FocusState::Programmatic);
+      return;
+    }
+    if (tag == L"new-collection") {
+      ShelfCreateCollectionDialog();
+      return;
+    }
+    if (tag.empty()) return;
+    shelf_selection_ = tag;
+    ShowShelfDetail();
+  } catch (...) {
+  }
+}
+
+// Home digest or the scope grid, plus the per-scope title (mac detail switch).
+void MainWindow::ShowShelfDetail() {
+  bool const home = shelf_selection_ == L"home";
+  HomePane().Visibility(home ? Visibility::Visible : Visibility::Collapsed);
+  GridPane().Visibility(home ? Visibility::Collapsed : Visibility::Visible);
+  try {
+    ShelfNav().Header(home ? winrt::Windows::Foundation::IInspectable{nullptr}
+                           : winrt::box_value(ShelfTitleFor(shelf_selection_)));
+  } catch (...) {
+  }
+  if (home) {
+    RefreshHomeDigest();
+  } else {
+    RefreshShelfGrid();
+  }
+}
+
+// ---- one shelf refresh to rule them all ------------------------------------------------
+
+void MainWindow::RefreshShelf() {
+  try {
+    RebuildShelfNav();
+    ShowShelfDetail();
+  } catch (...) {
+  }
+}
+
+// ---- rows (scope + search) --------------------------------------------------------------
+
+// Reading progress for a shelf row, joined from recents by path (mac
+// shelfProgress parity): nullopt = never opened.
+std::optional<std::pair<int, int>> MainWindow::ShelfProgress(
+    rivet_app::LibraryEntry const& entry) const {
+  for (auto const& recent : recents_) {
+    if (recent.path == entry.path) {
+      if (recent.page > 1 || entry.pages > 0) {
+        return std::make_pair(static_cast<int>(recent.page),
+                              std::max(1, static_cast<int>(entry.pages)));
+      }
+      return std::nullopt;
+    }
+  }
+  return std::nullopt;
+}
+
+// The grid rows after the sidebar selection and the search box (mac
 // shelfEntries parity).
 std::vector<rivet_app::LibraryEntry> MainWindow::ShelfRows() const {
   std::vector<rivet_app::LibraryEntry> rows;
   rows.reserve(library_.size());
-  std::string const filter = to_utf8(shelf_filter_);
-  bool const unfiled = shelf_filter_ == L"unfiled";
+  std::wstring const scope = shelf_selection_;
   for (auto const& entry : library_) {
-    if (!filter.empty()) {
-      bool const in_collection =
-          !unfiled && std::find(entry.collections.begin(),
-                                entry.collections.end(),
-                                filter) != entry.collections.end();
-      if (unfiled ? !entry.collections.empty() : !in_collection) continue;
+    if (scope == L"want") {
+      if (ShelfProgress(entry).has_value()) continue;  // never opened
+    } else if (scope == L"finished") {
+      auto const progress = ShelfProgress(entry);
+      if (!progress || progress->first < progress->second) continue;
+    } else if (scope == L"pdf" || scope == L"epub") {
+      if (entry.kind != to_utf8(scope)) continue;
+    } else if (scope.rfind(L"c:", 0) == 0) {
+      std::string const name = to_utf8(scope.substr(2));
+      if (std::find(entry.collections.begin(), entry.collections.end(),
+                    name) == entry.collections.end()) {
+        continue;
+      }
     }
-    rows.push_back(entry);
+    rows.push_back(entry);  // "all" (and any unknown scope) takes everything
   }
   std::wstring const needle = lower(trim(shelf_search_));
   if (!needle.empty()) {
@@ -196,52 +433,10 @@ std::vector<rivet_app::LibraryEntry> MainWindow::ShelfRows() const {
   return rows;
 }
 
-// ---- toolbar ------------------------------------------------------------------------
+// ---- grid pane -----------------------------------------------------------------------
 
-// The collections filter: 全部书籍 / 未分类 / each collection, derived from
-// the entries (mac shelfCollections parity — an empty collection is a view
-// over books and only exists once a book carries it).
-void MainWindow::RefreshShelfFilterBox() {
-  shelf_ui_updating_ = true;
+void MainWindow::RefreshShelfGrid() {
   try {
-    auto items = ShelfFilter().Items();
-    items.Clear();
-    shelf_filter_values_.clear();
-    items.Append(winrt::box_value(pdfgist::Tr("ui.library.all")));
-    shelf_filter_values_.push_back(L"");
-    items.Append(winrt::box_value(pdfgist::Tr("ui.library.unfiled")));
-    shelf_filter_values_.push_back(L"unfiled");
-    std::set<std::string> seen;
-    for (auto const& entry : library_) {
-      for (auto const& name : entry.collections) {
-        if (!seen.insert(name).second) continue;
-        auto const wide = to_wide(name);
-        items.Append(winrt::box_value(wide));
-        shelf_filter_values_.push_back(wide);
-      }
-    }
-    std::uint32_t index = 0;
-    bool found = false;
-    for (std::uint32_t i = 0; i < shelf_filter_values_.size(); ++i) {
-      if (shelf_filter_values_[i] == shelf_filter_) {
-        index = i;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      shelf_filter_.clear();
-      index = 0;
-    }
-    ShelfFilter().SelectedIndex(index);
-  } catch (...) {
-  }
-  shelf_ui_updating_ = false;
-}
-
-void MainWindow::RefreshShelf() {
-  try {
-    RefreshShelfFilterBox();
     auto const rows = ShelfRows();
     bool const empty = rows.empty();
     ShelfEmpty().Visibility(empty ? Visibility::Visible : Visibility::Collapsed);
@@ -262,26 +457,150 @@ void MainWindow::ShelfImport_Click(winrt::Windows::Foundation::IInspectable cons
   PickAndOpen();
 }
 
-void MainWindow::ShelfFilter_SelectionChanged(
-    winrt::Windows::Foundation::IInspectable const&,
-    muxc::SelectionChangedEventArgs const&) {
-  if (shelf_ui_updating_) return;
-  try {
-    auto const index = ShelfFilter().SelectedIndex();
-    if (index >= 0 && index < static_cast<int>(shelf_filter_values_.size())) {
-      shelf_filter_ = shelf_filter_values_[static_cast<std::size_t>(index)];
-    }
-    RefreshShelf();
-  } catch (...) {
-  }
-}
-
 void MainWindow::ShelfSearch_TextChanged(
     winrt::Windows::Foundation::IInspectable const&,
     muxc::TextChangedEventArgs const&) {
   try {
     shelf_search_ = std::wstring(ShelfSearch().Text());
-    RefreshShelf();
+    if (ShelfView().Visibility() == Visibility::Visible) RefreshShelfGrid();
+  } catch (...) {
+  }
+}
+
+// 新建收藏集 from the sidebar: create it, then look at it (mac
+// NewCollectionSheet parity — the grid is empty until a book joins).
+void MainWindow::ShelfCreateCollectionDialog() {
+  muxc::ContentDialog dialog;
+  dialog.Title(winrt::box_value(pdfgist::Tr("ui.shelf.new-collection")));
+  muxc::TextBox box;
+  box.Width(260);
+  dialog.Content(winrt::box_value(box));
+  dialog.PrimaryButtonText(pdfgist::Tr("ui.password.ok"));
+  dialog.CloseButtonText(pdfgist::Tr("ui.password.cancel"));
+  dialog.DefaultButton(muxc::ContentDialogButton::Primary);
+  dialog.XamlRoot(Content().XamlRoot());
+
+  auto op = dialog.ShowAsync();
+  auto const weak = get_weak();
+  op.Completed([weak, box](
+                   winrt::Windows::Foundation::IAsyncOperation<
+                       muxc::ContentDialogResult> const& sender,
+                   winrt::Windows::Foundation::AsyncStatus) {
+    muxc::ContentDialogResult result{muxc::ContentDialogResult::None};
+    try {
+      result = sender.GetResults();
+    } catch (...) {
+      return;  // another dialog was up; the flow can be retried
+    }
+    if (result != muxc::ContentDialogResult::Primary) return;
+    auto const name = trim(std::wstring(box.Text()));
+    if (name.empty()) return;
+    if (auto window = weak.get()) {
+      window->shelf_selection_ = L"c:" + name;
+      if (!window->ready_ || !window->backend_) {
+        window->RefreshShelf();
+        return;
+      }
+      auto const backend = window->backend_;
+      auto const dispatcher = window->DispatcherQueue();
+      auto const utf8_name = to_utf8(name);
+      std::thread([weak, dispatcher, backend, utf8_name]() mutable {
+        try {
+          rivet_app::API api(*backend);
+          (void)api.library_collection_create(utf8_name).get();
+        } catch (...) {
+        }
+        dispatcher.TryEnqueue([weak]() mutable {
+          if (auto window = weak.get()) window->RefreshShelf();
+        });
+      }).detach();
+    }
+  });
+}
+
+// ---- home digest (mac HomeDigest parity) ----------------------------------------------
+
+void MainWindow::RefreshHomeDigest() {
+  try {
+    bool const dark = Root().ActualTheme() == mux::ElementTheme::Dark;
+
+    // goals card: 今日阅读 N 分钟 / 今日目标 20 分钟, 达成 badge at >= 100%
+    HomeTitle().Text(pdfgist::Tr("ui.shelf.home"));
+    GoalTodayLabel().Text(pdfgist::Tr("ui.shelf.today"));
+    GoalMinutes().Text(std::to_wstring(today_minutes_) + L" " +
+                       pdfgist::Tr("ui.shelf.minutes"));
+    GoalOfLabel().Text(pdfgist::Tr("ui.shelf.goal-of"));
+    double const ratio = std::min(
+        1.0, static_cast<double>(today_minutes_) /
+                 static_cast<double>(std::max(kGoalMinutes, 1)));
+    GoalTrackPath().Stroke(ThemeBorderBrush());
+    GoalTrackPath().Data(SemiArcGeometry(1.0));
+    GoalProgressPath().Stroke(Brush(AccentColor()));
+    GoalProgressPath().Data(SemiArcGeometry(ratio));
+    GoalProgressPath().Visibility(ratio > 0.004 ? Visibility::Visible
+                                                : Visibility::Collapsed);
+    bool const goal_hit = ratio >= 1.0;
+    GoalHitBadge().Visibility(goal_hit ? Visibility::Visible
+                                       : Visibility::Collapsed);
+    if (goal_hit) {
+      GoalHitText().Text(pdfgist::Tr("ui.shelf.goal-hit"));
+      GoalHitText().Foreground(Brush(AccentColor()));
+      GoalHitBadge().Background(Brush(AccentSoftColor(dark)));
+    }
+
+    // streak row: seven day circles, 一二三四五六日, filled when minutes > 0
+    static wchar_t const* kDayLabels[7] = {L"一", L"二", L"三", L"四",
+                                           L"五", L"六", L"日"};
+    auto cells = StreakRow().Children();
+    cells.Clear();
+    for (int i = 0; i < 7; ++i) {
+      bool const read =
+          week_minutes_[static_cast<std::size_t>(i)] > 0;
+      auto cell = muxc::Grid();
+      cell.Width(30);
+      cell.Height(30);
+      auto circle = shapes::Ellipse();
+      circle.Fill(Brush(read ? AccentColor() : PanelAltColor(dark)));
+      circle.Stroke(ThemeBorderBrush());
+      circle.StrokeThickness(1);
+      auto label = muxc::TextBlock();
+      label.Text(kDayLabels[i]);
+      label.FontSize(11);
+      label.FontWeight(wut::FontWeights::SemiBold());
+      label.Foreground(Brush(read ? wu::Color{0xFF, 0xFF, 0xFF, 0xFF}
+                                  : TextDimColor(dark)));
+      label.HorizontalAlignment(mux::HorizontalAlignment::Center);
+      label.VerticalAlignment(mux::VerticalAlignment::Center);
+      cell.Children().Append(circle);
+      cell.Children().Append(label);
+      cells.Append(cell);
+    }
+    StreakLabel().Text(streak_days_ > 0
+                           ? pdfgist::Trf("ui.shelf.streak-record",
+                                          std::to_wstring(streak_days_))
+                           : pdfgist::Tr("ui.shelf.streak-start"));
+
+    // continue-reading strip: covers with progress, reading-now only
+    std::vector<rivet_app::LibraryEntry> reading_now;
+    for (auto const& entry : library_) {
+      auto const progress = ShelfProgress(entry);
+      if (progress && progress->first < progress->second) {
+        reading_now.push_back(entry);
+      }
+    }
+    bool const any = !reading_now.empty();
+    ContinueHeader().Text(pdfgist::Tr("ui.shelf.continue"));
+    ContinueHeader().Visibility(any ? Visibility::Visible
+                                    : Visibility::Collapsed);
+    ContinueScroll().Visibility(any ? Visibility::Visible
+                                    : Visibility::Collapsed);
+    auto strip = ContinueRow().Children();
+    strip.Clear();
+    if (any) {
+      for (auto const& entry : reading_now) {
+        strip.Append(MakeShelfCell(entry));
+      }
+    }
   } catch (...) {
   }
 }
@@ -924,6 +1243,125 @@ void MainWindow::ImportBooks(std::vector<std::wstring> const& paths) {
       });
     }
   }).detach();
+}
+
+// ---- reading time (device-local: minutes per day, Books-style goals) ------------------
+// A 60-second clock accrues one minute while a reader tab is up and the
+// window is showing. The store is a flat {yyyy-MM-dd: minutes} JSON in
+// %APPDATA%\site.jrtx.booklight — the backend's config dir — and it
+// deliberately never rides any sync drive: cross-device minute merging
+// would double-count (mac AppModel parity; mac keeps the same data in
+// UserDefaults for the same reason).
+
+std::wstring MainWindow::ReadingMinutesPath() const {
+  wchar_t buffer[MAX_PATH]{};
+  if (::GetEnvironmentVariableW(L"APPDATA", buffer, MAX_PATH) == 0) {
+    return {};
+  }
+  return (std::filesystem::path(buffer) / L"site.jrtx.booklight" /
+          L"reading-minutes.json")
+      .wstring();
+}
+
+int MainWindow::LookupMinutes(std::wstring const& day) const {
+  auto const found = reading_minutes_.find(day);
+  return found == reading_minutes_.end() ? 0 : found->second;
+}
+
+void MainWindow::LoadReadingStats() {
+  try {
+    auto const path = ReadingMinutesPath();
+    if (path.empty()) return;
+    std::ifstream file(std::filesystem::path(path), std::ios::binary);
+    if (!file) return;
+    std::string json((std::istreambuf_iterator<char>(file)),
+                     std::istreambuf_iterator<char>());
+    static std::regex const pattern("\\\"(\\d{4}-\\d{2}-\\d{2})\\\"\\s*:\\s*(\\d+)");
+    for (std::sregex_iterator it(json.begin(), json.end(), pattern), end;
+         it != end; ++it) {
+      reading_minutes_[to_wide((*it)[1].str())] = std::stoi((*it)[2].str());
+    }
+  } catch (...) {
+    // a damaged store falls back to zeroed stats, never a crash
+  }
+  RefreshReadingStats();
+}
+
+void MainWindow::SaveReadingStats() {
+  try {
+    auto const path = ReadingMinutesPath();
+    if (path.empty()) return;
+    std::error_code ec;
+    std::filesystem::create_directories(
+        std::filesystem::path(path).parent_path(), ec);
+    std::ofstream file(std::filesystem::path(path),
+                       std::ios::binary | std::ios::trunc);
+    file << "{";
+    bool first = true;
+    for (auto const& [day, minutes] : reading_minutes_) {
+      if (!first) file << ",";
+      first = false;
+      file << "\"" << to_utf8(day) << "\":" << minutes;
+    }
+    file << "}\n";
+  } catch (...) {
+    // best effort — the in-memory buckets still feed the UI
+  }
+}
+
+// Recompute today / week (Mon..Sun) / streak from the buckets (mac
+// refreshReadingStats parity).
+void MainWindow::RefreshReadingStats() {
+  DayStamp const today = Today();
+  today_minutes_ = LookupMinutes(today.key);
+  long long const monday = today.serial - ((today.weekday + 6) % 7);
+  for (int i = 0; i < 7; ++i) {
+    week_minutes_[static_cast<std::size_t>(i)] =
+        LookupMinutes(DayAt(monday + i).key);
+  }
+  // current streak: consecutive reading days ending today or yesterday
+  long long cursor = today.serial;
+  if (LookupMinutes(today.key) == 0) cursor -= 1;
+  streak_days_ = 0;
+  while (LookupMinutes(DayAt(cursor).key) > 0) {
+    ++streak_days_;
+    --cursor;
+  }
+}
+
+void MainWindow::AddReadingMinutes(int minutes) {
+  reading_minutes_[Today().key] += minutes;
+  SaveReadingStats();
+  RefreshReadingStats();
+  try {
+    if (ShelfView().Visibility() == Visibility::Visible &&
+        shelf_selection_ == L"home") {
+      RefreshHomeDigest();  // the gauge catches up live while reading
+    }
+  } catch (...) {
+  }
+}
+
+void MainWindow::StartReadingClock() {
+  reading_timer_ = DispatcherQueue().CreateTimer();
+  reading_timer_.Interval(std::chrono::seconds{60});
+  reading_timer_.IsRepeating(true);
+  reading_timer_.Tick([weak = get_weak()](auto&&, auto&&) {
+    if (auto window = weak.get()) window->TickReadingMinute();
+  });
+}
+
+// One minute of reading accrues when a reader tab is up and the window is
+// showing — the shelf idling never counts (mac tickReadingMinute parity).
+void MainWindow::TickReadingMinute() {
+  bool const reader_up = !tabs_.empty() || epub_ != nullptr;
+  if (!reader_up) return;
+  HWND hwnd = nullptr;
+  if (auto native = try_as<::IWindowNative>()) {
+    native->get_WindowHandle(&hwnd);
+  }
+  if (hwnd != nullptr && ::IsIconic(hwnd)) return;
+  AddReadingMinutes(1);
 }
 
 }  // namespace winrt::RivetHost::implementation

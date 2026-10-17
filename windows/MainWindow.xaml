@@ -153,80 +153,191 @@
                     SelectionChanged="DocTabs_SelectionChanged"
                     TabCloseRequested="DocTabs_CloseRequested"
                     IsAddTabButtonVisible="False" />
-                <!-- the shelf: reading-first launch surface (mac LibraryView parity) -->
+                <!-- the shelf: Books-style launch surface (mac LibraryView parity) —
+                     source-list sidebar over the home digest or a scope grid -->
                 <Grid x:Name="ShelfView" Visibility="Visible">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+                    <NavigationView
+                        x:Name="ShelfNav"
+                        PaneDisplayMode="Left"
+                        OpenPaneLength="220"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="False"
+                        IsPaneToggleButtonVisible="False"
+                        ItemInvoked="ShelfNav_ItemInvoked">
+                        <!-- menu items are built in code: the collections section is dynamic -->
+                        <Grid>
+                            <!-- home digest: today's goal gauge, streak, continue-reading -->
+                            <ScrollViewer x:Name="HomePane">
+                                <StackPanel Padding="32,16,32,32" Spacing="24">
+                                    <TextBlock
+                                        x:Name="HomeTitle"
+                                        FontSize="34"
+                                        FontWeight="Bold"
+                                        Margin="0,12,0,0" />
+                                    <Border
+                                        x:Name="GoalsCard"
+                                        CornerRadius="14"
+                                        BorderThickness="1"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        MaxWidth="760"
+                                        HorizontalAlignment="Left">
+                                        <StackPanel>
+                                            <Grid
+                                                Width="280"
+                                                Height="150"
+                                                HorizontalAlignment="Center"
+                                                Margin="0,8,0,12">
+                                                <Path
+                                                    x:Name="GoalTrackPath"
+                                                    StrokeThickness="10"
+                                                    StrokeStartLineCap="Round"
+                                                    StrokeEndLineCap="Round" />
+                                                <Path
+                                                    x:Name="GoalProgressPath"
+                                                    StrokeThickness="10"
+                                                    StrokeStartLineCap="Round"
+                                                    StrokeEndLineCap="Round"
+                                                    Visibility="Collapsed" />
+                                                <StackPanel
+                                                    x:Name="GoalCenter"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Spacing="4"
+                                                    Margin="0,14,0,0">
+                                                    <TextBlock
+                                                        x:Name="GoalTodayLabel"
+                                                        FontSize="15"
+                                                        FontWeight="SemiBold"
+                                                        HorizontalAlignment="Center" />
+                                                    <TextBlock
+                                                        x:Name="GoalMinutes"
+                                                        FontSize="44"
+                                                        FontWeight="Bold"
+                                                        HorizontalAlignment="Center" />
+                                                    <TextBlock
+                                                        x:Name="GoalOfLabel"
+                                                        FontSize="12"
+                                                        Opacity="0.6"
+                                                        HorizontalAlignment="Center" />
+                                                    <Border
+                                                        x:Name="GoalHitBadge"
+                                                        CornerRadius="10"
+                                                        Padding="8,2"
+                                                        HorizontalAlignment="Center"
+                                                        Visibility="Collapsed">
+                                                        <TextBlock x:Name="GoalHitText" FontSize="11" FontWeight="SemiBold" />
+                                                    </Border>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                                            <StackPanel Margin="0,18">
+                                                <StackPanel
+                                                    x:Name="StreakRow"
+                                                    Orientation="Horizontal"
+                                                    Spacing="10"
+                                                    HorizontalAlignment="Center" />
+                                                <TextBlock
+                                                    x:Name="StreakLabel"
+                                                    FontSize="12"
+                                                    Opacity="0.6"
+                                                    HorizontalAlignment="Center"
+                                                    Margin="0,8,0,0" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock
+                                        x:Name="ContinueHeader"
+                                        FontSize="17"
+                                        FontWeight="SemiBold"
+                                        Visibility="Collapsed" />
+                                    <ScrollViewer
+                                        x:Name="ContinueScroll"
+                                        HorizontalAlignment="Left"
+                                        HorizontalScrollBarVisibility="Auto"
+                                        HorizontalScrollMode="Auto"
+                                        VerticalScrollBarVisibility="Disabled"
+                                        Visibility="Collapsed">
+                                        <StackPanel x:Name="ContinueRow" Orientation="Horizontal" Spacing="22" Margin="0,4" />
+                                    </ScrollViewer>
+                                </StackPanel>
+                            </ScrollViewer>
 
-                    <!-- shelf toolbar: import / collections filter / search -->
-                    <StackPanel
-                        Grid.Row="0"
-                        Orientation="Horizontal"
-                        Spacing="8"
-                        Padding="16,8,16,4">
-                        <Button x:Name="ShelfImport" Click="ShelfImport_Click" Style="{ThemeResource AccentButtonStyle}">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE710;" />
-                                <TextBlock x:Name="ShelfImportLabel" FontSize="12" />
-                            </StackPanel>
-                        </Button>
-                        <ComboBox x:Name="ShelfFilter" MinWidth="150" SelectionChanged="ShelfFilter_SelectionChanged" />
-                        <TextBox
-                            x:Name="ShelfSearch"
-                            Width="190"
-                            TextChanged="ShelfSearch_TextChanged" />
-                        <ProgressRing x:Name="ShelfBusy" Width="18" Height="18" IsActive="False" />
-                    </StackPanel>
+                            <!-- scope grid: import / search / covers / empty state -->
+                            <Grid x:Name="GridPane" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
 
-                    <GridView
-                        Grid.Row="1"
-                        x:Name="ShelfGrid"
-                        Padding="32,12,32,28"
-                        IsMultiSelectCheckBoxEnabled="False">
-                        <GridView.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <ItemsWrapGrid Orientation="Horizontal" ItemWidth="164" ItemHeight="272" />
-                            </ItemsPanelTemplate>
-                        </GridView.ItemsPanel>
-                    </GridView>
+                                <StackPanel
+                                    Grid.Row="0"
+                                    Orientation="Horizontal"
+                                    Spacing="8"
+                                    Padding="16,8,16,4">
+                                    <Button x:Name="ShelfImport" Click="ShelfImport_Click" Style="{ThemeResource AccentButtonStyle}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE710;" />
+                                            <TextBlock x:Name="ShelfImportLabel" FontSize="12" />
+                                        </StackPanel>
+                                    </Button>
+                                    <TextBox
+                                        x:Name="ShelfSearch"
+                                        Width="190"
+                                        TextChanged="ShelfSearch_TextChanged" />
+                                    <ProgressRing x:Name="ShelfBusy" Width="18" Height="18" IsActive="False" />
+                                </StackPanel>
 
-                    <!-- empty shelf -->
-                    <StackPanel
-                        Grid.Row="1"
-                        x:Name="ShelfEmpty"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Spacing="12"
-                        Visibility="Collapsed">
-                        <FontIcon
-                            x:Name="ShelfEmptyIcon"
-                            FontFamily="Segoe Fluent Icons"
-                            FontSize="44"
-                            Glyph="&#xE736;" />
-                        <TextBlock
-                            x:Name="ShelfEmptyTitle"
-                            FontSize="17"
-                            FontWeight="SemiBold"
-                            HorizontalAlignment="Center" />
-                        <TextBlock
-                            x:Name="ShelfEmptyHint"
-                            FontSize="13"
-                            Opacity="0.6"
-                            MaxWidth="360"
-                            TextAlignment="Center"
-                            TextWrapping="Wrap"
-                            HorizontalAlignment="Center" />
-                        <Button
-                            x:Name="ShelfEmptyImport"
-                            Click="ShelfImport_Click"
-                            Style="{ThemeResource AccentButtonStyle}"
-                            HorizontalAlignment="Center"
-                            Margin="0,6,0,0">
-                            <TextBlock x:Name="ShelfEmptyImportLabel" FontSize="14" FontWeight="SemiBold" />
-                        </Button>
-                    </StackPanel>
+                                <GridView
+                                    Grid.Row="1"
+                                    x:Name="ShelfGrid"
+                                    Padding="32,12,32,28"
+                                    IsMultiSelectCheckBoxEnabled="False">
+                                    <GridView.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <ItemsWrapGrid Orientation="Horizontal" ItemWidth="164" ItemHeight="272" />
+                                        </ItemsPanelTemplate>
+                                    </GridView.ItemsPanel>
+                                </GridView>
+
+                                <!-- empty shelf -->
+                                <StackPanel
+                                    Grid.Row="1"
+                                    x:Name="ShelfEmpty"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Spacing="12"
+                                    Visibility="Collapsed">
+                                    <FontIcon
+                                        x:Name="ShelfEmptyIcon"
+                                        FontFamily="Segoe Fluent Icons"
+                                        FontSize="44"
+                                        Glyph="&#xE736;" />
+                                    <TextBlock
+                                        x:Name="ShelfEmptyTitle"
+                                        FontSize="17"
+                                        FontWeight="SemiBold"
+                                        HorizontalAlignment="Center" />
+                                    <TextBlock
+                                        x:Name="ShelfEmptyHint"
+                                        FontSize="13"
+                                        Opacity="0.6"
+                                        MaxWidth="360"
+                                        TextAlignment="Center"
+                                        TextWrapping="Wrap"
+                                        HorizontalAlignment="Center" />
+                                    <Button
+                                        x:Name="ShelfEmptyImport"
+                                        Click="ShelfImport_Click"
+                                        Style="{ThemeResource AccentButtonStyle}"
+                                        HorizontalAlignment="Center"
+                                        Margin="0,6,0,0">
+                                        <TextBlock x:Name="ShelfEmptyImportLabel" FontSize="14" FontWeight="SemiBold" />
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+                    </NavigationView>
                 </Grid>
                 <Border
                     x:Name="FindBar"

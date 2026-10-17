@@ -231,9 +231,9 @@ struct MainWindow : MainWindowT<MainWindow> {
                       winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void ShelfImport_Click(winrt::Windows::Foundation::IInspectable const&,
                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
-  void ShelfFilter_SelectionChanged(
+  void ShelfNav_ItemInvoked(
       winrt::Windows::Foundation::IInspectable const&,
-      winrt::Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const&);
+      winrt::Microsoft::UI::Xaml::Controls::NavigationViewItemInvokedEventArgs const&);
   void ShelfSearch_TextChanged(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Microsoft::UI::Xaml::Controls::TextChangedEventArgs const&);
@@ -452,15 +452,25 @@ struct MainWindow : MainWindowT<MainWindow> {
   void RunBakeDialog();
   void PickPdfFile(std::function<void(std::wstring const&)> on_picked);
 
-  // ---- shelf (MainWindow.Shelf.cpp) — the reading-first launch surface ----
+  // ---- shelf (MainWindow.Shelf.cpp) — the Books-style launch surface ----
+  // Sidebar selection: "home" | "all" | "want" | "finished" | "pdf" |
+  // "epub" | "c:<collection name>" (mac shelfSelection parity).
+  void RebuildShelfNav();
+  void SelectShelfNavItem(std::wstring const& tag);
+  void ShowShelfDetail();
+  std::wstring ShelfTitleFor(std::wstring const& selection) const;
   std::vector<rivet_app::LibraryEntry> ShelfRows() const;
-  void RefreshShelfFilterBox();
+  std::optional<std::pair<int, int>> ShelfProgress(
+      rivet_app::LibraryEntry const& entry) const;
   void RefreshShelf();
+  void RefreshShelfGrid();
+  void RefreshHomeDigest();
   winrt::Microsoft::UI::Xaml::UIElement MakeShelfCell(
       rivet_app::LibraryEntry const& entry);
   void LoadShelfCover(std::string const& png_path,
                       winrt::Microsoft::UI::Xaml::Controls::Border const& border,
                       winrt::Microsoft::UI::Xaml::Controls::StackPanel const& placeholder);
+  void ShelfCreateCollectionDialog();
   // One shared upsert helper: opening a book from anywhere grows the shelf.
   void ImportBook(std::wstring const& path);
   void ImportBooks(std::vector<std::wstring> const& paths);
@@ -473,13 +483,34 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ShelfRelink(rivet_app::LibraryEntry const& entry);
   void ShelfRemove(rivet_app::LibraryEntry const& entry);
   void RevealInExplorer(std::wstring const& path);
+
+  // ---- reading time (MainWindow.Shelf.cpp) — device-local, never synced ----
+  std::wstring ReadingMinutesPath() const;
+  void LoadReadingStats();
+  void SaveReadingStats();
+  void RefreshReadingStats();
+  void AddReadingMinutes(int minutes);
+  void TickReadingMinute();
+  void StartReadingClock();
+  int LookupMinutes(std::wstring const& day) const;
+
   std::vector<rivet_app::LibraryEntry> library_;
   bool library_loaded_ = false;
   bool library_importing_ = false;
-  bool shelf_ui_updating_ = false;
-  std::wstring shelf_filter_;  // "" = all / "unfiled" / collection name
+  std::wstring shelf_selection_ = L"home";
+  bool shelf_nav_updating_ = false;
   std::wstring shelf_search_;
-  std::vector<std::wstring> shelf_filter_values_;  // SelectedIndex → filter
+  std::map<std::wstring,
+           winrt::Microsoft::UI::Xaml::Controls::NavigationViewItem>
+      shelf_nav_items_;
+
+  // minute buckets keyed "yyyy-MM-dd" (mac booklight-reading-minutes parity)
+  std::map<std::wstring, int> reading_minutes_;
+  int today_minutes_ = 0;
+  std::array<int, 7> week_minutes_{};  // Mon..Sun
+  int streak_days_ = 0;
+  static constexpr int kGoalMinutes = 20;
+  winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer reading_timer_{nullptr};
 
   // ---- AcroForm pane (MainWindow.Forms.cpp) ----
   void BuildFormsPane();
