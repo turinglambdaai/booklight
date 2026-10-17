@@ -303,7 +303,9 @@ void MainWindow::SaveData(std::vector<std::uint8_t> data,
   }
   picker.SuggestedFileName(default_name);
   picker.FileTypeChoices().Insert(
-      type_label, winrt::single_threaded_vector<winrt::hstring>({extension}));
+      type_label,
+      winrt::single_threaded_vector<winrt::hstring>(
+          std::vector<winrt::hstring>{winrt::hstring(extension)}));
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   picker.PickSaveFileAsync().Completed(
