@@ -3,6 +3,9 @@
 #include "I18n.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <ctime>
 #include <cwctype>
 #include <fstream>
 #include <set>
@@ -75,9 +78,110 @@ wu::Color TextDimColor(bool dark) {
 wu::Color TextColor(bool dark) {
   return dark ? wu::Color{0xFF, 0xE7, 0xE5, 0xE4} : wu::Color{0xFF, 0x1C, 0x19, 0x17};
 }
+// The Booklight accent (duplicate of MainWindow.xaml.cpp's file-local
+// helper — every part file keeps its own small color table).
+wu::Color AccentColor() { return wu::Color{0xFF, 0xB4, 0x53, 0x09}; }
+// Color.primary parity: the goals-card fills read as ink on the surface
+// (black in light, white in dark) rather than accent orange (mac 581c0e2).
+wu::Color PrimaryColor(bool dark) {
+  return dark ? wu::Color{0xFF, 0xFF, 0xFF, 0xFF} : wu::Color{0xFF, 0x00, 0x00, 0x00};
+}
 
-// ---- PNG encode (WIC) --------------------------------------------------------
-// Moved to pdfgist::EncodePng (PdfDocument) — the page-image export shares it.
+// ---- day stamps (device-local second buckets) ---------------------------------------
+// yyyy-MM-dd keys carried with a serial UTC day number. The conversion is
+// anchored at noon before going through UTC math, so DST transitions can
+// never skew the ±1-day arithmetic (mac ISO-8601 calendar parity).
+
+struct DayStamp {
+  std::wstring key;
+  long long serial = 0;
+  int weekday = 0;  // 0 = Sunday (tm_wday convention)
+};
+
+long long SerialFromTm(struct tm const& parts) {
+  struct tm copy = parts;
+  std::time_t const t = ::_mkgmtime(&copy);
+  return t < 0 ? 0 : static_cast<long long>(t / 86400);
+}
+
+DayStamp DayAt(long long serial) {
+  std::time_t const t = static_cast<std::time_t>(serial * 86400);
+  struct tm out{};
+  ::_gmtime64_s(&out, &t);
+  wchar_t buffer[16]{};
+  swprintf_s(buffer, L"%04d-%02d-%02d", out.tm_year + 1900, out.tm_mon + 1,
+             out.tm_mday);
+  return {std::wstring(buffer), serial, out.tm_wday};
+}
+
+DayStamp Today() {
+  SYSTEMTIME st{};
+  ::GetLocalTime(&st);
+  struct tm parts{};
+  parts.tm_year = st.wYear - 1900;
+  parts.tm_mon = st.wMonth - 1;
+  parts.tm_mday = st.wDay;
+  parts.tm_hour = 12;  // noon anchor
+  return DayAt(SerialFromTm(parts));
+}
+
+// ---- gauge arc geometry ---------------------------------------------------------------
+
+// Top-half arc starting at the left horizon sweeping right; `fraction` is
+// relative to the half-circle (mac SemiGauge parity, drawn with a WinUI
+// Path/ArcSegment — no composition renderer needed).
+media::Geometry SemiArcGeometry(double fraction) {
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kCenterX = 140.0;
+  constexpr double kCenterY = 140.0;
+  constexpr double kRadius = 115.0;
+
+  media::ArcSegment segment;
+  double const angle = kPi * (1.0 - std::clamp(fraction, 0.0, 1.0));  // π → 0
+  // Point members are float; the cos/sin results need explicit narrowing.
+  segment.Point({static_cast<float>(kCenterX + kRadius * std::cos(angle)),
+                 static_cast<float>(kCenterY - kRadius * std::sin(angle))});
+  segment.Size({kRadius, kRadius});
+  segment.RotationAngle(0);
+  segment.IsLargeArc(false);
+  segment.SweepDirection(media::SweepDirection::Clockwise);
+  media::PathFigure figure;
+  figure.IsClosed(false);
+  figure.StartPoint({kCenterX - kRadius, kCenterY});
+  figure.Segments().Append(segment);
+  media::PathFigureCollection figures;
+  figures.Append(figure);
+  media::PathGeometry geometry;
+  geometry.Figures(figures);
+  return geometry;
+}
+
+// Full-circle progress arc starting at 12 o'clock sweeping clockwise (mac
+// todayRing Circle().trim parity). Degenerate at both ends; the caller hides
+// the path for fractions outside (0, 1).
+media::Geometry RingArcGeometry(double fraction) {
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kCenter = 15.0;
+  constexpr double kRadius = 12.0;  // 30px box minus the 2.5 stroke
+
+  double const sweep = 2.0 * kPi * std::clamp(fraction, 0.0, 1.0);
+  media::ArcSegment segment;
+  segment.Point({static_cast<float>(kCenter + kRadius * std::sin(sweep)),
+                 static_cast<float>(kCenter - kRadius * std::cos(sweep))});
+  segment.Size({kRadius, kRadius});
+  segment.RotationAngle(0);
+  segment.IsLargeArc(fraction > 0.5);
+  segment.SweepDirection(media::SweepDirection::Clockwise);
+  media::PathFigure figure;
+  figure.IsClosed(false);
+  figure.StartPoint({kCenter, kCenter - kRadius});
+  figure.Segments().Append(segment);
+  media::PathFigureCollection figures;
+  figures.Append(figure);
+  media::PathGeometry geometry;
+  geometry.Figures(figures);
+  return geometry;
+}
 
 // Page-1 thumbnail as PNG bytes for the shelf cover cache: at most 320px
 // wide (mac coverPNG parity), never scaled past 4x for tiny pages.
@@ -217,6 +321,7 @@ void MainWindow::ShowShelfDetail() {
                            : winrt::box_value(ShelfTitleFor(shelf_selection_)));
   } catch (...) {
   }
+  UpdateReadingProgress();  // paint the toolbar ring + live gauge now
   if (home) {
     RefreshHomeDigest();
   } else {
@@ -375,11 +480,56 @@ void MainWindow::ShelfCreateCollectionDialog() {
   });
 }
 
-// ---- home digest (continue-reading + recently added) -----------------------------------
+// ---- home digest (goals card + continue-reading + recently added) ----------------------
 
 void MainWindow::RefreshHomeDigest() {
   try {
+    bool const dark = Root().ActualTheme() == mux::ElementTheme::Dark;
     HomeTitle().Text(pdfgist::Tr("ui.shelf.home"));
+
+    // goals card: 今日阅读 mm:ss live toward the 20-minute goal (mac
+    // goalsCard parity — ink-colored progress, accent badge at 100%)
+    GoalTodayLabel().Text(pdfgist::Tr("ui.shelf.today"));
+    GoalMmss().Text(Mmss(today_seconds_));
+    GoalOfLabel().Text(pdfgist::Tr("ui.shelf.goal-of"));
+    GoalTrackPath().Stroke(ThemeBorderBrush());
+    GoalTrackPath().Data(SemiArcGeometry(1.0));
+    GoalProgressPath().Stroke(Brush(PrimaryColor(dark)));
+    double const ratio = std::min(
+        1.0, static_cast<double>(today_seconds_) /
+                 static_cast<double>(kGoalSeconds));
+    GoalProgressPath().Data(SemiArcGeometry(ratio));
+    GoalProgressPath().Visibility(ratio > 0.0004 ? Visibility::Visible
+                                                 : Visibility::Collapsed);
+    bool const goal_hit = today_seconds_ >= kGoalSeconds;
+    GoalHitBadge().Visibility(goal_hit ? Visibility::Visible
+                                       : Visibility::Collapsed);
+    if (goal_hit) {
+      GoalHitText().Text(pdfgist::Tr("ui.shelf.goal-hit"));
+      GoalHitText().Foreground(Brush(AccentColor()));
+      GoalHitBadge().Background(Brush(AccentSoftColor(dark)));
+    }
+
+    // the Books store-button slot: last-read book, or import when none
+    if (!recents_.empty()) {
+      ContinuePill().Visibility(Visibility::Visible);
+      ContinuePillImport().Visibility(Visibility::Collapsed);
+      ContinuePillLabel().Text(pdfgist::Tr("ui.shelf.continue"));
+      ContinuePill().Background(Brush(PrimaryColor(dark)));
+      ContinuePillLabel().Foreground(
+          Brush(dark ? wu::Color{0xFF, 0x00, 0x00, 0x00}
+                     : wu::Color{0xFF, 0xFF, 0xFF, 0xFF}));
+    } else {
+      ContinuePill().Visibility(Visibility::Collapsed);
+      ContinuePillImport().Visibility(Visibility::Visible);
+      ContinuePillImportLabel().Text(pdfgist::Tr("ui.library.import"));
+    }
+
+    BuildStreakRow(dark);
+    StreakLabel().Text(streak_days_ > 0
+                           ? pdfgist::Trf("ui.shelf.streak-record",
+                                          std::to_wstring(streak_days_))
+                           : pdfgist::Tr("ui.shelf.streak-start"));
 
     // continue-reading strip: covers with progress, reading-now only
     std::vector<rivet_app::LibraryEntry> reading_now;
@@ -411,7 +561,7 @@ void MainWindow::RefreshHomeDigest() {
                      });
     if (recent.size() > 12) recent.resize(12);
     bool const any_recent = !recent.empty();
-    RecentHeader().Text(pdfgist::Tr("ui.shelf.recent"));
+    RecentHeader().Text(pdfgist::Tr("ui.home.recent"));
     RecentHeader().Visibility(any_recent ? Visibility::Visible
                                          : Visibility::Collapsed);
     RecentScroll().Visibility(any_recent ? Visibility::Visible
@@ -425,6 +575,101 @@ void MainWindow::RefreshHomeDigest() {
     }
   } catch (...) {
   }
+}
+
+// Seven day circles, 一二三四五六日; a day counts as read at 60s+ (mac
+// streakRow parity). Rebuilt per tick so today's dot lights up live.
+void MainWindow::BuildStreakRow(bool dark) {
+  static wchar_t const* kDayLabels[7] = {L"一", L"二", L"三", L"四",
+                                         L"五", L"六", L"日"};
+  wu::Color const ink = PrimaryColor(dark);
+  wu::Color const inverse = dark ? wu::Color{0xFF, 0x00, 0x00, 0x00}
+                                 : wu::Color{0xFF, 0xFF, 0xFF, 0xFF};
+  auto cells = StreakRow().Children();
+  cells.Clear();
+  for (int i = 0; i < 7; ++i) {
+    bool const read = week_seconds_[static_cast<std::size_t>(i)] >= 60;
+    auto cell = muxc::Grid();
+    cell.Width(30);
+    cell.Height(30);
+    auto circle = shapes::Ellipse();
+    circle.Fill(Brush(read ? ink : PanelAltColor(dark)));
+    circle.Stroke(ThemeBorderBrush());
+    circle.StrokeThickness(1);
+    auto label = muxc::TextBlock();
+    label.Text(kDayLabels[i]);
+    label.FontSize(11);
+    label.FontWeight(wut::FontWeights::SemiBold());
+    label.Foreground(Brush(read ? inverse : TextDimColor(dark)));
+    label.HorizontalAlignment(mux::HorizontalAlignment::Center);
+    label.VerticalAlignment(mux::VerticalAlignment::Center);
+    cell.Children().Append(circle);
+    cell.Children().Append(label);
+    cells.Append(cell);
+  }
+}
+
+// The per-second live update: gauge number/trim, goal badge, streak dots,
+// toolbar ring — cheap property sets only, never the cover strips (mac
+// SwiftUI re-render parity).
+void MainWindow::UpdateReadingProgress() {
+  try {
+    bool const dark = Root().ActualTheme() == mux::ElementTheme::Dark;
+    GoalMmss().Text(Mmss(today_seconds_));
+    double const ratio = std::min(
+        1.0, static_cast<double>(today_seconds_) /
+                 static_cast<double>(kGoalSeconds));
+    GoalProgressPath().Data(SemiArcGeometry(ratio));
+    GoalProgressPath().Visibility(ratio > 0.0004 ? Visibility::Visible
+                                                 : Visibility::Collapsed);
+    bool const goal_hit = today_seconds_ >= kGoalSeconds;
+    GoalHitBadge().Visibility(goal_hit ? Visibility::Visible
+                                       : Visibility::Collapsed);
+    if (goal_hit) {
+      GoalHitText().Text(pdfgist::Tr("ui.shelf.goal-hit"));
+      GoalHitText().Foreground(Brush(AccentColor()));
+      GoalHitBadge().Background(Brush(AccentSoftColor(dark)));
+    }
+    BuildStreakRow(dark);
+    StreakLabel().Text(streak_days_ > 0
+                           ? pdfgist::Trf("ui.shelf.streak-record",
+                                          std::to_wstring(streak_days_))
+                           : pdfgist::Tr("ui.shelf.streak-start"));
+
+    // toolbar mini-gauge (mac todayRing parity): accent trim, minutes / 20
+    TodayRingTrack().Stroke(ThemeBorderBrush());
+    TodayRingArc().Stroke(Brush(AccentColor()));
+    TodayRingFill().Stroke(Brush(AccentColor()));
+    if (ratio >= 0.999) {
+      TodayRingFill().Visibility(Visibility::Visible);
+      TodayRingArc().Visibility(Visibility::Collapsed);
+    } else if (ratio > 0.0009) {
+      TodayRingFill().Visibility(Visibility::Collapsed);
+      TodayRingArc().Visibility(Visibility::Visible);
+      TodayRingArc().Data(RingArcGeometry(ratio));
+    } else {
+      TodayRingFill().Visibility(Visibility::Collapsed);
+      TodayRingArc().Visibility(Visibility::Collapsed);
+    }
+    TodayRingMinutes().Text(std::to_wstring(today_seconds_ / 60));
+    TodayRingGoal().Text(L"/ " + std::to_wstring(kGoalSeconds / 60));
+  } catch (...) {
+  }
+}
+
+void MainWindow::ContinuePill_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    mux::RoutedEventArgs const&) {
+  // open the book the user last read, at the resume position
+  if (recents_.empty()) return;
+  OpenPath(to_wide(recents_.front().path),
+           static_cast<int>(recents_.front().page));
+}
+
+void MainWindow::ContinuePillImport_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    mux::RoutedEventArgs const&) {
+  PickAndOpen();
 }
 
 // ---- one shelf cell -----------------------------------------------------------------
@@ -1065,6 +1310,128 @@ void MainWindow::ImportBooks(std::vector<std::wstring> const& paths) {
       });
     }
   }).detach();
+}
+
+// ---- reading time (device-local: live seconds per day, Books-style goal) ---------------
+// A 1-second clock accrues while a reader tab is up and the window is
+// showing. The store is a flat {yyyy-MM-dd: seconds} JSON in
+// %APPDATA%\site.jrtx.booklight\reading-minutes.json (the file kept its
+// pre-upgrade name; the values are seconds since 9201fb3) and it
+// deliberately never rides any sync drive — cross-device merging would
+// double-count (mac AppModel parity; mac keeps the same data in
+// UserDefaults for the same reason).
+
+std::wstring MainWindow::ReadingSecondsPath() const {
+  wchar_t buffer[MAX_PATH]{};
+  if (::GetEnvironmentVariableW(L"APPDATA", buffer, MAX_PATH) == 0) {
+    return {};
+  }
+  return (std::filesystem::path(buffer) / L"site.jrtx.booklight" /
+          L"reading-minutes.json")
+      .wstring();
+}
+
+int MainWindow::LookupSeconds(std::wstring const& day) const {
+  auto const found = reading_seconds_.find(day);
+  return found == reading_seconds_.end() ? 0 : found->second;
+}
+
+void MainWindow::LoadReadingStats() {
+  try {
+    auto const path = ReadingSecondsPath();
+    if (path.empty()) return;
+    std::ifstream file(std::filesystem::path(path), std::ios::binary);
+    if (!file) return;
+    std::string json((std::istreambuf_iterator<char>(file)),
+                     std::istreambuf_iterator<char>());
+    static std::regex const pattern("\"(\\d{4}-\\d{2}-\\d{2})\"\\s*:\\s*(\\d+)");
+    for (std::sregex_iterator it(json.begin(), json.end(), pattern), end;
+         it != end; ++it) {
+      reading_seconds_[to_wide((*it)[1].str())] = std::stoi((*it)[2].str());
+    }
+  } catch (...) {
+    // a damaged store falls back to zeroed stats, never a crash
+  }
+  RefreshReadingStats();
+}
+
+void MainWindow::SaveReadingStats() {
+  try {
+    auto const path = ReadingSecondsPath();
+    if (path.empty()) return;
+    std::error_code ec;
+    std::filesystem::create_directories(
+        std::filesystem::path(path).parent_path(), ec);
+    std::ofstream file(std::filesystem::path(path),
+                       std::ios::binary | std::ios::trunc);
+    file << "{";
+    bool first = true;
+    for (auto const& [day, seconds] : reading_seconds_) {
+      if (!first) file << ",";
+      first = false;
+      file << "\"" << to_utf8(day) << "\":" << seconds;
+    }
+    file << "}\n";
+  } catch (...) {
+    // best effort — the in-memory buckets still feed the UI
+  }
+}
+
+// Recompute today / week (Mon..Sun) / streak from the buckets; a day counts
+// as read at 60s+ (mac refreshReadingStats parity).
+void MainWindow::RefreshReadingStats() {
+  DayStamp const today = Today();
+  today_seconds_ = LookupSeconds(today.key);
+  long long const monday = today.serial - ((today.weekday + 6) % 7);
+  for (int i = 0; i < 7; ++i) {
+    week_seconds_[static_cast<std::size_t>(i)] =
+        LookupSeconds(DayAt(monday + i).key);
+  }
+  // current streak: consecutive 60s+ days ending today (or yesterday, if
+  // today hasn't started yet)
+  long long cursor = today.serial;
+  if (LookupSeconds(today.key) < 60) cursor -= 1;
+  streak_days_ = 0;
+  while (LookupSeconds(DayAt(cursor).key) >= 60) {
+    ++streak_days_;
+    --cursor;
+  }
+}
+
+void MainWindow::AddReadingSeconds(int seconds) {
+  reading_seconds_[Today().key] += seconds;
+  SaveReadingStats();
+  RefreshReadingStats();
+  UpdateReadingProgress();  // cheap: gauge, dots, ring — no cover strips
+}
+
+void MainWindow::StartReadingClock() {
+  reading_timer_ = DispatcherQueue().CreateTimer();
+  reading_timer_.Interval(std::chrono::seconds{1});
+  reading_timer_.IsRepeating(true);
+  reading_timer_.Tick([weak = get_weak()](auto&&, auto&&) {
+    if (auto window = weak.get()) window->TickReadingSecond();
+  });
+}
+
+// One second of reading accrues when a reader tab is up and the window is
+// showing — the shelf idling never counts (mac tickReadingSecond parity).
+void MainWindow::TickReadingSecond() {
+  bool const reader_up = !tabs_.empty() || epub_ != nullptr;
+  if (!reader_up) return;
+  HWND hwnd = nullptr;
+  if (auto native = try_as<::IWindowNative>()) {
+    native->get_WindowHandle(&hwnd);
+  }
+  if (hwnd != nullptr && ::IsIconic(hwnd)) return;
+  AddReadingSeconds(1);
+}
+
+std::wstring MainWindow::Mmss(int seconds) {
+  if (seconds < 0) seconds = 0;
+  wchar_t buffer[16]{};
+  swprintf_s(buffer, L"%d:%02d", seconds / 60, seconds % 60);
+  return std::wstring(buffer);
 }
 
 }  // namespace winrt::RivetHost::implementation

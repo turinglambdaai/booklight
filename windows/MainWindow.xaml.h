@@ -499,6 +499,26 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ShelfRelink(rivet_app::LibraryEntry const& entry);
   void ShelfRemove(rivet_app::LibraryEntry const& entry);
   void RevealInExplorer(std::wstring const& path);
+  void ContinuePill_Click(winrt::Windows::Foundation::IInspectable const&,
+                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void ContinuePillImport_Click(
+      winrt::Windows::Foundation::IInspectable const&,
+      winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+
+  // ---- reading time (MainWindow.Shelf.cpp) — device-local, never synced ----
+  // Live seconds toward the daily goal; buckets persist per day (mac
+  // booklight-reading-seconds parity).
+  std::wstring ReadingSecondsPath() const;
+  void LoadReadingStats();
+  void SaveReadingStats();
+  void RefreshReadingStats();
+  void AddReadingSeconds(int seconds);
+  void TickReadingSecond();
+  void StartReadingClock();
+  int LookupSeconds(std::wstring const& day) const;
+  void BuildStreakRow(bool dark);
+  void UpdateReadingProgress();  // per-tick: gauge, dots, ring (no strips)
+  static std::wstring Mmss(int seconds);
 
   std::vector<rivet_app::LibraryEntry> library_;
   bool library_loaded_ = false;
@@ -509,6 +529,15 @@ struct MainWindow : MainWindowT<MainWindow> {
   std::map<std::wstring,
            winrt::Microsoft::UI::Xaml::Controls::NavigationViewItem>
       shelf_nav_items_;
+
+  // seconds buckets keyed "yyyy-MM-dd" (file keeps the reading-minutes.json
+  // name; values are seconds since the 9201fb3 upgrade)
+  std::map<std::wstring, int> reading_seconds_;
+  int today_seconds_ = 0;
+  std::array<int, 7> week_seconds_{};  // Mon..Sun
+  int streak_days_ = 0;
+  static constexpr int kGoalSeconds = 20 * 60;
+  winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer reading_timer_{nullptr};
 
   // ---- AcroForm pane (MainWindow.Forms.cpp) ----
   void BuildFormsPane();
