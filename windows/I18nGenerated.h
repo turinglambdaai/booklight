@@ -288,6 +288,23 @@ inline constexpr struct WinStringEntry {
     {"ui.library.importing", L"正在导入…", L"Importing…"},
     {"ui.library.progress", L"第 {0} 页，共 {1} 页", L"Page {0} of {1}"},
     {"ui.library.chapter-progress", L"第 {0} 章，共 {1} 章", L"Chapter {0} of {1}"},
+    {"ui.shelf.home", L"主页", L"Home"},
+    {"ui.shelf.search", L"搜索", L"Search"},
+    {"ui.shelf.lib", L"书库", L"Library"},
+    {"ui.shelf.all", L"全部", L"All"},
+    {"ui.shelf.want", L"欲读清单", L"Want to Read"},
+    {"ui.shelf.finished", L"已读完", L"Finished"},
+    {"ui.shelf.pdf", L"PDF", L"PDF"},
+    {"ui.shelf.epub", L"EPUB", L"EPUB"},
+    {"ui.shelf.mine", L"我的收藏集", L"My Collections"},
+    {"ui.shelf.new-collection", L"新建收藏集", L"New Collection"},
+    {"ui.shelf.today", L"今日阅读", L"Today's Reading"},
+    {"ui.shelf.goal-of", L"今日目标 20 分钟", L"of your 20-minute goal"},
+    {"ui.shelf.streak-start", L"开始新的连续阅读。", L"Start a new streak."},
+    {"ui.shelf.streak-record", L"连续阅读纪录：{0} 天", L"Your record is {0} days."},
+    {"ui.shelf.continue", L"继续阅读", L"Continue Reading"},
+    {"ui.shelf.minutes", L"分钟", L"min"},
+    {"ui.shelf.goal-hit", L"目标达成！", L"Goal reached!"},
 };
 
 }  // namespace pdfgist

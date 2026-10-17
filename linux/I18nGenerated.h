@@ -289,6 +289,23 @@ inline constexpr struct LinuxStringEntry {
     {"ui.library.importing", "正在导入…", "Importing…"},
     {"ui.library.progress", "第 {0} 页，共 {1} 页", "Page {0} of {1}"},
     {"ui.library.chapter-progress", "第 {0} 章，共 {1} 章", "Chapter {0} of {1}"},
+    {"ui.shelf.home", "主页", "Home"},
+    {"ui.shelf.search", "搜索", "Search"},
+    {"ui.shelf.lib", "书库", "Library"},
+    {"ui.shelf.all", "全部", "All"},
+    {"ui.shelf.want", "欲读清单", "Want to Read"},
+    {"ui.shelf.finished", "已读完", "Finished"},
+    {"ui.shelf.pdf", "PDF", "PDF"},
+    {"ui.shelf.epub", "EPUB", "EPUB"},
+    {"ui.shelf.mine", "我的收藏集", "My Collections"},
+    {"ui.shelf.new-collection", "新建收藏集", "New Collection"},
+    {"ui.shelf.today", "今日阅读", "Today's Reading"},
+    {"ui.shelf.goal-of", "今日目标 20 分钟", "of your 20-minute goal"},
+    {"ui.shelf.streak-start", "开始新的连续阅读。", "Start a new streak."},
+    {"ui.shelf.streak-record", "连续阅读纪录：{0} 天", "Your record is {0} days."},
+    {"ui.shelf.continue", "继续阅读", "Continue Reading"},
+    {"ui.shelf.minutes", "分钟", "min"},
+    {"ui.shelf.goal-hit", "目标达成！", "Goal reached!"},
 };
 
 }  // namespace pdfgist
