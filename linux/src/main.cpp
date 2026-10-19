@@ -123,6 +123,9 @@ struct Host {
   rivet_app::SettingsView settings;
   std::vector<rivet_app::ProviderPreset> presets;
   std::vector<rivet_app::RecentEntry> recents;
+  // GApplication emits `open` instead of `activate` for file-association
+  // launches. Keep those paths until the window and RVT1 backend are ready.
+  std::vector<std::string> pending_open_paths;
   bool ready{false};
   std::string theme{"system"};
   double epub_font_scale{1.0};
@@ -1497,8 +1500,15 @@ void bootstrap() {
       // annotations now (mac loadDocData needs the API too).
       for (auto& tab : g_host.tabs) load_annotations_for_tab(tab.get());
 
-      // launch-open parity with the macOS host's PDFGIST_OPEN
-      if (char const* launch = getenv("PDFGIST_OPEN")) {
+      auto pending = std::move(g_host.pending_open_paths);
+      g_host.pending_open_paths.clear();
+      for (auto const& path : pending) open_path(path);
+
+      // Environment launch hook for deterministic automation and legacy
+      // PdfGist callers. File-association launches use the queue above.
+      char const* launch = getenv("BOOKLIGHT_OPEN");
+      if (launch == nullptr || *launch == '\0') launch = getenv("PDFGIST_OPEN");
+      if (launch != nullptr && *launch != '\0') {
         std::string const path = launch;
         std::string lower = path;
         std::transform(lower.begin(), lower.end(), lower.begin(),
@@ -3072,7 +3082,7 @@ void on_activate(GtkApplication* app, gpointer) {
 
   auto* window = gtk_application_window_new(app);
   g_host.window = GTK_WINDOW(window);
-  gtk_window_set_title(g_host.window, "PDFGist");
+  gtk_window_set_title(g_host.window, "Booklight");
   gtk_window_set_default_size(g_host.window, 1280, 860);
   apply_theme();  // display is connected; gtk_settings are live
 
@@ -3488,13 +3498,21 @@ void on_activate(GtkApplication* app, gpointer) {
   start_backend();
 }
 
-void on_open_files(GtkApplication*, GFile** files, gint n_files, gpointer) {
+void on_open_files(GtkApplication* app, GFile** files, gint n_files, gpointer) {
+  // With G_APPLICATION_HANDLES_OPEN GTK does not emit `activate` first.
+  // Build the native tree now, but defer document work until bootstrap has
+  // completed the embedded RVT1 handshake.
+  if (g_host.window == nullptr) on_activate(app, nullptr);
   for (gint i = 0; i < n_files; ++i) {
     gchar* path = g_file_get_path(files[i]);
     if (path == nullptr) continue;
     std::string const p = path;
     g_free(path);
-    open_path(p);
+    if (g_host.ready) {
+      open_path(p);
+    } else {
+      g_host.pending_open_paths.push_back(p);
+    }
   }
 }
 
