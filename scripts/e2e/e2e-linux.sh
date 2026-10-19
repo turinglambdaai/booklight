@@ -14,6 +14,10 @@ export XDG_CACHE_HOME="$output/cache-$$"
 export XDG_RUNTIME_DIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/booklight-acceptance-runtime-$$"
 export WAYLAND_DISPLAY=wayland-booklight-acceptance
 export GDK_BACKEND=wayland GTK_A11Y=atspi NO_AT_BRIDGE=0 LANG=C.UTF-8
+# GitHub-hosted runners deny the user namespace that WebKitGTK's bubblewrap
+# sandbox requires. Limit the escape hatch to this packaged acceptance process;
+# production launches keep WebKitGTK's sandbox enabled.
+export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 unset DISPLAY
 mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"; chmod 700 "$XDG_RUNTIME_DIR"
 weston --backend=headless-backend.so --socket="$WAYLAND_DISPLAY" --idle-time=0 --debug --log="$output/weston.log" &
