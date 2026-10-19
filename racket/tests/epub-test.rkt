@@ -22,6 +22,11 @@
   (check-equal? (epub-toc-item-chapter (car toc)) 1)
   (check-equal? (epub-toc-item-level (caddr toc)) 1))
 
+(test-case "cover: EPUB 3 cover-image manifest item"
+  (define cover (epub-cover-bytes data))
+  (check-true (> (bytes-length cover) 4))
+  (check-equal? (subbytes cover 1 4) #"PNG"))
+
 (test-case "chapter html: sanitized, images inlined as data URLs"
   (define html (bytes->string/utf-8 (epub-chapter-html (open-epub data) 1)))
   (check-false (string-contains? html "<script"))
