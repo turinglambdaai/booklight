@@ -1,6 +1,7 @@
 name: CI
 on:
   push:
+    branches: [main]
   pull_request:
 
 # Single source of truth for the rivet pin; every install step below
