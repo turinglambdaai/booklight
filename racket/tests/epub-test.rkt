@@ -22,6 +22,9 @@
   (check-equal? (epub-toc-item-chapter (car toc)) 1)
   (check-equal? (epub-toc-item-level (caddr toc)) 1))
 
+(test-case "metadata: dc:creator becomes shelf author"
+  (check-equal? (epub-author data) "Tester"))
+
 (test-case "cover: EPUB 3 cover-image manifest item"
   (define cover (epub-cover-bytes data))
   (check-true (> (bytes-length cover) 4))

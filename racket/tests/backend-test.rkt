@@ -302,7 +302,8 @@
 ;; Empty EPUB cover payloads are enriched by the domain core from OPF
 ;; cover metadata, so all native shelves get art without host-side parsing.
 (define-values (epub-shelf-entry _e15-cover)
-  (call "library-import" epub-path "The Sample Book" "Tester" "epub" 2 #""))
+  (call "library-import" epub-path "The Sample Book" "" "epub" 2 #""))
+(check-equal? (list-ref epub-shelf-entry 2) "Tester")
 (define epub-cover-path (list-ref epub-shelf-entry 6))
 (check-false (string=? epub-cover-path ""))
 (check-true (file-exists? epub-cover-path))
