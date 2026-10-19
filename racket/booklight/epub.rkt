@@ -22,6 +22,7 @@
          (struct-out epub-book)
          (struct-out epub-toc-item)
          open-epub
+         epub-cover-bytes
          epub-chapter-html
          epub-chapter-text
          epub-doc-text)
@@ -250,6 +251,63 @@
                          (walk point (add1 level)))
                         (filter (λ (c) (el-local? c 'navPoint))
                                 (xml-kids point))))))))
+
+;; ------------------------------------------------------------ cover art
+
+;; EPUB 3 identifies the cover image with manifest properties="cover-image".
+;; EPUB 2 uses <meta name="cover" content="<manifest-id>">. Return the
+;; original encoded image bytes; native shelf image loaders sniff the actual
+;; format, while the cache keeps its historical deterministic file name.
+(define (epub-cover-bytes data)
+  (unless (and (bytes? data) (>= (bytes-length data) 4)
+               (equal? (subbytes data 0 4) #"PK\x03\x04"))
+    (epub-error "不是有效的 EPUB 文件"))
+  (define entries (read-entries data))
+  (define book* (epub-book "EPUB" '() '() entries))
+  (define container
+    (entry-bytes book* "META-INF/container.xml"))
+  (define container-sxml
+    (parse-xml-string (bytes->string/utf-8 container) "container.xml"))
+  (define rootfile (xml-find container-sxml 'rootfile))
+  (define opf-path
+    (or (and rootfile (xml-attr rootfile 'full-path)) "content.opf"))
+  (define opf-dir (dir-of opf-path))
+  (define opf-sxml
+    (parse-xml-string (bytes->string/utf-8 (entry-bytes book* opf-path))
+                      "content.opf"))
+
+  (define manifest (make-hash))
+  (for ((item (in-list (xml-find-all opf-sxml 'item))))
+    (hash-set! manifest (or (xml-attr item 'id) "")
+               (list (or (xml-attr item 'href) "")
+                     (or (xml-attr item 'media-type) "")
+                     (or (xml-attr item 'properties) ""))))
+
+  (define epub3-cover
+    (for/first ((item (in-hash-values manifest))
+                #:when (member "cover-image"
+                               (string-split (list-ref item 2))))
+      item))
+  (define epub2-cover-id
+    (for/first ((meta (in-list (xml-find-all opf-sxml 'meta)))
+                #:when (string-ci=? (or (xml-attr meta 'name) "") "cover"))
+      (or (xml-attr meta 'content) "")))
+  (define epub2-cover
+    (and epub2-cover-id
+         (not (string=? epub2-cover-id ""))
+         (hash-ref manifest epub2-cover-id #f)))
+  (define cover-item (or epub3-cover epub2-cover))
+
+  (cond
+    ((not cover-item) #"")
+    (else
+     (define href (list-ref cover-item 0))
+     (define media-type (list-ref cover-item 1))
+     (if (and (not (string=? href ""))
+              (string-prefix? media-type "image/"))
+         (with-handlers ((exn:fail:epub? (lambda (_) #"")))
+           (entry-bytes book* (zip-join opf-dir (strip-anchor href))))
+         #""))))
 
 ;; ------------------------------------------------------------ sanitize
 

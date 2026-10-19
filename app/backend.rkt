@@ -432,17 +432,28 @@
                             [pages : Int64]
                             [cover : Bytes]
                             : LibraryEntry)
-  (unless (zero? (bytes-length cover))
+  ;; PDF hosts already provide a rendered PNG. EPUB hosts historically send
+  ;; an empty payload, so the domain core fills it from the package metadata.
+  ;; Extraction is best-effort: a malformed/missing cover must not make an
+  ;; otherwise readable book impossible to catalog.
+  (define resolved-cover
+    (cond
+      ((not (zero? (bytes-length cover))) cover)
+      ((string=? kind "epub")
+       (with-handlers ((exn:fail? (lambda (_) #"")))
+         (epub:epub-cover-bytes (file->bytes path))))
+      (else #"")))
+  (unless (zero? (bytes-length resolved-cover))
     (define covers-dir (library:covers-dir-path))
     (make-directory* covers-dir)
     (call-with-output-file
         (build-path covers-dir (library:cover-file-name path))
-      (lambda (out) (write-bytes cover out))
+      (lambda (out) (write-bytes resolved-cover out))
       #:exists 'replace))
   (define entry
     (library:book-entry path title author kind (max 1 pages)
                         (current-seconds)
-                        (if (zero? (bytes-length cover))
+                        (if (zero? (bytes-length resolved-cover))
                             ""
                             (library:cover-file-name path))
                         '()

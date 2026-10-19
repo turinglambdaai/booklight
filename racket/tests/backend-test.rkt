@@ -299,6 +299,17 @@
 (define epub-path (path->string (build-path temp-config "book.epub")))
 (copy-file sample-epub epub-path #t)
 
+;; Empty EPUB cover payloads are enriched by the domain core from OPF
+;; cover metadata, so all native shelves get art without host-side parsing.
+(define-values (epub-shelf-entry _e15-cover)
+  (call "library-import" epub-path "The Sample Book" "Tester" "epub" 2 #""))
+(define epub-cover-path (list-ref epub-shelf-entry 6))
+(check-false (string=? epub-cover-path ""))
+(check-true (file-exists? epub-cover-path))
+(define epub-cover-bytes* (file->bytes epub-cover-path))
+(check-true (> (bytes-length epub-cover-bytes*) 4))
+(check-equal? (subbytes epub-cover-bytes* 1 4) #"PNG")
+
 (define-values (epub-view _e16) (call "epub-open" epub-path))
 ;; record shape: (title chapters (toc-items...))
 (check-equal? (list-ref epub-view 0) "The Sample Book")
