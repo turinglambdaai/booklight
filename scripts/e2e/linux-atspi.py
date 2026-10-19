@@ -22,11 +22,23 @@ def text(node):
     except Exception: return ""
 def contains(root, fragment): return any(fragment in (node.name or "") or fragment in text(node) for node in walk(root))
 def press(node):
-    actions = node.queryAction()
-    if actions.nActions < 1: raise AssertionError(f"AT-SPI exposes no action for {node.name!r}")
-    # GTK may report False while the asynchronous native action is still
-    # queued; the menu content assertion below is the observable success test.
-    actions.doAction(0)
+    try:
+        actions = node.queryAction()
+        for index in range(actions.nActions):
+            if actions.doAction(index): return
+    except Exception:
+        pass
+    # GtkMenuButton is exposed as a push button but does not implement the
+    # AT-SPI Action interface on every GTK build. Click its native component
+    # bounds through AT-SPI; the menu content assertion remains the result.
+    extents = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+    if extents.width <= 0 or extents.height <= 0:
+        raise AssertionError(f"AT-SPI exposes no invokable bounds for {node.name!r}")
+    pyatspi.Registry.generateMouseEvent(
+        extents.x + extents.width // 2,
+        extents.y + extents.height // 2,
+        "b1c",
+    )
 def wait_for(description, probe, timeout=90.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
