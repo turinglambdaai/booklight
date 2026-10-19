@@ -332,7 +332,7 @@ void refresh_header_title() {
                         std::to_string(tab->document()->page_count()))
                            .c_str());
   } else {
-    gtk_label_set_text(g_host.title_label, "PDFGist");
+    gtk_label_set_text(g_host.title_label, "Booklight");
     gtk_label_set_text(g_host.subtitle_label, "");
   }
 }
@@ -2500,7 +2500,7 @@ void check_updates_manual() { check_updates(true); }
 
 void show_about() {
   GtkWidget* dialog = gtk_about_dialog_new();
-  gtk_about_dialog_set_program_name(GTK_ABOUT_DIALOG(dialog), "PDFGist");
+  gtk_about_dialog_set_program_name(GTK_ABOUT_DIALOG(dialog), "Booklight");
   gtk_about_dialog_set_version(GTK_ABOUT_DIALOG(dialog),
                                rivet_app::kVersion);
   gtk_about_dialog_set_website(GTK_ABOUT_DIALOG(dialog),
@@ -3577,7 +3577,7 @@ int main(int argc, char** argv) {
   pdfgist::SetUiLanguage(detect_ui_language());
   g_host.theme = host::pref_string("theme", "system");
 
-  auto* app = gtk_application_new("site.jrtx.pdfgist",
+  auto* app = gtk_application_new("site.jrtx.booklight",
                                   G_APPLICATION_HANDLES_OPEN);
   hook(app, "activate", on_activate, nullptr);
   hook(app, "open", on_open_files, nullptr);

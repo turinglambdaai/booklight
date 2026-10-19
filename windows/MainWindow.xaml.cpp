@@ -388,8 +388,11 @@ void MainWindow::Bootstrap() {
       }).detach();
       // Stand-in for v1's file association (mac bootstrap parity).
       wchar_t buffer[32768]{};
-      DWORD const length =
-          ::GetEnvironmentVariableW(L"PDFGIST_OPEN", buffer, 32768);
+      DWORD length =
+          ::GetEnvironmentVariableW(L"BOOKLIGHT_OPEN", buffer, 32768);
+      if (length == 0) {
+        length = ::GetEnvironmentVariableW(L"PDFGIST_OPEN", buffer, 32768);
+      }
       if (length > 0 && length < 32768) {
         std::wstring const launch = buffer;
         if (has_extension(launch, L".pdf") || has_extension(launch, L".epub")) {

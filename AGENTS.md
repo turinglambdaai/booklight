@@ -25,10 +25,26 @@ Booklight 以 Rivet（github.com/turinglambdaai/rivet）构建：一份 Racket �
 # cd ../rivet && raco pkg install --auto --no-docs --name rivet --link file://$PWD
 
 raco rivet doctor --json   # 工具链自检
+raco rivet schema check rivet-schema.json --json # RPC 兼容性门禁
 raco rivet build           # 生成三端客户端 + 编译后端 bundle + 宿主构建
 raco rivet dev             # 开发循环
-raco test racket/          # 领域核心测试（275 项）
+raco test racket/          # 领域核心测试（341 项）
+raco test racket/tests/backend-test.rkt # 真实 RVT1 wire test
+raco rivet acceptance --json # 当前平台的打包产品验收
 ```
+
+## 完成定义
+
+- `raco rivet acceptance --json` 是当前平台的产品完成门禁：后端契约、真实
+  RVT1、原生宿主构建、可分发包和打包后原生 UI 操作必须全部通过。
+- GUI 工作不能只凭代码审查、单元测试、构建成功或截图宣称完成。默认验收会
+  用打包后的应用打开 `racket/tests/fixtures/sample.epub`，并确认后端解析出的
+  `The Sample Book` 与 `First Chapter` 出现在原生可访问性树。
+- 修改公共交互必须同步 macOS、Windows、Linux，或明确记录真实平台边界；
+  不得把业务逻辑复制到单个平台绕开 RVT1。
+- 关键控件的 accessibility / automation 标识属于测试契约。修改布局或文案时
+  不得无意删除；新增关键流程时同步扩展 `scripts/e2e/`。
+- 不得用 `continue-on-error`、空测试、跳过 UI 或强杀进程作为成功证据。
 
 ## 契约（不要破坏）
 
