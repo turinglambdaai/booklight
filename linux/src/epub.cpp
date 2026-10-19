@@ -289,6 +289,10 @@ void EpubTab::load() {
         if (on_load_failed) on_load_failed(error);
         return;
       }
+      // The constructor starts with the filename so the tab can render while
+      // RVT1 loads. Once the backend has parsed the EPUB, promote its metadata
+      // title to the native header.
+      title_ = view.title.empty() ? title_ : view.title;
       chapters_ = static_cast<int>(std::max<std::int64_t>(view.chapters, 1));
       toc_ = view.toc;
       text_cache_ = std::move(texts);
@@ -304,7 +308,7 @@ void EpubTab::load() {
                                 nullptr);
       loaded_ = true;
       apply_font_scale(font_scale_);
-      if (on_load_finished) on_load_finished({});
+      if (on_load_finished) on_load_finished(title_);
     });
   }).detach();
 }

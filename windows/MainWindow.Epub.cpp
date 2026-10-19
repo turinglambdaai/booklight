@@ -154,6 +154,12 @@ void MainWindow::LoadEpubBook(std::shared_ptr<EpubBook> book) {
         window->Alert(pdfgist::Trf("ui.pages.edit-failed", to_wide(failure)));
         return;
       }
+      if (!view.title.empty()) {
+        book->title = to_wide(view.title);
+        if (auto header = book->tab_item.Header().try_as<muxc::TextBlock>()) {
+          header.Text(book->title);
+        }
+      }
       book->chapters = static_cast<int>(view.chapters);
       book->toc = std::move(view.toc);
       book->text_ready = true;

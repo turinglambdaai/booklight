@@ -21,6 +21,12 @@ def text(node):
         value = node.queryText(); return value.getText(0, value.characterCount)
     except Exception: return ""
 def contains(root, fragment): return any(fragment in (node.name or "") or fragment in text(node) for node in walk(root))
+def press(node):
+    actions = node.queryAction()
+    if actions.nActions < 1: raise AssertionError(f"AT-SPI exposes no action for {node.name!r}")
+    # GTK may report False while the asynchronous native action is still
+    # queued; the menu content assertion below is the observable success test.
+    actions.doAction(0)
 def wait_for(description, probe, timeout=90.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -46,9 +52,11 @@ def main():
         application = wait_for("Booklight application", find_application)
         window = wait_for("Booklight frame", lambda: next((node for node in walk(application) if role(node) == "frame"), None))
         wait_for("EPUB title parsed by the embedded backend", lambda: contains(window, "The Sample Book"))
+        outline = wait_for("native EPUB outline button", lambda: next((node for node in walk(window) if role(node) == "push button" and (node.name or "") == "Outline"), None))
+        press(outline)
         wait_for("EPUB table of contents parsed by the embedded backend", lambda: contains(window, "First Chapter"))
         (args.output / "accessibility.json").write_text(json.dumps(snapshot(application), ensure_ascii=False, indent=2), encoding="utf-8")
-        (args.output / "interaction-trace.json").write_text(json.dumps({"platform":"linux","actions":["launch:sample.epub"],"assertions":["packaged GTK4 frame activated on native Wayland","sample EPUB crossed RVT1 into the embedded backend","native accessibility tree contains The Sample Book","native accessibility tree contains First Chapter"]}, indent=2), encoding="utf-8")
+        (args.output / "interaction-trace.json").write_text(json.dumps({"platform":"linux","actions":["launch:sample.epub","press:Outline"],"assertions":["packaged GTK4 frame activated on native Wayland","sample EPUB crossed RVT1 into the embedded backend","native accessibility tree contains The Sample Book","native accessibility tree contains First Chapter"]}, indent=2), encoding="utf-8")
     except Exception:
         if application is not None: (args.output / "accessibility-failure.json").write_text(json.dumps(snapshot(application), ensure_ascii=False, indent=2), encoding="utf-8")
         raise
