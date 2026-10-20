@@ -759,7 +759,10 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
   };
   raw->on_load_finished = [raw](std::string const&) {
     build_epub_toc_menu();
-    if (raw == g_host.epub && g_host.epub_active()) {
+    // Populate the native TOC for the still-open book even if GTK has not yet
+    // delivered the notebook switch-page signal.  That signal will rebuild
+    // the sidebar again if another document is actually selected.
+    if (raw == g_host.epub) {
       build_epub_outline_for(raw);
     }
     refresh_status();
