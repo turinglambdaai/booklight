@@ -489,7 +489,6 @@ void build_outline_for(PdfTab* tab) {
 void build_epub_outline_for(EpubTab* epub) {
   gtk_list_box_remove_all(g_host.outline_list);
   for (auto const& item : epub->toc()) {
-    auto* row = gtk_list_box_row_new();
     auto* label = gtk_label_new(item.title.c_str());
     gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
     gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
@@ -499,12 +498,16 @@ void build_epub_outline_for(EpubTab* epub) {
             8 + 14 * std::min<std::int64_t>(item.level, 6)));
     gtk_widget_set_margin_top(label, 3);
     gtk_widget_set_margin_bottom(label, 3);
-    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), label);
+    // Let GtkListBox create and parent its GtkListBoxRow.  Explicitly
+    // parenting a pre-built row triggered GTK's "widget already has a
+    // parent" assertion in the packaged Wayland run and left the native TOC
+    // empty even though the backend had returned all outline items.
+    gtk_list_box_append(g_host.outline_list, label);
+    auto* row = gtk_widget_get_parent(label);
     if (item.chapter > 0) {
       g_object_set_data(G_OBJECT(row), "booklight-epub-chapter",
                         GINT_TO_POINTER(static_cast<int>(item.chapter)));
     }
-    gtk_list_box_append(g_host.outline_list, row);
   }
 }
 
