@@ -64,7 +64,10 @@ def main():
         application = wait_for("Booklight application", find_application)
         window = wait_for("Booklight frame", lambda: next((node for node in walk(application) if role(node) == "frame"), None))
         wait_for("EPUB title parsed by the embedded backend", lambda: contains(window, "The Sample Book"))
-        outline = wait_for("native EPUB outline button", lambda: next((node for node in walk(window) if role(node) == "push button" and (node.name or "") == "Outline"), None))
+        # There are two native controls named Outline: the header popover and
+        # the sidebar's GtkStackSwitcher tab.  Select the semantic page tab so
+        # the assertion exercises the persistent native TOC surface.
+        outline = wait_for("native EPUB outline page", lambda: next((node for node in walk(window) if role(node) == "page tab" and (node.name or "") == "Outline"), None))
         press(outline)
         wait_for("EPUB table of contents parsed by the embedded backend", lambda: contains(window, "First Chapter"))
         (args.output / "accessibility.json").write_text(json.dumps(snapshot(application), ensure_ascii=False, indent=2), encoding="utf-8")
