@@ -123,6 +123,9 @@ struct Host {
   rivet_app::SettingsView settings;
   std::vector<rivet_app::ProviderPreset> presets;
   std::vector<rivet_app::RecentEntry> recents;
+  // GApplication emits `open` instead of `activate` for file-association
+  // launches. Keep those paths until the window and RVT1 backend are ready.
+  std::vector<std::string> pending_open_paths;
   bool ready{false};
   std::string theme{"system"};
   double epub_font_scale{1.0};
@@ -282,7 +285,8 @@ void apply_theme() {
   }
   // set_dark dropped each tab's cached thumbnails; rebuild the sidebar so
   // visible thumbs re-render in the new palette.
-  populate_thumbs();
+  // apply_theme() also runs before the window's content tree is assembled.
+  if (g_host.thumbs != nullptr) populate_thumbs();
 }
 
 void set_theme(std::string const& theme) {
@@ -329,7 +333,7 @@ void refresh_header_title() {
                         std::to_string(tab->document()->page_count()))
                            .c_str());
   } else {
-    gtk_label_set_text(g_host.title_label, "PDFGist");
+    gtk_label_set_text(g_host.title_label, "Booklight");
     gtk_label_set_text(g_host.subtitle_label, "");
   }
 }
@@ -483,6 +487,31 @@ void build_outline_for(PdfTab* tab) {
   }
 }
 
+void build_epub_outline_for(EpubTab* epub) {
+  gtk_list_box_remove_all(g_host.outline_list);
+  for (auto const& item : epub->toc()) {
+    auto* label = gtk_label_new(item.title.c_str());
+    gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+    gtk_widget_set_margin_start(
+        label,
+        static_cast<guint>(
+            8 + 14 * std::min<std::int64_t>(item.level, 6)));
+    gtk_widget_set_margin_top(label, 3);
+    gtk_widget_set_margin_bottom(label, 3);
+    // Let GtkListBox create and parent its GtkListBoxRow.  Explicitly
+    // parenting a pre-built row triggered GTK's "widget already has a
+    // parent" assertion in the packaged Wayland run and left the native TOC
+    // empty even though the backend had returned all outline items.
+    gtk_list_box_append(g_host.outline_list, label);
+    auto* row = gtk_widget_get_parent(label);
+    if (item.chapter > 0) {
+      g_object_set_data(G_OBJECT(row), "booklight-epub-chapter",
+                        GINT_TO_POINTER(static_cast<int>(item.chapter)));
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // tabs & notebook — invariant: PDF tabs occupy notebook indexes
 // [0, tabs.size()), the EPUB tab (when open) is appended last.
@@ -495,7 +524,9 @@ std::string path_title(std::string const& path) {
 void close_tab_index(gint index);
 
 void build_outline_for_active() {
-  if (auto* tab = g_host.active_pdf_only(); tab != nullptr) {
+  if (g_host.epub_active()) {
+    build_epub_outline_for(g_host.epub);
+  } else if (auto* tab = g_host.active_pdf_only(); tab != nullptr) {
     build_outline_for(tab);
   }
 }
@@ -719,6 +750,11 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
       gtk_notebook_append_page(g_host.notebook, raw->widget(), label);
   connect_tab_label(label, g_host.epub_tab_index);
   gtk_notebook_set_current_page(g_host.notebook, g_host.epub_tab_index);
+  // EPUB has a table of contents rather than thumbnails.  Put the shared
+  // native sidebar on its Outline page immediately, matching the Windows and
+  // macOS reading surfaces instead of hiding the TOC in a header-only menu.
+  gtk_stack_set_visible_child_name(g_host.left_stack, "outline");
+  build_outline_for_active();
 
   raw->on_chapter_changed = [](int chapter) {
     refresh_status();
@@ -727,6 +763,12 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
   };
   raw->on_load_finished = [raw](std::string const&) {
     build_epub_toc_menu();
+    // Populate the native TOC for the still-open book even if GTK has not yet
+    // delivered the notebook switch-page signal.  That signal will rebuild
+    // the sidebar again if another document is actually selected.
+    if (raw == g_host.epub) {
+      build_epub_outline_for(raw);
+    }
     refresh_status();
     refresh_header_title();
     if (raw == g_host.epub) {
@@ -1497,8 +1539,15 @@ void bootstrap() {
       // annotations now (mac loadDocData needs the API too).
       for (auto& tab : g_host.tabs) load_annotations_for_tab(tab.get());
 
-      // launch-open parity with the macOS host's PDFGIST_OPEN
-      if (char const* launch = getenv("PDFGIST_OPEN")) {
+      auto pending = std::move(g_host.pending_open_paths);
+      g_host.pending_open_paths.clear();
+      for (auto const& path : pending) open_path(path);
+
+      // Environment launch hook for deterministic automation and legacy
+      // PdfGist callers. File-association launches use the queue above.
+      char const* launch = getenv("BOOKLIGHT_OPEN");
+      if (launch == nullptr || *launch == '\0') launch = getenv("PDFGIST_OPEN");
+      if (launch != nullptr && *launch != '\0') {
         std::string const path = launch;
         std::string lower = path;
         std::transform(lower.begin(), lower.end(), lower.begin(),
@@ -2490,7 +2539,7 @@ void check_updates_manual() { check_updates(true); }
 
 void show_about() {
   GtkWidget* dialog = gtk_about_dialog_new();
-  gtk_about_dialog_set_program_name(GTK_ABOUT_DIALOG(dialog), "PDFGist");
+  gtk_about_dialog_set_program_name(GTK_ABOUT_DIALOG(dialog), "Booklight");
   gtk_about_dialog_set_version(GTK_ABOUT_DIALOG(dialog),
                                rivet_app::kVersion);
   gtk_about_dialog_set_website(GTK_ABOUT_DIALOG(dialog),
@@ -3072,7 +3121,7 @@ void on_activate(GtkApplication* app, gpointer) {
 
   auto* window = gtk_application_window_new(app);
   g_host.window = GTK_WINDOW(window);
-  gtk_window_set_title(g_host.window, "PDFGist");
+  gtk_window_set_title(g_host.window, "Booklight");
   gtk_window_set_default_size(g_host.window, 1280, 860);
   apply_theme();  // display is connected; gtk_settings are live
 
@@ -3282,6 +3331,8 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_widget_set_halign(switcher_wrap, GTK_ALIGN_CENTER);
   gtk_box_append(GTK_BOX(switcher_wrap), left_switcher);
   gtk_box_append(GTK_BOX(left_sidebar), switcher_wrap);
+  gtk_widget_set_vexpand(left_stack, TRUE);
+  gtk_box_append(GTK_BOX(left_sidebar), left_stack);
 
   auto* thumbs_scroll = gtk_scrolled_window_new();
   auto* thumbs = gtk_flow_box_new();
@@ -3304,6 +3355,12 @@ void on_activate(GtkApplication* app, gpointer) {
   hook(
       outline, "row-activated",
       +[](GtkListBox*, GtkListBoxRow* row, gpointer) {
+        auto const chapter = GPOINTER_TO_INT(
+            g_object_get_data(G_OBJECT(row), "booklight-epub-chapter"));
+        if (g_host.epub_active() && g_host.epub != nullptr && chapter > 0) {
+          g_host.epub->go_to_chapter(chapter);
+          return;
+        }
         auto const page = GPOINTER_TO_INT(
             g_object_get_data(G_OBJECT(row), "pdfgist-page"));
         if (auto* tab = g_host.active_pdf(); tab != nullptr && page > 0) {
@@ -3488,13 +3545,21 @@ void on_activate(GtkApplication* app, gpointer) {
   start_backend();
 }
 
-void on_open_files(GtkApplication*, GFile** files, gint n_files, gpointer) {
+void on_open_files(GtkApplication* app, GFile** files, gint n_files, gpointer) {
+  // With G_APPLICATION_HANDLES_OPEN GTK does not emit `activate` first.
+  // Build the native tree now, but defer document work until bootstrap has
+  // completed the embedded RVT1 handshake.
+  if (g_host.window == nullptr) on_activate(app, nullptr);
   for (gint i = 0; i < n_files; ++i) {
     gchar* path = g_file_get_path(files[i]);
     if (path == nullptr) continue;
     std::string const p = path;
     g_free(path);
-    open_path(p);
+    if (g_host.ready) {
+      open_path(p);
+    } else {
+      g_host.pending_open_paths.push_back(p);
+    }
   }
 }
 
@@ -3559,7 +3624,7 @@ int main(int argc, char** argv) {
   pdfgist::SetUiLanguage(detect_ui_language());
   g_host.theme = host::pref_string("theme", "system");
 
-  auto* app = gtk_application_new("site.jrtx.pdfgist",
+  auto* app = gtk_application_new("site.jrtx.booklight",
                                   G_APPLICATION_HANDLES_OPEN);
   hook(app, "activate", on_activate, nullptr);
   hook(app, "open", on_open_files, nullptr);

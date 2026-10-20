@@ -10,7 +10,7 @@ import RivetRuntime
 final class EpubTab: ObservableObject, Identifiable {
     let id = UUID()
     let path: String
-    let title: String
+    @Published var title: String
     weak var reader: ReaderModel?
 
     @Published var chapters: Int = 0
@@ -61,6 +61,10 @@ final class EpubTab: ObservableObject, Identifiable {
         Task {
             do {
                 let view = try await api.epub_open(path: path)
+                if !view.title.isEmpty {
+                    self.title = view.title
+                    self.reader?.objectWillChange.send()
+                }
                 self.chapters = Int(view.chapters)
                 self.toc = view.toc
                 var sections: [String] = []

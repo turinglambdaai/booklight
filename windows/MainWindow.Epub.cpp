@@ -89,6 +89,15 @@ void MainWindow::OpenEpub(std::wstring const& path, int resume_chapter) {
   item.Content(web);
 
   DocTabs().TabItems().Append(item);
+  // Match PDF startup: the first reader reveals its native navigation pane.
+  // Without this, a fresh Windows profile parsed the EPUB TOC correctly but
+  // kept every chapter inaccessible behind a collapsed left panel.
+  if (tabs_.empty() && !left_visible_) {
+    left_visible_ = true;
+    LeftToggle().IsChecked(true);
+    LeftPanel().Visibility(Visibility::Visible);
+    SaveHostPrefs();
+  }
   ActivateEpub();
   RefreshLeftPanel();
   UpdateChrome();
@@ -153,6 +162,12 @@ void MainWindow::LoadEpubBook(std::shared_ptr<EpubBook> book) {
       if (!failure.empty()) {
         window->Alert(pdfgist::Trf("ui.pages.edit-failed", to_wide(failure)));
         return;
+      }
+      if (!view.title.empty()) {
+        book->title = to_wide(view.title);
+        if (auto header = book->tab_item.Header().try_as<muxc::TextBlock>()) {
+          header.Text(book->title);
+        }
       }
       book->chapters = static_cast<int>(view.chapters);
       book->toc = std::move(view.toc);
