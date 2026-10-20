@@ -3,6 +3,28 @@
 All notable changes to Booklight are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semver.
 
+## [0.4.0] - 2026-10-20
+
+### Added
+
+- **Complete EPUB shelf metadata.** EPUB imports now extract both cover art
+  and `dc:creator` author metadata in the shared Racket domain core, so the
+  macOS, Windows and Linux shelves stay consistent without host-side parsing.
+- **Packaged product acceptance on every desktop platform.** CI now opens the
+  sample EPUB through the real RVT1 backend in packaged macOS, Windows and
+  Linux apps and verifies the parsed title and table of contents through each
+  native accessibility tree.
+
+### Changed
+
+- Rivet is pinned to v0.12.0 for the build, packaging and acceptance toolchain.
+
+### Fixed
+
+- Linux defers startup file-open requests until the backend is ready.
+- EPUB titles and outlines now propagate reliably through all three native
+  hosts, including explicit WinUI reader-tab tracking and GTK sidebar timing.
+
 ## [0.3.0] - 2026-10-17
 
 ### Added
