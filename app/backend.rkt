@@ -23,6 +23,7 @@
 (require json
          racket/file
          racket/list
+         racket/string
          rivet/backend
          (prefix-in epub: "../racket/booklight/epub.rkt")
          (prefix-in library: "../racket/booklight/library.rkt")
@@ -432,17 +433,32 @@
                             [pages : Int64]
                             [cover : Bytes]
                             : LibraryEntry)
-  ;; PDF hosts already provide a rendered PNG. EPUB hosts historically send
-  ;; an empty payload, so the domain core fills it from the package metadata.
-  ;; Extraction is best-effort: a malformed/missing cover must not make an
-  ;; otherwise readable book impossible to catalog.
+  ;; PDF hosts already provide metadata + a rendered PNG. EPUB hosts pass the
+  ;; parsed title/chapter count but historically leave author/cover empty.
+  ;; Enrich those missing fields from OPF in the domain core so all three
+  ;; native shelves behave the same. Package metadata is best-effort.
+  (define need-epub-metadata?
+    (and (string=? kind "epub")
+         (or (zero? (bytes-length cover))
+             (string=? (string-trim author) ""))))
+  (define epub-data
+    (and need-epub-metadata?
+         (with-handlers ((exn:fail? (lambda (_) #f)))
+           (file->bytes path))))
   (define resolved-cover
     (cond
       ((not (zero? (bytes-length cover))) cover)
-      ((string=? kind "epub")
+      (epub-data
        (with-handlers ((exn:fail? (lambda (_) #"")))
-         (epub:epub-cover-bytes (file->bytes path))))
+         (epub:epub-cover-bytes epub-data)))
       (else #"")))
+  (define resolved-author
+    (cond
+      ((not (string=? (string-trim author) "")) author)
+      (epub-data
+       (with-handlers ((exn:fail? (lambda (_) "")))
+         (epub:epub-author epub-data)))
+      (else author)))
   (unless (zero? (bytes-length resolved-cover))
     (define covers-dir (library:covers-dir-path))
     (make-directory* covers-dir)
@@ -451,7 +467,7 @@
       (lambda (out) (write-bytes resolved-cover out))
       #:exists 'replace))
   (define entry
-    (library:book-entry path title author kind (max 1 pages)
+    (library:book-entry path title resolved-author kind (max 1 pages)
                         (current-seconds)
                         (if (zero? (bytes-length resolved-cover))
                             ""

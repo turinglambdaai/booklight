@@ -22,6 +22,7 @@
          (struct-out epub-book)
          (struct-out epub-toc-item)
          open-epub
+         epub-author
          epub-cover-bytes
          epub-chapter-html
          epub-chapter-text
@@ -251,6 +252,33 @@
                          (walk point (add1 level)))
                         (filter (λ (c) (el-local? c 'navPoint))
                                 (xml-kids point))))))))
+
+;; ------------------------------------------------------------ package metadata
+
+;; EPUB metadata lives in the OPF package. Keep author extraction in the
+;; shared domain core so every native host gets identical catalog metadata.
+;; Multiple dc:creator values are preserved in package order.
+(define (epub-author data)
+  (unless (and (bytes? data) (>= (bytes-length data) 4)
+               (equal? (subbytes data 0 4) #"PK\x03\x04"))
+    (epub-error "不是有效的 EPUB 文件"))
+  (define entries (read-entries data))
+  (define book* (epub-book "EPUB" '() '() entries))
+  (define container
+    (entry-bytes book* "META-INF/container.xml"))
+  (define container-sxml
+    (parse-xml-string (bytes->string/utf-8 container) "container.xml"))
+  (define rootfile (xml-find container-sxml 'rootfile))
+  (define opf-path
+    (or (and rootfile (xml-attr rootfile 'full-path)) "content.opf"))
+  (define opf-sxml
+    (parse-xml-string (bytes->string/utf-8 (entry-bytes book* opf-path))
+                      "content.opf"))
+  (define creators
+    (filter non-empty-string?
+            (for/list ((creator (in-list (xml-find-all opf-sxml 'creator))))
+              (string-trim (xml-text creator)))))
+  (string-join creators ", "))
 
 ;; ------------------------------------------------------------ cover art
 
