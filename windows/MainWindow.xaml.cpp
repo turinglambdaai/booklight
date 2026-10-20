@@ -388,8 +388,11 @@ void MainWindow::Bootstrap() {
       }).detach();
       // Stand-in for v1's file association (mac bootstrap parity).
       wchar_t buffer[32768]{};
-      DWORD const length =
-          ::GetEnvironmentVariableW(L"PDFGIST_OPEN", buffer, 32768);
+      DWORD length =
+          ::GetEnvironmentVariableW(L"BOOKLIGHT_OPEN", buffer, 32768);
+      if (length == 0) {
+        length = ::GetEnvironmentVariableW(L"PDFGIST_OPEN", buffer, 32768);
+      }
       if (length > 0 && length < 32768) {
         std::wstring const launch = buffer;
         if (has_extension(launch, L".pdf") || has_extension(launch, L".epub")) {
@@ -665,8 +668,13 @@ void MainWindow::DocTabs_SelectionChanged(
   auto const index = DocTabs().SelectedIndex();
   if (index >= 0) {
     try {
+      // TabItems contains explicit TabViewItem instances. ContainerFromIndex
+      // is a ListView container lookup and can return null for those items,
+      // leaving both active_pdf_ and epub_active_ false even though the tab is
+      // visibly selected. Read the item collection directly.
       auto const item = DocTabs()
-                            .ContainerFromIndex(static_cast<std::uint32_t>(index))
+                            .TabItems()
+                            .GetAt(static_cast<std::uint32_t>(index))
                             .as<muxc::TabViewItem>();
       for (auto const& tab : tabs_) {
         if (tab->tab_item == item) active_pdf_ = tab;

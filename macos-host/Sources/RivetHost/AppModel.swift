@@ -335,7 +335,8 @@ final class AppModel: ObservableObject {
             ?? "system"
         languageSetting = stored
         L10n.language = Self.resolvedLanguage(stored)
-        if let launch = ProcessInfo.processInfo.environment["PDFGIST_OPEN"],
+        if let launch = ProcessInfo.processInfo.environment["BOOKLIGHT_OPEN"]
+            ?? ProcessInfo.processInfo.environment["PDFGIST_OPEN"],
            ["pdf", "epub"].contains(URL(fileURLWithPath: launch).pathExtension.lowercased()) {
             pendingLaunch = launch
         }
