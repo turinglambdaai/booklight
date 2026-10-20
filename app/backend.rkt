@@ -23,6 +23,7 @@
 (require json
          racket/file
          racket/list
+         racket/string
          rivet/backend
          (prefix-in epub: "../racket/booklight/epub.rkt")
          (prefix-in library: "../racket/booklight/library.rkt")
