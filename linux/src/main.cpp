@@ -488,29 +488,6 @@ void build_outline_for(PdfTab* tab) {
 }
 
 void build_epub_outline_for(EpubTab* epub) {
-  auto trace_outline = [epub](char const* stage) {
-    if (getenv("BOOKLIGHT_ACCEPTANCE") == nullptr) return;
-    bool const list_valid = g_host.outline_list != nullptr &&
-                            GTK_IS_LIST_BOX(g_host.outline_list);
-    guint rows = 0;
-    if (list_valid) {
-      for (auto* child =
-               gtk_widget_get_first_child(GTK_WIDGET(g_host.outline_list));
-           child != nullptr; child = gtk_widget_get_next_sibling(child)) {
-        ++rows;
-      }
-    }
-    char const* visible = g_host.left_stack != nullptr
-                              ? gtk_stack_get_visible_child_name(g_host.left_stack)
-                              : nullptr;
-    g_message(
-        "booklight-acceptance: outline stage=%s toc=%zu rows=%u "
-        "list-valid=%d stack=%s epub-active=%d main-owner=%d",
-        stage, epub->toc().size(), rows, list_valid ? 1 : 0,
-        visible != nullptr ? visible : "(null)", g_host.epub_active() ? 1 : 0,
-        g_main_context_is_owner(g_main_context_default()) ? 1 : 0);
-  };
-  trace_outline("before");
   gtk_list_box_remove_all(g_host.outline_list);
   for (auto const& item : epub->toc()) {
     auto* label = gtk_label_new(item.title.c_str());
@@ -533,7 +510,6 @@ void build_epub_outline_for(EpubTab* epub) {
                         GINT_TO_POINTER(static_cast<int>(item.chapter)));
     }
   }
-  trace_outline("after");
 }
 
 // ---------------------------------------------------------------------------
@@ -3355,6 +3331,8 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_widget_set_halign(switcher_wrap, GTK_ALIGN_CENTER);
   gtk_box_append(GTK_BOX(switcher_wrap), left_switcher);
   gtk_box_append(GTK_BOX(left_sidebar), switcher_wrap);
+  gtk_widget_set_vexpand(left_stack, TRUE);
+  gtk_box_append(GTK_BOX(left_sidebar), left_stack);
 
   auto* thumbs_scroll = gtk_scrolled_window_new();
   auto* thumbs = gtk_flow_box_new();

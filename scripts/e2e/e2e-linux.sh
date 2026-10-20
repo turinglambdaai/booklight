@@ -13,7 +13,7 @@ export XDG_CONFIG_HOME="$output/config-$$"
 export XDG_CACHE_HOME="$output/cache-$$"
 export XDG_RUNTIME_DIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/booklight-acceptance-runtime-$$"
 export WAYLAND_DISPLAY=wayland-booklight-acceptance
-export GDK_BACKEND=wayland GTK_A11Y=atspi NO_AT_BRIDGE=0 LANG=C.UTF-8 BOOKLIGHT_ACCEPTANCE=1
+export GDK_BACKEND=wayland GTK_A11Y=atspi NO_AT_BRIDGE=0 LANG=C.UTF-8
 # GitHub-hosted runners deny the user namespace that WebKitGTK's bubblewrap
 # sandbox requires. Limit the escape hatch to this packaged acceptance process;
 # production launches keep WebKitGTK's sandbox enabled.
