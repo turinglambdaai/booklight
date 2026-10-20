@@ -285,7 +285,8 @@ void apply_theme() {
   }
   // set_dark dropped each tab's cached thumbnails; rebuild the sidebar so
   // visible thumbs re-render in the new palette.
-  populate_thumbs();
+  // apply_theme() also runs before the window's content tree is assembled.
+  if (g_host.thumbs != nullptr) populate_thumbs();
 }
 
 void set_theme(std::string const& theme) {

@@ -39,6 +39,18 @@ def press(node):
         extents.y + extents.height // 2,
         "b1c",
     )
+def click(node):
+    # GtkStackSwitcher page tabs sometimes report a successful AT-SPI action
+    # without changing GtkStack's visible child.  A click through the same
+    # accessible component bounds exercises the actual native control.
+    extents = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+    if extents.width <= 0 or extents.height <= 0:
+        raise AssertionError(f"AT-SPI exposes no clickable bounds for {node.name!r}")
+    pyatspi.Registry.generateMouseEvent(
+        extents.x + extents.width // 2,
+        extents.y + extents.height // 2,
+        "b1c",
+    )
 def wait_for(description, probe, timeout=90.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -68,7 +80,7 @@ def main():
         # the sidebar's GtkStackSwitcher tab.  Select the semantic page tab so
         # the assertion exercises the persistent native TOC surface.
         outline = wait_for("native EPUB outline page", lambda: next((node for node in walk(window) if role(node) == "page tab" and (node.name or "") == "Outline"), None))
-        press(outline)
+        click(outline)
         wait_for("EPUB table of contents parsed by the embedded backend", lambda: contains(window, "First Chapter"))
         (args.output / "accessibility.json").write_text(json.dumps(snapshot(application), ensure_ascii=False, indent=2), encoding="utf-8")
         (args.output / "interaction-trace.json").write_text(json.dumps({"platform":"linux","actions":["launch:sample.epub","press:Outline"],"assertions":["packaged GTK4 frame activated on native Wayland","sample EPUB crossed RVT1 into the embedded backend","native accessibility tree contains The Sample Book","native accessibility tree contains First Chapter"]}, indent=2), encoding="utf-8")
