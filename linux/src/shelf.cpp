@@ -649,6 +649,10 @@ GtkWidget* Shelf::make_header_row(std::string const& label) {
   return row;
 }
 
+void Shelf::delete_collection_menu() {
+  if (!pending_delete_.empty()) delete_collection(pending_delete_);
+}
+
 // Right-click on a collection row opens its little menu (delete).
 static void collection_menu_pressed(GtkGestureClick* gesture, gint, gdouble x,
                                     gdouble y, gpointer self) {

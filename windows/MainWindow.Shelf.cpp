@@ -1143,7 +1143,7 @@ void MainWindow::ShelfRemoveFromCollection(rivet_app::LibraryEntry const& entry,
 
 void MainWindow::ConfirmDeleteCollection(std::wstring const& name) {
   ShowDialog(pdfgist::Tr("app.name"),
-             pdfgist::Trf("ui.shelf.delete-collection-confirm", to_utf8(name)),
+             pdfgist::Trf("ui.shelf.delete-collection-confirm", name),
              pdfgist::Tr("ui.shelf.delete-collection"),
              pdfgist::Tr("ui.password.cancel"),
              [weak = get_weak(), name] {
