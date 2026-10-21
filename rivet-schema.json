@@ -980,6 +980,17 @@
       }
     },
     {
+      "arguments": [],
+      "name": "library-collections",
+      "result": {
+        "element": {
+          "kind": "scalar",
+          "name": "String"
+        },
+        "kind": "list"
+      }
+    },
+    {
       "arguments": [
         {
           "name": "path",

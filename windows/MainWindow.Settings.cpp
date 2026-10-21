@@ -16,6 +16,7 @@ namespace wu = winrt::Windows::UI;
 namespace wut = winrt::Windows::UI::Text;
 
 using Microsoft::UI::Xaml::Visibility;
+namespace wsm = winrt::Windows::Media::SpeechSynthesis;
 
 namespace {
 
@@ -308,6 +309,120 @@ void MainWindow::BuildSettingsPane() {
         }
       });
   stack.Children().Append(settings_reading_theme_);
+
+  // ---- interface language (baked per render; applies on relaunch) ----
+  stack.Children().Append(SettingLabel(pdfgist::Tr("ui.settings.language")));
+  settings_language_ = muxc::ComboBox();
+  settings_language_.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
+  for (std::wstring const label :
+       {pdfgist::Tr("ui.settings.language-system"), std::wstring(L"中文"),
+        std::wstring(L"English")}) {
+    auto item = muxc::ComboBoxItem();
+    muxc::TextBlock label_block;
+    label_block.Text(label);
+    label_block.FontSize(12);
+    item.Content(label_block);
+    settings_language_.Items().Append(item);
+  }
+  settings_language_.SelectedIndex(ui_language_ == "zh"
+                                       ? 1
+                                       : ui_language_ == "en" ? 2 : 0);
+  settings_language_.SelectionChanged(
+      [weak = get_weak()](winrt::Windows::Foundation::IInspectable const& sender,
+                          muxc::SelectionChangedEventArgs const&) {
+        auto window = weak.get();
+        if (!window) return;
+        auto const combo = sender.as<muxc::ComboBox>();
+        switch (combo.SelectedIndex()) {
+          case 1: window->ui_language_ = "zh"; break;
+          case 2: window->ui_language_ = "en"; break;
+          default: window->ui_language_ = "system"; break;
+        }
+        window->SaveHostPrefs();
+        // Same contract as the mac host: the note says a relaunch applies it.
+        window->ShowDialog(pdfgist::Tr("app.name"),
+                           pdfgist::Tr("ui.settings.language-note"),
+                           pdfgist::Tr("ui.password.ok"),
+                           pdfgist::Tr("ui.password.cancel"), nullptr);
+      });
+  stack.Children().Append(settings_language_);
+
+  // ---- read aloud: voice + rate (host prefs, live at next speak) ----
+  stack.Children().Append(SettingLabel(pdfgist::Tr("ui.tts.section")));
+  settings_tts_voice_ = muxc::ComboBox();
+  settings_tts_voice_.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
+  {
+    auto item = muxc::ComboBoxItem();
+    muxc::TextBlock label_block;
+    label_block.Text(pdfgist::Tr("ui.tts.voice-default"));
+    label_block.FontSize(12);
+    item.Content(label_block);
+    settings_tts_voice_.Items().Append(item);
+    int selected = 0, index = 1;
+    try {
+      for (auto const& voice :
+           wsm::SpeechSynthesis::SpeechSynthesizer::AllVoices()) {
+        auto const name = voice.DisplayName();
+        auto voice_item = muxc::ComboBoxItem();
+        muxc::TextBlock text;
+        text.Text(name);
+        text.FontSize(12);
+        voice_item.Content(text);
+        settings_tts_voice_.Items().Append(voice_item);
+        if (!tts_voice_.empty() && name == to_wide(tts_voice_)) {
+          selected = index;
+        }
+        index += 1;
+      }
+    } catch (...) {
+    }
+    settings_tts_voice_.SelectedIndex(selected);
+  }
+  settings_tts_voice_.SelectionChanged(
+      [weak = get_weak()](winrt::Windows::Foundation::IInspectable const& sender,
+                          muxc::SelectionChangedEventArgs const&) {
+        auto window = weak.get();
+        if (!window) return;
+        auto const combo = sender.as<muxc::ComboBox>();
+        auto const index = combo.SelectedIndex();
+        if (index <= 0) {
+          window->tts_voice_ = "";
+          window->SaveHostPrefs();
+          return;
+        }
+        try {
+          int i = 1;
+          for (auto const& voice :
+               wsm::SpeechSynthesis::SpeechSynthesizer::AllVoices()) {
+            if (i == index) {
+              window->tts_voice_ = to_utf8(voice.DisplayName());
+              break;
+            }
+            i += 1;
+          }
+        } catch (...) {
+        }
+        window->SaveHostPrefs();
+      });
+  stack.Children().Append(settings_tts_voice_);
+
+  stack.Children().Append(SettingLabel(pdfgist::Tr("ui.tts.rate")));
+  settings_tts_rate_ = muxc::Slider();
+  settings_tts_rate_.Minimum(0.5);
+  settings_tts_rate_.Maximum(3.0);
+  settings_tts_rate_.StepFrequency(0.1);
+  settings_tts_rate_.Value(tts_rate_);
+  settings_tts_rate_.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
+  settings_tts_rate_.ValueChanged(
+      [weak = get_weak()](winrt::Windows::Foundation::IInspectable const& sender,
+                          muxc::Primitives::RangeBaseValueChangedEventArgs const&) {
+        if (auto window = weak.get()) {
+          auto const slider = sender.as<muxc::Slider>();
+          window->tts_rate_ = std::clamp(slider.Value(), 0.5, 3.0);
+          window->SaveHostPrefs();
+        }
+      });
+  stack.Children().Append(settings_tts_rate_);
 
   // ---- privacy footer + about ----
   auto privacy = muxc::TextBlock();

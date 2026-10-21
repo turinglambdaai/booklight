@@ -346,6 +346,15 @@
 (define-values (epub-text _e18) (call "epub-chapter-text" epub-path 2))
 (check-true (string-contains? epub-text "The quick brown fox"))
 
+;; library-collections reports the shelf's own list — empty collections
+;; included (create-then-fill must show up before a book carries it).
+(define-values (_col-created _ec1) (call "library-collection-create" "空合集"))
+(define-values (collections-with-empty _ec2) (call "library-collections"))
+(check-equal? collections-with-empty (list "空合集"))
+(define-values (_col-deleted _ec3) (call "library-collection-delete" "空合集"))
+(define-values (collections-after-delete _ec4) (call "library-collections"))
+(check-equal? collections-after-delete '())
+
 (define-values (epub-doc _e19) (call "epub-doc-text" epub-path 12 24000))
 (check-true (string-contains? epub-doc "--- 第 1 章 ---"))
 

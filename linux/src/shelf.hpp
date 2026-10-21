@@ -189,6 +189,18 @@ class Shelf {
 
   // ---- model ----
   std::vector<rivet_app::LibraryEntry> library_;
+  // The shelf's own collection list (stored order, includes empty ones).
+  std::vector<std::string> shelf_collections_;
+  // Right-click on a collection row: 删除收藏集 behind one confirmation.
+  void show_collection_menu(GtkWidget* row, std::string const& name,
+                            double x, double y);
+  void delete_collection(std::string const& name);
+  // win.col-delete action entry: the popover menu already staged the name.
+  void delete_collection_menu() {
+    if (!pending_delete_.empty()) delete_collection(pending_delete_);
+  }
+  void apply_delete_collection();
+  std::string pending_delete_;
   bool loaded_{false};       // get-library answered at least once
   bool scanned_{false};      // background missing-status rescan done
   std::string search_;       // client-side title/author needle

@@ -22,6 +22,9 @@ bool speaking();
 // unavailable (spd-say not found); stopping returns true.
 bool toggle(std::string const& text);
 
+// Playback rate in the 0.5-3.0 band (settings slider); 1.0 = default.
+void set_rate(double rate);
+
 // Stops playback if active; safe when idle.
 void stop();
 

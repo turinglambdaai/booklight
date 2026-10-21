@@ -401,6 +401,60 @@ GtkWidget* AiPanel::make_settings_tab() {
       },
       this);
 
+  // Interface language: strings are baked per render, so a change asks for
+  // a relaunch (mac parity) — the dropdown only stages the preference.
+  gtk_box_append(GTK_BOX(root),
+                 section_label(Tr("ui.settings.language").c_str()));
+  auto* language_model = gtk_string_list_new(nullptr);
+  std::string const language_labels[] = {Tr("ui.settings.language-system"),
+                                         "中文", "English"};
+  for (auto const& label : language_labels) {
+    gtk_string_list_append(GTK_STRING_LIST(language_model), label.c_str());
+  }
+  language_dropdown_ =
+      GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(language_model), nullptr));
+  gtk_drop_down_set_selected(
+      language_dropdown_,
+      ctx_->ui_language == "zh" ? 1 : ctx_->ui_language == "en" ? 2 : 0);
+  gtk_box_append(GTK_BOX(root), GTK_WIDGET(language_dropdown_));
+  hook(
+      language_dropdown_, "notify::selected",
+      +[](GObject*, GParamSpec*, gpointer self) {
+        auto* panel = static_cast<AiPanel*>(self);
+        if (panel->syncing_settings_ || !panel->on_language_changed) return;
+        switch (gtk_drop_down_get_selected(panel->language_dropdown_)) {
+          case 1: panel->on_language_changed("zh"); break;
+          case 2: panel->on_language_changed("en"); break;
+          default: panel->on_language_changed("system"); break;
+        }
+      },
+      this);
+
+  // Read aloud: rate only on Linux (spd-say has no enumerable voices);
+  // 0.5x-3.0x maps onto speech-dispatcher's -100..100 range at speak time.
+  gtk_box_append(GTK_BOX(root),
+                 section_label(Tr("ui.tts.section").c_str()));
+  auto* rate_label = gtk_label_new(Tr("ui.tts.rate").c_str());
+  gtk_widget_set_halign(rate_label, GTK_ALIGN_START);
+  gtk_widget_add_css_class(rate_label, "caption");
+  gtk_widget_add_css_class(rate_label, "dim-label");
+  gtk_box_append(GTK_BOX(root), rate_label);
+  tts_rate_scale_ = GTK_SCALE(gtk_scale_new_with_range(
+      GTK_ORIENTATION_HORIZONTAL, 0.5, 3.0, 0.1));
+  gtk_range_set_value(GTK_RANGE(tts_rate_scale_), ctx_->tts_rate);
+  gtk_box_append(GTK_BOX(root), GTK_WIDGET(tts_rate_scale_));
+  hook(
+      tts_rate_scale_, "value-changed",
+      +[](GObject*, gpointer self) {
+        auto* panel = static_cast<AiPanel*>(self);
+        if (!panel->on_tts_rate_changed || panel->tts_rate_scale_ == nullptr) {
+          return;
+        }
+        panel->on_tts_rate_changed(
+            gtk_range_get_value(GTK_RANGE(panel->tts_rate_scale_)));
+      },
+      this);
+
   // Reading theme: the page surface inside books, persisted in
   // settings.json (the chrome dropdown above stays a host pref).
   gtk_box_append(GTK_BOX(root),

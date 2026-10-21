@@ -377,6 +377,10 @@ public struct RivetAPI: Sendable {
         let rivetResult = try await client.call("library-collection-delete", arguments: [encode_String(name)])
         return try decode_Void(rivetResult)
     }
+    public func library_collections() async throws -> [String] {
+        let rivetResult = try await client.call("library-collections", arguments: [])
+        return try decode__List_String_(rivetResult)
+    }
     public func library_import(path: String, title: String, author: String, kind: String, pages: Int64, cover: Data) async throws -> RivetTypes.LibraryEntry {
         let rivetResult = try await client.call("library-import", arguments: [encode_String(path), encode_String(title), encode_String(author), encode_String(kind), encode_Int64(pages), encode_Bytes(cover)])
         return try decode_LibraryEntry(rivetResult)

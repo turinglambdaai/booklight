@@ -242,6 +242,8 @@ struct MainWindow : MainWindowT<MainWindow> {
                       winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void ShelfImport_Click(winrt::Windows::Foundation::IInspectable const&,
                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void ConfirmDeleteCollection(std::wstring const& name);
+  void DeleteCollection(std::wstring const& name);
   void ShelfNav_ItemInvoked(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Microsoft::UI::Xaml::Controls::NavigationViewItemInvokedEventArgs const&);
@@ -581,6 +583,10 @@ struct MainWindow : MainWindowT<MainWindow> {
   std::shared_ptr<rivet::windows::Backend> backend_;
   std::unique_ptr<rivet_app::API> api_;
   rivet_app::SettingsView settings_{};
+  std::vector<std::string> library_collections_;  // the shelf's own list (incl. empty)
+  std::string ui_language_ = "system";  // system | zh | en (host pref, relaunch applies)
+  std::string tts_voice_ = "";          // display name; empty = system default
+  double tts_rate_ = 1.0;
   bool settings_loaded_ = false;
   std::vector<rivet_app::ProviderPreset> presets_;
   std::vector<rivet_app::RecentEntry> recents_;
@@ -622,6 +628,9 @@ struct MainWindow : MainWindowT<MainWindow> {
   winrt::Microsoft::UI::Xaml::Controls::ComboBox settings_target_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::ComboBox settings_view_mode_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::ComboBox settings_reading_theme_{nullptr};
+  winrt::Microsoft::UI::Xaml::Controls::ComboBox settings_language_{nullptr};
+  winrt::Microsoft::UI::Xaml::Controls::ComboBox settings_tts_voice_{nullptr};
+  winrt::Microsoft::UI::Xaml::Controls::Slider settings_tts_rate_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::CheckBox settings_sidecar_{nullptr};
   std::map<std::wstring, std::pair<std::wstring, std::wstring>> preset_stash_;
   bool settings_busy_ = false;
