@@ -3,6 +3,38 @@
 All notable changes to Booklight are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semver.
 
+## [0.5.0] - 2026-10-22
+
+### Added
+
+- **Reading themes on every desktop.** The reader page surface is now a
+  setting: paper / night, independent of the app chrome, with "system"
+  following the app appearance. EPUB pages re-theme live and the PDF page
+  canvas follows; the EPUB font scale (A+/A-/reset) persists through the
+  settings store and every reopened book starts where you left the type.
+- **Collection management completes itself.** Collections can now be
+  deleted on all three platforms (macOS context menu, Windows context
+  flyout, Linux right-click popover — one confirmation, books stay), and
+  empty collections are finally visible: a new `library-collections` RPC
+  feeds each sidebar the shelf's own stored list.
+- **Reading Now.** A first-class smart view (opened but not finished) in
+  the shelf sidebar on all three platforms.
+- **Read aloud is configurable.** TTS gains a voice picker and speaking
+  rate (0.5x–3.0x), persisted per host; Linux maps the rate onto
+  speech-dispatcher.
+- **UI language override on Windows and Linux.** The mac host's in-app
+  中文/English switch reaches the other two hosts (applies on relaunch) —
+  zh readers on an English system are no longer stuck.
+- **Keyboard paging everywhere.** Windows catches up with PageUp/PageDown
+  page flips; the EPUB zoom reset now exists on all three platforms.
+
+### Changed
+
+- The release pipeline refuses to publish without a signed update
+  manifest (a warning became a hard gate, taskly-parity).
+- The update contract is documented (shared/spec/UPDATE.md), and
+  docs/UX-BENCHMARKS.md starts the booklight design-benchmark ledger.
+
 ## [0.4.0] - 2026-10-20
 
 ### Added
