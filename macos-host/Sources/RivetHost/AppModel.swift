@@ -14,7 +14,9 @@ final class AppModel: ObservableObject {
     @Published var status = ""
     @Published var settings = RivetTypes.SettingsView(
         provider: "deepseek", base_url: "", model: "", target_language: .zh,
-        view_mode: "single", annotation_sidecar: false, has_api_key: false, recent: [])
+        view_mode: "single", annotation_sidecar: false,
+        reading_theme: .system, reading_font_scale_permille: 1000,
+        has_api_key: false, recent: [])
     @Published var presets: [RivetTypes.ProviderPreset] = []
     @Published var recents: [RivetTypes.RecentEntry] = []
 
@@ -387,6 +389,55 @@ final class AppModel: ObservableObject {
         let double = settings.view_mode == "double"
         for reader in liveReaders.compactMap({ $0.value }) {
             reader.pdf?.setDisplayMode(double: double)
+        }
+    }
+
+    /// The reader page surface ("light"/"dark") for the stored reading
+    /// theme: paper/night force it, system follows the effective app
+    /// appearance (which the reader windows already track).
+    func readingSurface() -> String {
+        switch settings.reading_theme {
+        case .paper: return "light"
+        case .night: return "dark"
+        case .system: return EpubTab.systemTheme()
+        }
+    }
+
+    /// Push the resolved page surface into every open reader window.
+    func applyReadingThemeToAll() {
+        let surface = readingSurface()
+        for reader in liveReaders.compactMap({ $0.value }) {
+            reader.applyReadingSurface(surface)
+        }
+    }
+
+    /// The settings-pane reading-theme picker: persists through the narrow
+    /// reading RPC and re-skins open books immediately.
+    func saveReadingPrefs(theme: RivetTypes.ReadingTheme) async -> String {
+        guard let api else { return "backend not ready" }
+        do {
+            settings = try await api.save_reading_prefs(
+                theme: theme,
+                font_scale_permille: settings.reading_font_scale_permille)
+            applyReadingThemeToAll()
+            return L10n.t("ui.settings.saved")
+        } catch {
+            return L10n.t("ui.settings.save-failed", String(describing: error))
+        }
+    }
+
+    /// EPUB typography steps (A+/A-) persist best-effort per click; a
+    /// failure only means the scale resets next launch.
+    func saveReadingFontScale(_ scale: Double) {
+        guard let api else { return }
+        let permille = Int64((scale * 1000).rounded())
+        Task { [weak self] in
+            guard let self, let api = self.api else { return }
+            do {
+                self.settings = try await api.save_reading_prefs(
+                    theme: self.settings.reading_theme,
+                    font_scale_permille: permille)
+            } catch { /* best-effort */ }
         }
     }
 

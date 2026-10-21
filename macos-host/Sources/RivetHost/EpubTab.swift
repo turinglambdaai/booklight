@@ -80,7 +80,8 @@ final class EpubTab: ObservableObject, Identifiable {
                     }
                 }
                 await MainActor.run { self.textReady = true }
-                let html = Self.pageHTML(sections: sections, theme: Self.systemTheme())
+                let initialTheme = self.reader?.app?.readingSurface() ?? Self.systemTheme()
+                let html = Self.pageHTML(sections: sections, theme: initialTheme)
                 self.installDelegates()
                 self.webView.loadHTMLString(html, baseURL: nil)
             } catch let e as ClientError {
@@ -260,6 +261,11 @@ extension EpubTab {
         init(tab: EpubTab) { self.tab = tab }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             tab?.loaded = true
+            // The persisted scale rides in with the tab; the CSS variable
+            // only exists once the page is up.
+            if let tab, tab.fontScale != 1.0 {
+                tab.applyFontScale(tab.fontScale)
+            }
         }
     }
 }
@@ -274,7 +280,9 @@ struct EpubViewport: NSViewRepresentable {
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
-        let theme = EpubTab.systemTheme()
+        // The page surface follows the reading theme (paper/night) and only
+        // falls back to the app appearance under "system".
+        let theme = tab.reader?.app?.readingSurface() ?? EpubTab.systemTheme()
         if theme != tab.appliedTheme {
             tab.appliedTheme = theme
             tab.applyTheme(theme)

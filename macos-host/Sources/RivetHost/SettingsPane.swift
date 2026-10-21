@@ -144,6 +144,22 @@ struct SettingsPane: View {
                     .font(.system(size: 12))
             }
 
+            // Reading theme re-skins open books immediately (no Save button
+            // round-trip); persistence goes through save-reading-prefs.
+            settingLabel(L10n.t("ui.reading.theme"))
+            Picker("", selection: Binding(
+                get: { app.settings.reading_theme },
+                set: { newValue in
+                    Task { _ = await app.saveReadingPrefs(theme: newValue) }
+                })) {
+                Text(L10n.t("ui.reading.theme.system")).tag(RivetTypes.ReadingTheme.system)
+                Text(L10n.t("ui.reading.theme.paper")).tag(RivetTypes.ReadingTheme.paper)
+                Text(L10n.t("ui.reading.theme.night")).tag(RivetTypes.ReadingTheme.night)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("settings.reading-theme")
+
             smallButton(L10n.t("ui.settings.save")) {
                 Task { await save() }
             }
