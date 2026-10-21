@@ -85,7 +85,8 @@ cat > "$SCRIPT" <<RKT
                    (sha256-file/hex path)
                    (file-size path)
                    installer
-                   '()))
+                   '()
+                   #f))
 
 (define manifest
   (update-manifest "site.jrtx.booklight"
