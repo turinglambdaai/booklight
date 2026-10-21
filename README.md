@@ -50,7 +50,8 @@ machine except the requests you make to your own provider.
 
 Ed25519-signature-verified self-update (signed release manifest,
 SHA-256-checked download); checks at most once a day, installs only when
-you click through — on all three platforms.
+you click through — on all three platforms. Contract:
+[UPDATE](shared/spec/UPDATE.md)
 
 ## Architecture
 
