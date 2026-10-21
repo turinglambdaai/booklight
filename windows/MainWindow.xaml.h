@@ -256,6 +256,12 @@ struct MainWindow : MainWindowT<MainWindow> {
   void Bootstrap();
   void ApplyTheme();
   void ToggleTheme();
+  // Reading page surface (settings.json, independent of the chrome theme):
+  // night forces dark, paper forces light, system follows ActualTheme.
+  bool ReadingDark();
+  void ApplyReadingTheme();
+  void SaveReadingPrefs(rivet_app::ReadingTheme theme);
+  void SaveReadingFontScale(double scale);
   void UpdateChrome();  // visibility + labels that depend on state
 
   // host prefs (theme, panel toggles/widths): %APPDATA%\site.jrtx.pdfgist\host-ui.json
@@ -615,6 +621,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   winrt::Microsoft::UI::Xaml::Controls::TextBlock settings_status_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::ComboBox settings_target_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::ComboBox settings_view_mode_{nullptr};
+  winrt::Microsoft::UI::Xaml::Controls::ComboBox settings_reading_theme_{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::CheckBox settings_sidecar_{nullptr};
   std::map<std::wstring, std::pair<std::wstring, std::wstring>> preset_stash_;
   bool settings_busy_ = false;

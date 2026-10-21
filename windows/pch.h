@@ -47,6 +47,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <cmath>
 #include <functional>
 #include <future>
 #include <map>

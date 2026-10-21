@@ -59,6 +59,11 @@
    [scroll-ratio-scaled : Int64]
    [last-read-ms : Int64]))
 
+;; Reading-theme values mirror the settings store: system follows the
+;; effective app appearance, paper/night force the light/dark reader page
+;; surface. Font scale crosses as permille because RVT1 has no floats.
+(define-enum ReadingTheme (system paper night))
+
 (define-record SettingsView
   ([provider : String]
    [base-url : String]
@@ -66,6 +71,8 @@
    [target-language : TargetLanguage]
    [view-mode : String]
    [annotation-sidecar : Bool]
+   [reading-theme : ReadingTheme]
+   [reading-font-scale-permille : Int64]
    [has-api-key : Bool]
    [recent : (List RecentEntry)]))
 
@@ -198,6 +205,10 @@
     (string->symbol (language-name->code (settings-target-language settings))))
    (settings-view-mode settings)
    (settings-annotation-sidecar settings)
+   (ReadingTheme
+    (string->symbol (settings-reading-theme settings)))
+   (inexact->exact
+    (round (* 1000 (settings-reading-font-scale settings))))
    (not (string=? (provider-config-api-key provider) ""))
    (map recent-entry->dto (settings-recent-files settings))))
 
@@ -319,6 +330,8 @@
   (settings->view (load-settings)))
 
 ;; Preserves the stored api key and recents; hosts never send secrets here.
+;; Reading prefs have their own narrow RPC (save-reading-prefs) so the
+;; A+/A- steps never round-trip the full settings record.
 (define-rpc (save-settings [update : SettingsUpdate] : SettingsView)
   (define lang-name
     (language-code->name
@@ -335,7 +348,27 @@
         lang-name
         (settings-recent-files current)
         (record-ref update 'view-mode)
-        (record-ref update 'annotation-sidecar)))))
+        (record-ref update 'annotation-sidecar)
+        (settings-reading-theme current)
+        (settings-reading-font-scale current)))))
+  (settings->view updated))
+
+;; Reading page surface + EPUB font scale, writable independently of the
+;; full settings pane (the typography buttons fire per click).
+(define-rpc (save-reading-prefs [theme : ReadingTheme]
+                                [font-scale-permille : Int64]
+                                : SettingsView)
+  (define updated
+    (update-settings!
+     (lambda (current)
+       (pdfgist-settings
+        (settings-provider current)
+        (settings-target-language current)
+        (settings-recent-files current)
+        (settings-view-mode current)
+        (settings-annotation-sidecar current)
+        (symbol->string (enum-case theme))
+        (normalize-reading-font-scale (/ (exact->inexact font-scale-permille) 1000.0))))))
   (settings->view updated))
 
 ;; The key is written through the secure-store seam (settings.rkt) and never
@@ -379,7 +412,9 @@
                             ratio
                             (current-seconds)))
       (settings-view-mode current)
-      (settings-annotation-sidecar current))))
+      (settings-annotation-sidecar current)
+      (settings-reading-theme current)
+      (settings-reading-font-scale current))))
   (void))
 
 ;; Recents come back newest-first (storage order).

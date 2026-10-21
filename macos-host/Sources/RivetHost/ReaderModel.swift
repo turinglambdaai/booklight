@@ -59,6 +59,14 @@ final class PDFTab: ObservableObject, Identifiable {
 
     var document: PDFDocument? { pdfView.document }
 
+    /// Reading-theme page canvas behind the pages (paper/night); the page
+    /// content itself is never tinted.
+    func applyCanvasSurface(_ surface: String) {
+        let color = NSColor(hex: surface == "dark" ? 0x171412 : 0xF5F2ED)
+        pdfView.backgroundColor = color
+        splitPdfView.backgroundColor = color
+    }
+
     func goToPage(_ page: Int) {
         guard let doc = document, page >= 1, page <= doc.pageCount,
               let target = doc.page(at: page - 1) else { return }
@@ -69,7 +77,9 @@ final class PDFTab: ObservableObject, Identifiable {
 
     func zoomIn() {
         if let epub = reader?.epub, reader?.epubActive == true {
-            epub.applyFontScale(min(2.0, epub.fontScale * 1.1))
+            let next = min(2.0, epub.fontScale * 1.1)
+            epub.applyFontScale(next)
+            reader?.app?.saveReadingFontScale(next)
             return
         }
         pdfView.scaleFactor = min(pdfView.scaleFactor * 1.2, pdfView.maxScaleFactor)
@@ -77,7 +87,9 @@ final class PDFTab: ObservableObject, Identifiable {
 
     func zoomOut() {
         if let epub = reader?.epub, reader?.epubActive == true {
-            epub.applyFontScale(max(0.7, epub.fontScale / 1.1))
+            let next = max(0.7, epub.fontScale / 1.1)
+            epub.applyFontScale(next)
+            reader?.app?.saveReadingFontScale(next)
             return
         }
         pdfView.scaleFactor = max(pdfView.scaleFactor / 1.2, pdfView.minScaleFactor)
@@ -236,6 +248,7 @@ final class ReaderModel: ObservableObject {
         let title = URL(fileURLWithPath: path).lastPathComponent
         let tab = PDFTab(path: path, title: title, document: doc, reader: self)
         tab.resumePage = max(resumePage ?? app?.recentPage(path) ?? 1, 1)
+        tab.applyCanvasSurface(app?.readingSurface() ?? "light")
         pdf = tab
         epubActive = false
         sidebarMode = 0
@@ -262,6 +275,9 @@ final class ReaderModel: ObservableObject {
         let view = WKWebView(frame: .zero, configuration: config)
         view.setValue(false, forKey: "drawsBackground")
         let tab = EpubTab(path: path, title: title, view: view, reader: self)
+        // Persisted typography: the stored scale rides in until the page
+        // finishes loading (didFinish pushes it into the CSS variable).
+        tab.fontScale = Double(app?.settings.reading_font_scale_permille ?? 1000) / 1000.0
         epub = tab
         epubActive = true
         pdf = nil
@@ -280,6 +296,13 @@ final class ReaderModel: ObservableObject {
     }
 
     // MARK: window lifecycle
+
+    /// Reading-theme re-skin from the settings pane: EPUB page theme now,
+    /// PDF page canvas in both panes.
+    func applyReadingSurface(_ surface: String) {
+        epub?.applyTheme(surface)
+        pdf?.applyCanvasSurface(surface)
+    }
 
     /// Called when the window closes: flush pending persistence, stop live
     /// streams, tear the web view down.

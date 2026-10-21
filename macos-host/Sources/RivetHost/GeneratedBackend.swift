@@ -14,6 +14,12 @@ public enum RivetGeneratedConfig {
 }
 
 public enum RivetTypes {
+    public enum ReadingTheme: String, Sendable {
+        case system = "system"
+        case paper = "paper"
+        case night = "night"
+    }
+
     public enum SummarizeMode: String, Sendable {
         case page = "page"
         case selection = "selection"
@@ -143,15 +149,19 @@ public enum RivetTypes {
         public let target_language: RivetTypes.TargetLanguage
         public let view_mode: String
         public let annotation_sidecar: Bool
+        public let reading_theme: RivetTypes.ReadingTheme
+        public let reading_font_scale_permille: Int64
         public let has_api_key: Bool
         public let recent: [RivetTypes.RecentEntry]
-        public init(provider: String, base_url: String, model: String, target_language: RivetTypes.TargetLanguage, view_mode: String, annotation_sidecar: Bool, has_api_key: Bool, recent: [RivetTypes.RecentEntry]) {
+        public init(provider: String, base_url: String, model: String, target_language: RivetTypes.TargetLanguage, view_mode: String, annotation_sidecar: Bool, reading_theme: RivetTypes.ReadingTheme, reading_font_scale_permille: Int64, has_api_key: Bool, recent: [RivetTypes.RecentEntry]) {
             self.provider = provider
             self.base_url = base_url
             self.model = model
             self.target_language = target_language
             self.view_mode = view_mode
             self.annotation_sidecar = annotation_sidecar
+            self.reading_theme = reading_theme
+            self.reading_font_scale_permille = reading_font_scale_permille
             self.has_api_key = has_api_key
             self.recent = recent
         }
@@ -222,7 +232,8 @@ private func encode__List_LibraryEntry_(_ v: [RivetTypes.LibraryEntry]) -> Rivet
 private func encode_RecentEntry(_ v: RivetTypes.RecentEntry) -> RivetValue { .list([encode_String(v.path), encode_Int64(v.page), encode_Int64(v.scroll_ratio_scaled), encode_Int64(v.last_read_ms)]) }
 private func encode__List_RecentEntry_(_ v: [RivetTypes.RecentEntry]) -> RivetValue { .list(v.map(encode_RecentEntry)) }
 private func encode_TargetLanguage(_ v: RivetTypes.TargetLanguage) -> RivetValue { .string(v.rawValue) }
-private func encode_SettingsView(_ v: RivetTypes.SettingsView) -> RivetValue { .list([encode_String(v.provider), encode_String(v.base_url), encode_String(v.model), encode_TargetLanguage(v.target_language), encode_String(v.view_mode), encode_Bool(v.annotation_sidecar), encode_Bool(v.has_api_key), encode__List_RecentEntry_(v.recent)]) }
+private func encode_ReadingTheme(_ v: RivetTypes.ReadingTheme) -> RivetValue { .string(v.rawValue) }
+private func encode_SettingsView(_ v: RivetTypes.SettingsView) -> RivetValue { .list([encode_String(v.provider), encode_String(v.base_url), encode_String(v.model), encode_TargetLanguage(v.target_language), encode_String(v.view_mode), encode_Bool(v.annotation_sidecar), encode_ReadingTheme(v.reading_theme), encode_Int64(v.reading_font_scale_permille), encode_Bool(v.has_api_key), encode__List_RecentEntry_(v.recent)]) }
 private func encode_Void(_ v: Void) -> RivetValue { .null }
 private func encode_ProviderPreset(_ v: RivetTypes.ProviderPreset) -> RivetValue { .list([encode_String(v.id), encode_String(v.label), encode_String(v.base_url), encode_String(v.default_model), encode_Bool(v.needs_key)]) }
 private func encode__List_ProviderPreset_(_ v: [RivetTypes.ProviderPreset]) -> RivetValue { .list(v.map(encode_ProviderPreset)) }
@@ -253,7 +264,8 @@ private func decode__List_LibraryEntry_(_ v: RivetValue) throws -> [RivetTypes.L
 private func decode_RecentEntry(_ v: RivetValue) throws -> RivetTypes.RecentEntry { guard case .list(let xs) = v, xs.count == 4 else { throw RivetGeneratedError.typeMismatch("RecentEntry") }; return RivetTypes.RecentEntry(path: try decode_String(xs[0]), page: try decode_Int64(xs[1]), scroll_ratio_scaled: try decode_Int64(xs[2]), last_read_ms: try decode_Int64(xs[3])) }
 private func decode__List_RecentEntry_(_ v: RivetValue) throws -> [RivetTypes.RecentEntry] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List RecentEntry)") }; return try xs.map(decode_RecentEntry) }
 private func decode_TargetLanguage(_ v: RivetValue) throws -> RivetTypes.TargetLanguage { guard case .string(let x) = v, let result = RivetTypes.TargetLanguage(rawValue: x) else { throw RivetGeneratedError.typeMismatch("TargetLanguage") }; return result }
-private func decode_SettingsView(_ v: RivetValue) throws -> RivetTypes.SettingsView { guard case .list(let xs) = v, xs.count == 8 else { throw RivetGeneratedError.typeMismatch("SettingsView") }; return RivetTypes.SettingsView(provider: try decode_String(xs[0]), base_url: try decode_String(xs[1]), model: try decode_String(xs[2]), target_language: try decode_TargetLanguage(xs[3]), view_mode: try decode_String(xs[4]), annotation_sidecar: try decode_Bool(xs[5]), has_api_key: try decode_Bool(xs[6]), recent: try decode__List_RecentEntry_(xs[7])) }
+private func decode_ReadingTheme(_ v: RivetValue) throws -> RivetTypes.ReadingTheme { guard case .string(let x) = v, let result = RivetTypes.ReadingTheme(rawValue: x) else { throw RivetGeneratedError.typeMismatch("ReadingTheme") }; return result }
+private func decode_SettingsView(_ v: RivetValue) throws -> RivetTypes.SettingsView { guard case .list(let xs) = v, xs.count == 10 else { throw RivetGeneratedError.typeMismatch("SettingsView") }; return RivetTypes.SettingsView(provider: try decode_String(xs[0]), base_url: try decode_String(xs[1]), model: try decode_String(xs[2]), target_language: try decode_TargetLanguage(xs[3]), view_mode: try decode_String(xs[4]), annotation_sidecar: try decode_Bool(xs[5]), reading_theme: try decode_ReadingTheme(xs[6]), reading_font_scale_permille: try decode_Int64(xs[7]), has_api_key: try decode_Bool(xs[8]), recent: try decode__List_RecentEntry_(xs[9])) }
 private func decode_Void(_ v: RivetValue) throws -> Void { guard case .null = v else { throw RivetGeneratedError.typeMismatch("Void") } }
 private func decode_ProviderPreset(_ v: RivetValue) throws -> RivetTypes.ProviderPreset { guard case .list(let xs) = v, xs.count == 5 else { throw RivetGeneratedError.typeMismatch("ProviderPreset") }; return RivetTypes.ProviderPreset(id: try decode_String(xs[0]), label: try decode_String(xs[1]), base_url: try decode_String(xs[2]), default_model: try decode_String(xs[3]), needs_key: try decode_Bool(xs[4])) }
 private func decode__List_ProviderPreset_(_ v: RivetValue) throws -> [RivetTypes.ProviderPreset] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List ProviderPreset)") }; return try xs.map(decode_ProviderPreset) }
@@ -388,6 +400,10 @@ public struct RivetAPI: Sendable {
     public func save_api_key(key: String) async throws -> Void {
         let rivetResult = try await client.call("save-api-key", arguments: [encode_String(key)])
         return try decode_Void(rivetResult)
+    }
+    public func save_reading_prefs(theme: RivetTypes.ReadingTheme, font_scale_permille: Int64) async throws -> RivetTypes.SettingsView {
+        let rivetResult = try await client.call("save-reading-prefs", arguments: [encode_ReadingTheme(theme), encode_Int64(font_scale_permille)])
+        return try decode_SettingsView(rivetResult)
     }
     public func save_settings(update: RivetTypes.SettingsUpdate) async throws -> RivetTypes.SettingsView {
         let rivetResult = try await client.call("save-settings", arguments: [encode_SettingsUpdate(update)])

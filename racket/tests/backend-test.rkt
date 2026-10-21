@@ -226,7 +226,9 @@
 (check-true (list-ref deepseek 4))
 (check-true (null? preset-events))
 
-;; Default settings view (no file yet).
+;; Default settings view (no file yet). Wire form = ordered list:
+;; provider base-url model target-language view-mode annotation-sidecar
+;; reading-theme reading-font-scale-permille has-api-key recent.
 (define-values (initial-settings _e1) (call "get-settings"))
 (check-equal? (list-ref initial-settings 0) "deepseek")
 (check-equal? (list-ref initial-settings 1) "https://api.deepseek.com/v1")
@@ -234,8 +236,10 @@
 (check-equal? (list-ref initial-settings 3) "zh")
 (check-equal? (list-ref initial-settings 4) "single")
 (check-false (list-ref initial-settings 5))
-(check-false (list-ref initial-settings 6))
-(check-true (null? (list-ref initial-settings 7)))
+(check-equal? (list-ref initial-settings 6) "system")
+(check-equal? (list-ref initial-settings 7) 1000)
+(check-false (list-ref initial-settings 8))
+(check-true (null? (list-ref initial-settings 9)))
 
 ;; save-settings keeps the (still unset) key, updates the rest.
 ;; SettingsUpdate crosses as a record (wire form = ordered list).
@@ -250,11 +254,28 @@
 (define-values (reread-settings _e3) (call "get-settings"))
 (check-equal? (list-ref reread-settings 1) fake-base-url)
 
+;; save-reading-prefs touches only the reading fields (permille wire form,
+;; out-of-range scales clamp in the store).
+(define-values (reading-saved _er1)
+  (call "save-reading-prefs" "night" 1250))
+(check-equal? (list-ref reading-saved 6) "night")
+(check-equal? (list-ref reading-saved 7) 1250)
+(define-values (reading-clamped _er2)
+  (call "save-reading-prefs" "paper" 99999))
+(check-equal? (list-ref reading-clamped 6) "paper")
+(check-equal? (list-ref reading-clamped 7) 2000)
+;; The full save-settings RPC preserves the reading fields it does not own.
+(define-values (saved-settings-2 _e2b)
+  (call "save-settings"
+        (list "deepseek" fake-base-url "mock-small" "zh-hant" "double" #t)))
+(check-equal? (list-ref saved-settings-2 6) "paper")
+(check-equal? (list-ref saved-settings-2 7) 2000)
+
 ;; save-api-key: masked on the wire, persisted on disk.
 (define-values (_key-result _e0) (call "save-api-key" "sk-test"))
 (check-true (void? _key-result))
 (define-values (keyed-settings _e4) (call "get-settings"))
-(check-true (list-ref keyed-settings 6))
+(check-true (list-ref keyed-settings 8))
 (check-false
  (string-contains? (format "~s" keyed-settings) "sk-test"))
 (check-equal?

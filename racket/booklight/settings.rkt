@@ -8,6 +8,8 @@
 ;;     recent_files: [{path, title, page, scroll_ratio, last_read}] (<= 12)
 ;;     view_mode: "single" | "double"
 ;;     annotation_sidecar: bool
+;;     reading_theme: "system" | "paper" | "night" (reader page surface)
+;;     reading_font_scale: real in [0.7, 2.0] (EPUB typography scale)
 ;;
 ;; The config dir is a parameter so tests can point at a temp directory.
 ;;
@@ -37,6 +39,14 @@
          settings-recent-files
          settings-view-mode
          settings-annotation-sidecar
+         settings-reading-theme
+         settings-reading-font-scale
+         valid-reading-themes
+         default-reading-theme
+         default-reading-font-scale
+         min-reading-font-scale
+         max-reading-font-scale
+         normalize-reading-font-scale
          provider-config
          provider-config?
          provider-config-name
@@ -98,7 +108,22 @@
 ;; ---- model ----
 
 (struct provider-config (name base-url api-key model) #:transparent)
-(struct pdfgist-settings (provider target-language recent-files view-mode annotation-sidecar)
+
+;; Reading-theme values (the reader page surface, independent of the app
+;; chrome): "system" follows the effective app appearance, "paper" forces the
+;; warm light surface, "night" forces the dark surface.
+(define valid-reading-themes '("system" "paper" "night"))
+
+(define default-reading-theme "system")
+(define default-reading-font-scale 1.0)
+
+;; The EPUB typography scale rides in settings.json; hosts keep their A+/A-
+;; steps inside this clamp.
+(define min-reading-font-scale 0.7)
+(define max-reading-font-scale 2.0)
+
+(struct pdfgist-settings (provider target-language recent-files view-mode annotation-sidecar
+                          reading-theme reading-font-scale)
   #:transparent)
 
 ;; Short accessor aliases used across the stack and by the backend.
@@ -107,6 +132,8 @@
 (define (settings-recent-files s) (pdfgist-settings-recent-files s))
 (define (settings-view-mode s) (pdfgist-settings-view-mode s))
 (define (settings-annotation-sidecar s) (pdfgist-settings-annotation-sidecar s))
+(define (settings-reading-theme s) (pdfgist-settings-reading-theme s))
+(define (settings-reading-font-scale s) (pdfgist-settings-reading-font-scale s))
 
 (define (default-settings)
   (pdfgist-settings (provider-config default-provider-name
@@ -116,7 +143,16 @@
                     default-language
                     '()
                     "single"
-                    #f))
+                    #f
+                    default-reading-theme
+                    default-reading-font-scale))
+
+;; Keeps a stored font scale meaningful across host versions: anything
+;; outside the clamp (or not a real number) falls back to the nearest bound
+;; rather than breaking the whole read.
+(define (normalize-reading-font-scale value)
+  (min max-reading-font-scale
+       (max min-reading-font-scale (float-or default-reading-font-scale value))))
 
 ;; ---- secure-store seam ----
 
@@ -172,7 +208,9 @@
                         (cons "scroll_ratio" (recent-file-scroll-ratio recent))
                         (cons "last_read" (recent-file-last-read recent))))))
     (cons "view_mode" (settings-view-mode settings))
-    (cons "annotation_sidecar" (settings-annotation-sidecar settings)))))
+    (cons "annotation_sidecar" (settings-annotation-sidecar settings))
+    (cons "reading_theme" (settings-reading-theme settings))
+    (cons "reading_font_scale" (settings-reading-font-scale settings)))))
 
 ;; parsed jsexpr -> settings; missing fields fall back to defaults
 ;; (serde #[serde(default)] semantics). Type mismatches are tolerated per
@@ -208,7 +246,13 @@
    (string-or (settings-view-mode fallback)
               (hash-ref value 'view_mode #f))
    (bool-or (settings-annotation-sidecar fallback)
-            (hash-ref value 'annotation_sidecar #f))))
+            (hash-ref value 'annotation_sidecar #f))
+   (let ((theme (string-or default-reading-theme
+                           (hash-ref value 'reading_theme #f))))
+     (if (member theme valid-reading-themes)
+         theme
+         default-reading-theme))
+   (normalize-reading-font-scale (hash-ref value 'reading_font_scale #f))))
 
 (define (jsexpr->recent-file item)
   (and (hash? item)

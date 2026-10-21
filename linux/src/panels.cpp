@@ -401,6 +401,35 @@ GtkWidget* AiPanel::make_settings_tab() {
       },
       this);
 
+  // Reading theme: the page surface inside books, persisted in
+  // settings.json (the chrome dropdown above stays a host pref).
+  gtk_box_append(GTK_BOX(root),
+                 section_label(Tr("ui.reading.theme").c_str()));
+  auto* reading_model = gtk_string_list_new(nullptr);
+  // std::string copies: own the labels instead of borrowing .c_str()
+  // from destroyed temporaries.
+  std::string const reading_labels[] = {Tr("ui.reading.theme.system"),
+                                        Tr("ui.reading.theme.paper"),
+                                        Tr("ui.reading.theme.night")};
+  for (auto const& label : reading_labels) {
+    gtk_string_list_append(GTK_STRING_LIST(reading_model), label.c_str());
+  }
+  reading_theme_dropdown_ =
+      GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(reading_model), nullptr));
+  gtk_box_append(GTK_BOX(root), GTK_WIDGET(reading_theme_dropdown_));
+  hook(
+      reading_theme_dropdown_, "notify::selected",
+      +[](GObject*, GParamSpec*, gpointer self) {
+        auto* panel = static_cast<AiPanel*>(self);
+        if (panel->syncing_settings_ || !panel->on_reading_theme_changed) return;
+        switch (gtk_drop_down_get_selected(panel->reading_theme_dropdown_)) {
+          case 1: panel->on_reading_theme_changed("paper"); break;
+          case 2: panel->on_reading_theme_changed("night"); break;
+          default: panel->on_reading_theme_changed("system"); break;
+        }
+      },
+      this);
+
   gtk_box_append(GTK_BOX(root),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
   auto* privacy = gtk_label_new(Tr("ui.settings.privacy").c_str());
@@ -462,6 +491,13 @@ void AiPanel::sync_settings() {
                                                       : view_single_,
                               TRUE);
   gtk_check_button_set_active(sidecar_, s.annotation_sidecar);
+  if (reading_theme_dropdown_ != nullptr) {
+    gtk_drop_down_set_selected(
+        reading_theme_dropdown_,
+        s.reading_theme == rivet_app::ReadingTheme::paper
+            ? 1
+            : s.reading_theme == rivet_app::ReadingTheme::night ? 2 : 0);
+  }
   gtk_entry_buffer_set_text(gtk_entry_get_buffer(api_key_), "", -1);
   gtk_entry_set_placeholder_text(
       api_key_, s.has_api_key ? Tr("ui.settings.api-key-saved").c_str() : "");

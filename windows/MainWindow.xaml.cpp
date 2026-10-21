@@ -490,6 +490,54 @@ void MainWindow::ToggleTheme() {
   SaveHostPrefs();
 }
 
+bool MainWindow::ReadingDark() {
+  if (settings_.reading_theme == rivet_app::ReadingTheme::night) return true;
+  if (settings_.reading_theme == rivet_app::ReadingTheme::paper) return false;
+  return Root().ActualTheme() == mux::ElementTheme::Dark;
+}
+
+void MainWindow::ApplyReadingTheme() {
+  if (epub_) ApplyEpubTheme(*epub_);
+  // PDF page cells bake their surface color in at layout time.
+  RelayoutActive();
+}
+
+void MainWindow::SaveReadingPrefs(rivet_app::ReadingTheme theme) {
+  if (!api_) return;
+  auto const dispatcher = DispatcherQueue();
+  api_->save_reading_prefs_async(
+      theme, settings_.reading_font_scale_permille,
+      [weak = get_weak(), dispatcher](
+          rivet_app::Result<rivet_app::SettingsView> result) {
+        if (!result.value) return;
+        dispatcher.TryEnqueue([weak, saved = *result.value]() {
+          auto window = weak.get();
+          if (!window) return;
+          // Reconcile with the store (the backend clamps) and re-skin now.
+          window->settings_ = saved;
+          window->ApplyReadingTheme();
+        });
+      });
+}
+
+void MainWindow::SaveReadingFontScale(double scale) {
+  if (!api_) return;
+  auto const permille =
+      static_cast<std::int64_t>(std::llround(scale * 1000.0));
+  auto const dispatcher = DispatcherQueue();
+  api_->save_reading_prefs_async(
+      settings_.reading_theme, permille,
+      [weak = get_weak(), dispatcher](
+          rivet_app::Result<rivet_app::SettingsView> result) {
+        if (!result.value) return;
+        dispatcher.TryEnqueue([weak, saved = *result.value]() {
+          auto window = weak.get();
+          if (!window) return;
+          window->settings_ = saved;
+        });
+      });
+}
+
 void MainWindow::Theme_Click(winrt::Windows::Foundation::IInspectable const&,
                              mux::RoutedEventArgs const&) {
   ToggleTheme();
@@ -1120,7 +1168,7 @@ void MainWindow::RelayoutActive() {
 void MainWindow::LayoutTab(PdfTab& tab) {
   if (!tab.doc || !tab.rows) return;
   double const scale = EffectiveScale(tab);
-  bool const dark = Root().ActualTheme() == mux::ElementTheme::Dark;
+  bool const dark = ReadingDark();
   double const viewport = tab.scroll ? tab.scroll.ViewportWidth() : 0;
   bool const relayout = tab.cells.empty() ||
                         tab.cells_scale_ != scale ||
@@ -1384,6 +1432,7 @@ void MainWindow::ZoomIn_Click(winrt::Windows::Foundation::IInspectable const&,
   if (epub_active_ && epub_) {
     epub_->font_scale = std::min(2.0, epub_->font_scale * 1.1);
     ApplyEpubFontScale(*epub_);
+    SaveReadingFontScale(epub_->font_scale);
     return;
   }
   auto tab = active_pdf_.get();
@@ -1402,6 +1451,7 @@ void MainWindow::ZoomOut_Click(winrt::Windows::Foundation::IInspectable const&,
   if (epub_active_ && epub_) {
     epub_->font_scale = std::max(0.7, epub_->font_scale / 1.1);
     ApplyEpubFontScale(*epub_);
+    SaveReadingFontScale(epub_->font_scale);
     return;
   }
   auto tab = active_pdf_.get();
