@@ -361,7 +361,7 @@ void MainWindow::BuildSettingsPane() {
     int selected = 0, index = 1;
     try {
       for (auto const& voice :
-           wsm::SpeechSynthesis::SpeechSynthesizer::AllVoices()) {
+           wsm::SpeechSynthesizer::AllVoices()) {
         auto const name = voice.DisplayName();
         auto voice_item = muxc::ComboBoxItem();
         muxc::TextBlock text;
@@ -393,7 +393,7 @@ void MainWindow::BuildSettingsPane() {
         try {
           int i = 1;
           for (auto const& voice :
-               wsm::SpeechSynthesis::SpeechSynthesizer::AllVoices()) {
+               wsm::SpeechSynthesizer::AllVoices()) {
             if (i == index) {
               window->tts_voice_ = to_utf8(voice.DisplayName());
               break;

@@ -1734,11 +1734,11 @@ void Shelf::show_collection_menu(GtkWidget* row, std::string const& name,
   gtk_widget_set_parent(popover, row);
   GdkRectangle rect{static_cast<int>(x), static_cast<int>(y), 1, 1};
   gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
-  g_signal_connect(popover, "closed",
-                   +[](GtkPopover* popover, gpointer) {
-                     gtk_widget_unparent(GTK_WIDGET(popover));
-                   },
-                   nullptr);
+  hook(popover, "closed",
+       +[](GtkPopover* popover, gpointer) {
+         gtk_widget_unparent(GTK_WIDGET(popover));
+       },
+       nullptr);
   gtk_popover_popup(GTK_POPOVER(popover));
 }
 
@@ -1756,7 +1756,7 @@ void Shelf::delete_collection(std::string const& name) {
   gtk_dialog_add_buttons(
       GTK_DIALOG(dialog), Tr("ui.password.cancel").c_str(), GTK_RESPONSE_CANCEL,
       Tr("ui.shelf.delete-collection").c_str(), GTK_RESPONSE_ACCEPT, nullptr);
-  g_signal_connect_data(
+  hook(
       dialog, "response",
       +[](GtkDialog* dialog, gint response, gpointer self) {
         auto* shelf = static_cast<Shelf*>(self);
@@ -1765,7 +1765,7 @@ void Shelf::delete_collection(std::string const& name) {
           shelf->apply_delete_collection();
         }
       },
-      this, nullptr, 0);
+      this);
   gtk_window_present(GTK_WINDOW(dialog));
 }
 

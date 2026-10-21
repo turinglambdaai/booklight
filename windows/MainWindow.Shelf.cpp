@@ -269,7 +269,7 @@ void MainWindow::RebuildShelfNav() {
         if (auto window = weak.get()) window->ConfirmDeleteCollection(tag);
       });
       flyout.Items().Append(delete_item);
-      muxc::Primitives::FlyoutBase::SetContextFlyout(item, flyout);
+      item.ContextFlyout(flyout);
       menu.Append(item);
       shelf_nav_items_.emplace(tag, item);
     };
@@ -1089,13 +1089,15 @@ void MainWindow::ShelfAddToCollection(rivet_app::LibraryEntry const& entry,
       (void)api.library_book_collection(path, utf8_name, true).get();
       auto library = api.get_library().get();
       auto collections = api.library_collections().get();
-      dispatcher.TryEnqueue([weak, library = std::move(library)]() mutable {
-        if (auto window = weak.get()) {
-          window->library_ = std::move(library);
-          window->library_collections_ = std::move(collections);
-          window->RefreshShelf();
-        }
-      });
+      dispatcher.TryEnqueue(
+          [weak, library = std::move(library),
+           collections = std::move(collections)]() mutable {
+            if (auto window = weak.get()) {
+              window->library_ = std::move(library);
+              window->library_collections_ = std::move(collections);
+              window->RefreshShelf();
+            }
+          });
     } catch (...) {
     }
   }).detach();
@@ -1123,13 +1125,15 @@ void MainWindow::ShelfRemoveFromCollection(rivet_app::LibraryEntry const& entry,
       (void)api.library_book_collection(path, utf8_name, false).get();
       auto library = api.get_library().get();
       auto collections = api.library_collections().get();
-      dispatcher.TryEnqueue([weak, library = std::move(library)]() mutable {
-        if (auto window = weak.get()) {
-          window->library_ = std::move(library);
-          window->library_collections_ = std::move(collections);
-          window->RefreshShelf();
-        }
-      });
+      dispatcher.TryEnqueue(
+          [weak, library = std::move(library),
+           collections = std::move(collections)]() mutable {
+            if (auto window = weak.get()) {
+              window->library_ = std::move(library);
+              window->library_collections_ = std::move(collections);
+              window->RefreshShelf();
+            }
+          });
     } catch (...) {
     }
   }).detach();
