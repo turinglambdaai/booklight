@@ -31,8 +31,12 @@
      (check-equal? (settings-recent-files defaults) '())
      (check-equal? (settings-view-mode defaults) "single")
      (check-false (settings-annotation-sidecar defaults))
+     (check-equal? (settings-reading-theme defaults) "system")
+     (check-equal? (settings-reading-font-scale defaults) 1.0)
 
-     ;; ---- v1 serde shape of a default file (field order + pretty format) ----
+     ;; ---- v1 serde shape of a default file (field order + pretty format;
+     ;; reading prefs append after the v1 fields, so v1 installs parse as
+     ;; defaults and stay drop-in) ----
      (check-equal?
       (json-value->bytes (settings->storage defaults))
       (string->bytes/utf-8
@@ -47,7 +51,9 @@
         "  \"target_language\": \"中文\",\n"
         "  \"recent_files\": [],\n"
         "  \"view_mode\": \"single\",\n"
-        "  \"annotation_sidecar\": false"
+        "  \"annotation_sidecar\": false,\n"
+        "  \"reading_theme\": \"system\",\n"
+        "  \"reading_font_scale\": 1.0"
         "\n}")))
 
      ;; ---- round-trip ----
@@ -57,7 +63,9 @@
         "English"
         (list (recents:recent-file "/tmp/x.pdf" "X" 7 0.5 1700000000))
         "double"
-        #t))
+        #t
+        "night"
+        1.25))
      (save-settings! custom)
      (check-true (settings-file-exists?))
      (define loaded (load-settings))
@@ -66,6 +74,8 @@
      (check-equal? (settings-target-language loaded) "English")
      (check-equal? (settings-view-mode loaded) "double")
      (check-true (settings-annotation-sidecar loaded))
+     (check-equal? (settings-reading-theme loaded) "night")
+     (check-equal? (settings-reading-font-scale loaded) 1.25)
      (define recents (settings-recent-files loaded))
      (check-equal? (length recents) 1)
      (check-equal? (recents:recent-file-path (car recents)) "/tmp/x.pdf")
@@ -99,7 +109,25 @@
      (check-equal? (provider-config-name (settings-provider parsed)) "deepseek")
      (check-equal? (provider-config-model (settings-provider parsed)) "kept-model")
      (check-equal? (settings-recent-files parsed) '())
+     (check-equal? (settings-reading-theme parsed) "system")
+     (check-equal? (settings-reading-font-scale parsed) 1.0)
      (check-exn exn:fail? (lambda () (storage->settings "not-an-object")))
+
+     ;; ---- reading prefs normalization ----
+     (define bad-reading
+       (storage->settings
+        (hasheq 'reading_theme "sepia" 'reading_font_scale "big")))
+     (check-equal? (settings-reading-theme bad-reading) "system")
+     (check-equal? (settings-reading-font-scale bad-reading) 1.0)
+     (check-equal? (settings-reading-font-scale
+                    (storage->settings (hasheq 'reading_font_scale 9)))
+                   2.0)
+     (check-equal? (settings-reading-font-scale
+                    (storage->settings (hasheq 'reading_font_scale 0.1)))
+                   0.7)
+     (check-equal? (settings-reading-theme
+                    (storage->settings (hasheq 'reading_theme "paper")))
+                   "paper")
 
      ;; ---- language mapping ----
      (check-equal? (language-name->code "繁體中文") "zh-hant")

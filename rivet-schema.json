@@ -3,6 +3,14 @@
   "enums": [
     {
       "cases": [
+        "system",
+        "paper",
+        "night"
+      ],
+      "name": "ReadingTheme"
+    },
+    {
+      "cases": [
         "page",
         "selection",
         "doc"
@@ -377,6 +385,20 @@
           "type": {
             "kind": "scalar",
             "name": "Bool"
+          }
+        },
+        {
+          "name": "reading-theme",
+          "type": {
+            "kind": "record",
+            "name": "ReadingTheme"
+          }
+        },
+        {
+          "name": "reading-font-scale-permille",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
           }
         },
         {
@@ -1083,6 +1105,29 @@
       "result": {
         "kind": "scalar",
         "name": "Void"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "theme",
+          "type": {
+            "kind": "record",
+            "name": "ReadingTheme"
+          }
+        },
+        {
+          "name": "font-scale-permille",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        }
+      ],
+      "name": "save-reading-prefs",
+      "result": {
+        "kind": "record",
+        "name": "SettingsView"
       }
     },
     {
