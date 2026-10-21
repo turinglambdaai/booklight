@@ -258,7 +258,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ToggleTheme();
   // Reading page surface (settings.json, independent of the chrome theme):
   // night forces dark, paper forces light, system follows ActualTheme.
-  bool ReadingDark() const;
+  bool ReadingDark();
   void ApplyReadingTheme();
   void SaveReadingPrefs(rivet_app::ReadingTheme theme);
   void SaveReadingFontScale(double scale);

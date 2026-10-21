@@ -490,7 +490,7 @@ void MainWindow::ToggleTheme() {
   SaveHostPrefs();
 }
 
-bool MainWindow::ReadingDark() const {
+bool MainWindow::ReadingDark() {
   if (settings_.reading_theme == rivet_app::ReadingTheme::night) return true;
   if (settings_.reading_theme == rivet_app::ReadingTheme::paper) return false;
   return Root().ActualTheme() == mux::ElementTheme::Dark;
