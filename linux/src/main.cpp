@@ -260,6 +260,9 @@ bool theme_is_dark() {
   return system_prefers_dark();
 }
 
+// Defined after set_theme(); apply_theme() re-skins open books through it.
+void apply_reading_theme();
+
 void apply_theme() {
   bool const dark = theme_is_dark();
   g_object_set(gtk_settings_get_default(),
@@ -279,14 +282,8 @@ void apply_theme() {
   base += dark ? "-dark" : "";
   g_object_set(gtk_settings_get_default(), "gtk-theme-name", base.c_str(),
                nullptr);
-  for (auto& tab : g_host.tabs) tab->set_dark(dark);
-  if (g_host.epub != nullptr) {
-    g_host.epub->apply_theme(dark ? "dark" : "light");
-  }
-  // set_dark dropped each tab's cached thumbnails; rebuild the sidebar so
-  // visible thumbs re-render in the new palette.
   // apply_theme() also runs before the window's content tree is assembled.
-  if (g_host.thumbs != nullptr) populate_thumbs();
+  apply_reading_theme();
 }
 
 void set_theme(std::string const& theme) {
@@ -294,6 +291,56 @@ void set_theme(std::string const& theme) {
   host::save_pref("theme", theme);
   apply_theme();
   if (g_host.ai_panel != nullptr) g_host.ai_panel->set_theme(theme);
+}
+
+// The reading page surface (settings.json) can override the chrome palette:
+// night forces dark, paper forces light, system follows theme_is_dark().
+bool reading_is_dark() {
+  using rivet_app::ReadingTheme;
+  if (g_host.settings.reading_theme == ReadingTheme::night) return true;
+  if (g_host.settings.reading_theme == ReadingTheme::paper) return false;
+  return theme_is_dark();
+}
+
+// Re-skin open books only; the chrome palette is apply_theme()'s job.
+void apply_reading_theme() {
+  bool const surface_dark = reading_is_dark();
+  for (auto& tab : g_host.tabs) tab->set_dark(surface_dark);
+  if (g_host.epub != nullptr) {
+    g_host.epub->apply_theme(surface_dark ? "dark" : "light");
+  }
+  // set_dark dropped each tab's cached thumbnails; rebuild the sidebar so
+  // visible thumbs re-render in the new palette.
+  if (g_host.thumbs != nullptr) populate_thumbs();
+}
+
+void save_reading_prefs(rivet_app::ReadingTheme theme) {
+  auto* api = g_host.api.get();
+  if (api == nullptr) return;
+  api->save_reading_prefs_async(
+      theme, g_host.settings.reading_font_scale_permille,
+      [](rivet_app::Result<rivet_app::SettingsView> result) {
+        if (!result.succeeded()) return;
+        host::dispatch_ui([saved = result.get()]() mutable {
+          g_host.settings = std::move(saved);
+          apply_reading_theme();
+        });
+      });
+}
+
+void save_reading_font_scale(double scale) {
+  auto* api = g_host.api.get();
+  if (api == nullptr) return;
+  auto const permille =
+      static_cast<std::int64_t>(std::llround(scale * 1000.0));
+  api->save_reading_prefs_async(
+      g_host.settings.reading_theme, permille,
+      [](rivet_app::Result<rivet_app::SettingsView> result) {
+        if (!result.succeeded()) return;
+        host::dispatch_ui([saved = result.get()]() mutable {
+          g_host.settings = std::move(saved);
+        });
+      });
 }
 
 // ---------------------------------------------------------------------------
@@ -570,7 +617,7 @@ void finish_pdf_open(std::string const& path, int resume_page,
   auto tab = std::make_unique<PdfTab>(doc, path, title);
   PdfTab* raw = tab.get();
   raw->set_double_mode(g_host.settings.view_mode == "double");
-  raw->set_dark(theme_is_dark());
+  raw->set_dark(reading_is_dark());
   raw->on_page_changed = [raw](int page) {
     if (raw != g_host.active_pdf()) return;
     refresh_status();
@@ -744,7 +791,11 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
       std::make_unique<EpubTab>(&g_host.panel_ctx, path, path_title(path));
   EpubTab* raw = epub.release();
   g_host.epub = raw;
-  g_host.epub_font_scale = 1.0;
+  // Persisted typography rides in; EpubTab::load() re-applies it to the
+  // page once the web view is up.
+  g_host.epub_font_scale =
+      g_host.settings.reading_font_scale_permille / 1000.0;
+  raw->apply_font_scale(g_host.epub_font_scale);
   auto* label = build_tab_label(path_title(path));
   g_host.epub_tab_index =
       gtk_notebook_append_page(g_host.notebook, raw->widget(), label);
@@ -2634,6 +2685,7 @@ void zoom_in_ui() {
     g_host.epub_font_scale =
         std::min(2.0, g_host.epub_font_scale * 1.1);
     g_host.epub->apply_font_scale(g_host.epub_font_scale);
+    save_reading_font_scale(g_host.epub_font_scale);
     return;
   }
   if (auto* tab = g_host.active_pdf(); tab != nullptr) tab->zoom_in();
@@ -2644,6 +2696,7 @@ void zoom_out_ui() {
   if (g_host.epub_active()) {
     g_host.epub_font_scale = std::max(0.7, g_host.epub_font_scale / 1.1);
     g_host.epub->apply_font_scale(g_host.epub_font_scale);
+    save_reading_font_scale(g_host.epub_font_scale);
     return;
   }
   if (auto* tab = g_host.active_pdf(); tab != nullptr) tab->zoom_out();
@@ -2654,6 +2707,7 @@ void zoom_reset_ui() {
   if (g_host.epub_active()) {
     g_host.epub_font_scale = 1.0;
     g_host.epub->apply_font_scale(1.0);
+    save_reading_font_scale(1.0);
     return;
   }
   if (auto* tab = g_host.active_pdf(); tab != nullptr) tab->zoom_reset();
@@ -3428,6 +3482,12 @@ void on_activate(GtkApplication* app, gpointer) {
         action != nullptr) {
       g_simple_action_set_state(action, g_variant_new_string(theme.c_str()));
     }
+  };
+  g_host.ai_panel->on_reading_theme_changed = [](std::string const& theme) {
+    using rivet_app::ReadingTheme;
+    save_reading_prefs(theme == "paper"   ? ReadingTheme::paper
+                       : theme == "night" ? ReadingTheme::night
+                                          : ReadingTheme::system);
   };
   g_host.ai_panel->set_theme(g_host.theme);
 

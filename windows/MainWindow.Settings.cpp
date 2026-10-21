@@ -278,6 +278,37 @@ void MainWindow::BuildSettingsPane() {
       });
   stack.Children().Append(theme_combo);
 
+  // ---- reading theme (page surface; persists in settings.json) ----
+  stack.Children().Append(SettingLabel(pdfgist::Tr("ui.reading.theme")));
+  settings_reading_theme_ = muxc::ComboBox();
+  settings_reading_theme_.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
+  for (std::wstring const label :
+       {pdfgist::Tr("ui.reading.theme.system"), pdfgist::Tr("ui.reading.theme.paper"),
+        pdfgist::Tr("ui.reading.theme.night")}) {
+    auto item = muxc::ComboBoxItem();
+    muxc::TextBlock label_block;
+    label_block.Text(label);
+    label_block.FontSize(12);
+    item.Content(label_block);
+    settings_reading_theme_.Items().Append(item);
+  }
+  settings_reading_theme_.SelectedIndex(
+      settings_.reading_theme == rivet_app::ReadingTheme::paper
+          ? 1
+          : settings_.reading_theme == rivet_app::ReadingTheme::night ? 2 : 0);
+  settings_reading_theme_.SelectionChanged(
+      [weak = get_weak()](winrt::Windows::Foundation::IInspectable const& sender,
+                          muxc::SelectionChangedEventArgs const&) {
+        if (auto window = weak.get()) {
+          auto const combo = sender.as<muxc::ComboBox>();
+          using rivet_app::ReadingTheme;
+          window->SaveReadingPrefs(combo.SelectedIndex() == 1  ? ReadingTheme::paper
+                                   : combo.SelectedIndex() == 2 ? ReadingTheme::night
+                                                                : ReadingTheme::system);
+        }
+      });
+  stack.Children().Append(settings_reading_theme_);
+
   // ---- privacy footer + about ----
   auto privacy = muxc::TextBlock();
   privacy.Text(pdfgist::Tr("ui.settings.privacy"));
@@ -367,6 +398,13 @@ void MainWindow::LoadSettingsIntoPane() {
   settings_target_.SelectedIndex(std::clamp(target_index, 0, 7));
   settings_view_mode_.SelectedIndex(settings_.view_mode == "double" ? 1 : 0);
   settings_sidecar_.IsChecked(settings_.annotation_sidecar);
+  if (settings_reading_theme_) {
+    settings_reading_theme_.SelectedIndex(
+        settings_.reading_theme == rivet_app::ReadingTheme::paper
+            ? 1
+            : settings_.reading_theme == rivet_app::ReadingTheme::night ? 2
+                                                                        : 0);
+  }
 }
 
 void MainWindow::SwitchPreset(std::wstring const& id) {

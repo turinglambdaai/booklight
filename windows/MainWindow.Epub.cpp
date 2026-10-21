@@ -71,6 +71,9 @@ void MainWindow::OpenEpub(std::wstring const& path, int resume_chapter) {
   auto book = std::make_shared<EpubBook>();
   book->path = path;
   book->title = file_name(path);
+  // Persisted typography rides in; the page picks it up post-load.
+  book->font_scale =
+      settings_.reading_font_scale_permille / 1000.0;
   epub_ = book;
 
   muxc::TabViewItem item;
@@ -294,8 +297,7 @@ void MainWindow::OnEpubWebMessage(
 
 void MainWindow::ApplyEpubTheme(EpubBook& book) {
   if (!book.web || !book.web.CoreWebView2()) return;
-  std::wstring const theme =
-      Root().ActualTheme() == mux::ElementTheme::Dark ? L"dark" : L"light";
+  std::wstring const theme = ReadingDark() ? L"dark" : L"light";
   auto const script = L"document.documentElement.setAttribute('data-theme', " +
                       js_string(theme) + L");";
   try {

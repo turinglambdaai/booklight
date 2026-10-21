@@ -80,6 +80,7 @@ class AiPanel {
   // Appearance selector is host-side (theme lives in host.conf, like the
   // macOS host's UserDefaults).
   std::function<void(std::string const&)> on_theme_changed;  // system|light|dark
+  std::function<void(std::string const&)> on_reading_theme_changed;  // system|paper|night
   void set_theme(std::string const& theme);
 
   // AI actions (menu items and the context menu route here).
@@ -137,6 +138,7 @@ class AiPanel {
   GtkCheckButton* view_double_{nullptr};
   GtkCheckButton* sidecar_{nullptr};
   GtkDropDown* theme_dropdown_{nullptr};
+  GtkDropDown* reading_theme_dropdown_{nullptr};
   std::map<std::string, std::pair<std::string, std::string>> preset_stash_;
   std::string current_preset_id_;
   bool busy_{false};
