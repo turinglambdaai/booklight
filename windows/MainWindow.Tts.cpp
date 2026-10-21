@@ -60,16 +60,26 @@ void MainWindow::TtsSpeak(std::wstring const& raw) {
   try {
     if (tts_player_ == nullptr) {
       tts_synth_ = wam::SpeechSynthesis::SpeechSynthesizer();
-      // Prefer a zh-CN voice so Chinese documents read naturally; fall back
-      // to the system default otherwise.
+      // A settings-picked voice wins; otherwise prefer a zh-CN voice so
+      // Chinese documents read naturally; fall back to the system default.
       try {
         for (auto const& voice :
              wam::SpeechSynthesis::SpeechSynthesizer::AllVoices()) {
-          if (voice.Language() == L"zh-CN") {
+          if (!tts_voice_.empty() &&
+              voice.DisplayName() == to_wide(tts_voice_)) {
+            tts_synth_.Voice(voice);
+            break;
+          }
+          if (tts_voice_.empty() && voice.Language() == L"zh-CN") {
             tts_synth_.Voice(voice);
             break;
           }
         }
+      } catch (...) {
+      }
+      // Rate rides with every utterance (0.5x-3x, settings slider).
+      try {
+        tts_synth_.Options().SpeakingRate(tts_rate_);
       } catch (...) {
       }
       tts_player_ = wam::Playback::MediaPlayer();

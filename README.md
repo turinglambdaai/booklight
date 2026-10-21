@@ -50,7 +50,8 @@ machine except the requests you make to your own provider.
 
 Ed25519-signature-verified self-update (signed release manifest,
 SHA-256-checked download); checks at most once a day, installs only when
-you click through — on all three platforms.
+you click through — on all three platforms. Contract:
+[UPDATE](shared/spec/UPDATE.md)
 
 ## Architecture
 
@@ -91,7 +92,8 @@ raco test racket/          # domain-core tests
       handling (all three platforms)
 - [x] Reading — PDF/EPUB, annotations, AI workflow, light page editing,
       TTS, printing, split view, AcroForm (all three platforms)
-- [ ] Reading themes — paper / night page surfaces, typography controls
+- [x] Reading themes — paper / night page surfaces, typography controls
+      (all three platforms)
 - [ ] Mobile — iOS / iPadOS host (Rivet's portable Swift layer) and Android
       host (Rivet's Kotlin platform), matching the family's full-platform
       scope

@@ -29,9 +29,16 @@ final class AppModel: ObservableObject {
     /// "reading" | "finished" | "pdf" | "epub" | "c:<collection name>".
     @Published var shelfSelection = "home"
 
+    /// The shelf's own collection list (stored order) — includes collections
+    /// no book carries yet, which the entry labels alone never reveal.
+    @Published var backendCollections: [String] = []
+
     var shelfCollections: [String] {
         var seen = Set<String>()
         var out: [String] = []
+        for name in backendCollections where seen.insert(name).inserted {
+            out.append(name)
+        }
         for entry in library {
             for name in entry.collections where seen.insert(name).inserted {
                 out.append(name)
@@ -156,6 +163,7 @@ final class AppModel: ObservableObject {
     func loadLibrary() async {
         guard let api else { return }
         library = (try? await api.get_library()) ?? library
+        backendCollections = (try? await api.library_collections()) ?? backendCollections
         libraryLoaded = true
     }
 
@@ -197,7 +205,23 @@ final class AppModel: ObservableObject {
 
     func createCollection(_ name: String) {
         guard !shelfCollections.contains(name) else { return }
+        backendCollections.append(name)
         Task { try? await api?.library_collection_create(name: name) }
+    }
+
+    /// Deleting a collection strips its label from every book; the books
+    /// themselves stay (optimistic UI, then the RPC).
+    func deleteCollection(_ name: String) {
+        for entry in library where entry.collections.contains(name) {
+            replaceEntry(RivetTypes.LibraryEntry(
+                path: entry.path, title: entry.title, author: entry.author,
+                kind: entry.kind, pages: entry.pages, added_at_ms: entry.added_at_ms,
+                cover: entry.cover, collections: entry.collections.filter { $0 != name },
+                status: entry.status))
+        }
+        backendCollections.removeAll { $0 == name }
+        if shelfSelection == "c:\(name)" { shelfSelection = "all" }
+        Task { try? await api?.library_collection_delete(name: name) }
     }
 
     func removeFromCollection(_ entry: RivetTypes.LibraryEntry, name: String) {

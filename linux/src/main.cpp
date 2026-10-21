@@ -7,10 +7,11 @@
 // flow (deb/rpm → package manager, AppImage → in-place swap + restart,
 // tarball → extraction hint).
 //
-// P0 parity surface: PDF reading (tabs/continuous/double/zoom/dark/keys),
+// Parity surface: PDF reading (tabs/continuous/double/zoom/dark/keys),
 // AI (translate/summarize/chat streaming), settings, EPUB (WebKitGTK),
-// page-level editing, online updates, About. Annotation overlay, TTS,
-// printing, split view and AcroForm are P2 (tracked in the README roadmap).
+// page-level editing, annotation overlay, TTS, printing, split view,
+// AcroForm, online updates, About — the README roadmap tracks what is
+// still open, not this list.
 #include <gtk/gtk.h>
 #include <json-glib/json-glib.h>
 
@@ -129,6 +130,7 @@ struct Host {
   std::vector<std::string> pending_open_paths;
   bool ready{false};
   std::string theme{"system"};
+  double tts_rate{1.0};
   double epub_font_scale{1.0};
 
   // backend boot handshake (mirrors the scaffold)
@@ -3484,6 +3486,16 @@ void on_activate(GtkApplication* app, gpointer) {
       g_simple_action_set_state(action, g_variant_new_string(theme.c_str()));
     }
   };
+  g_host.ai_panel->on_language_changed = [](std::string const& language) {
+    host::save_pref("ui-language", language);
+    update_message_dialog(Tr("ui.settings.language"),
+                          Tr("ui.settings.language-note"));
+  };
+  g_host.ai_panel->on_tts_rate_changed = [](double rate) {
+    g_host.tts_rate = std::clamp(rate, 0.5, 3.0);
+    pdfgist::tts::set_rate(g_host.tts_rate);
+    host::save_pref("tts-rate", std::to_string(g_host.tts_rate));
+  };
   g_host.ai_panel->on_reading_theme_changed = [](std::string const& theme) {
     using rivet_app::ReadingTheme;
     save_reading_prefs(theme == "paper"   ? ReadingTheme::paper
@@ -3682,8 +3694,21 @@ std::string detect_ui_language() {
 }
 
 int main(int argc, char** argv) {
-  pdfgist::SetUiLanguage(detect_ui_language());
+  // The in-app override wins over the locale (applies on relaunch, mac
+  // parity); "system" keeps the LC_* detection.
+  std::string const language_pref = host::pref_string("ui-language", "system");
+  pdfgist::SetUiLanguage(language_pref == "zh" || language_pref == "en"
+                             ? language_pref
+                             : detect_ui_language());
   g_host.theme = host::pref_string("theme", "system");
+  g_host.panel_ctx.ui_language = language_pref;
+  try {
+    g_host.tts_rate = std::stod(host::pref_string("tts-rate", "1.0"));
+  } catch (...) {
+  }
+  g_host.tts_rate = std::clamp(g_host.tts_rate, 0.5, 3.0);
+  g_host.panel_ctx.tts_rate = g_host.tts_rate;
+  pdfgist::tts::set_rate(g_host.tts_rate);
 
   auto* app = gtk_application_new("site.jrtx.booklight",
                                   G_APPLICATION_HANDLES_OPEN);

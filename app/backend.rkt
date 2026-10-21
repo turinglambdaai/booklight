@@ -596,6 +596,12 @@
                         (library:shelf-books current) path name))])))
   (void))
 
+;; All shelf collections in stored order — including empty ones, which the
+;; entries' labels alone never reveal (create-then-fill shows up instantly,
+;; and deleting a book no longer orphans a phantom label).
+(define-rpc (library-collections : (List String))
+  (library:shelf-collections (library:load-shelf)))
+
 ;; Backend-side error/status strings follow this locale ("zh" | "en").
 (define-rpc (set-locale [code : String] : Void)
   (set-locale! code)

@@ -138,9 +138,15 @@ MainWindow::MainWindow() {
   Title(kAppTitle);
 
   // v1 UI is Chinese-first; en.json exists, so follow the system locale the
-  // same way the mac host does (zh prefix → zh, otherwise en).
-  LANGID const lang = ::GetUserDefaultUILanguage();
-  pdfgist::SetUiLanguage(PRIMARYLANGID(lang) == LANG_CHINESE ? "zh" : "en");
+  // same way the mac host does (zh prefix → zh, otherwise en) — unless the
+  // in-app override picked a language (applied on next launch, mac parity).
+  LoadHostPrefs();
+  if (ui_language_ == "zh" || ui_language_ == "en") {
+    pdfgist::SetUiLanguage(ui_language_);
+  } else {
+    LANGID const lang = ::GetUserDefaultUILanguage();
+    pdfgist::SetUiLanguage(PRIMARYLANGID(lang) == LANG_CHINESE ? "zh" : "en");
+  }
 
   OpenLabel().Text(pdfgist::Tr("ui.toolbar.open"));
   auto set_tip = [](mux::FrameworkElement const& element,
@@ -333,6 +339,7 @@ void MainWindow::Bootstrap() {
     std::vector<rivet_app::ProviderPreset> presets;
     std::vector<rivet_app::RecentEntry> recents;
     std::vector<rivet_app::LibraryEntry> library;
+    std::vector<std::string> collections;
     try {
       rivet_app::API api(*backend);
       api.initialize().get();
@@ -341,6 +348,7 @@ void MainWindow::Bootstrap() {
       presets = api.list_presets().get();
       recents = api.get_recents().get();
       library = api.get_library().get();
+      collections = api.library_collections().get();
     } catch (std::exception const& e) {
       failure = e.what();
     }
@@ -349,6 +357,7 @@ void MainWindow::Bootstrap() {
                            presets = std::move(presets),
                            recents = std::move(recents),
                            library = std::move(library),
+                           collections = std::move(collections),
                            failure = std::move(failure)]() mutable {
       auto window = weak.get();
       if (!window) return;
@@ -360,6 +369,7 @@ void MainWindow::Bootstrap() {
       window->presets_ = std::move(presets);
       window->recents_ = std::move(recents);
       window->library_ = std::move(library);
+      window->library_collections_ = std::move(collections);
       window->library_loaded_ = true;
       window->settings_loaded_ = true;
       window->ready_ = true;
@@ -586,6 +596,12 @@ void MainWindow::LoadHostPrefs() {
       if (auto v = value_of("left-visible"); !v.empty()) {
         left_visible_ = v == "true";
       }
+      if (auto v = value_of("ui-language"); !v.empty()) ui_language_ = v;
+      if (auto v = value_of("tts-voice"); !v.empty()) tts_voice_ = v;
+      if (auto v = value_of("tts-rate"); !v.empty()) {
+        try { tts_rate_ = std::stod(v); } catch (...) {}
+      }
+      tts_rate_ = std::clamp(tts_rate_, 0.5, 3.0);
     }
   } catch (...) {
     // defaults are fine
@@ -604,7 +620,10 @@ void MainWindow::SaveHostPrefs() {
     std::ofstream file(dir / L"host-ui.json", std::ios::trunc);
     file << "theme=" << theme_ << "\n"
          << "ai-visible=" << (ai_visible_ ? "true" : "false") << "\n"
-         << "left-visible=" << (left_visible_ ? "true" : "false") << "\n";
+         << "left-visible=" << (left_visible_ ? "true" : "false") << "\n"
+         << "ui-language=" << ui_language_ << "\n"
+         << "tts-voice=" << tts_voice_ << "\n"
+         << "tts-rate=" << tts_rate_ << "\n";
   } catch (...) {
     // best effort
   }
@@ -1467,7 +1486,13 @@ void MainWindow::ZoomOut_Click(winrt::Windows::Foundation::IInspectable const&,
 
 void MainWindow::ZoomReset_Click(winrt::Windows::Foundation::IInspectable const&,
                                  mux::RoutedEventArgs const&) {
-  auto tab = epub_active_ ? nullptr : active_pdf_.get();
+  if (epub_active_ && epub_) {
+    epub_->font_scale = 1.0;
+    ApplyEpubFontScale(*epub_);
+    SaveReadingFontScale(1.0);
+    return;
+  }
+  auto tab = active_pdf_.get();
   if (!tab) return;
   tab->fit_width = false;
   tab->zoom = 1.0;
@@ -1962,6 +1987,29 @@ void MainWindow::SaveRecentNow() {
 // ---- keyboard ------------------------------------------------------------------------
 
 void MainWindow::BuildKeyboardAccelerators() {
+  // Page flips: plain (modifier-free) accelerators, Linux parity — the
+  // ScrollViewer only pages when it owns focus, so the reader never saw
+  // PageUp/PageDown with the focus elsewhere.
+  auto add_page_accel = [&](winrt::Windows::System::VirtualKey key,
+                            int direction) {
+    auto accel = mux::Input::KeyboardAccelerator();
+    accel.Key(key);
+    accel.Invoked([weak = get_weak(), direction](
+                      mux::Input::KeyboardAccelerator const&,
+                      mux::Input::KeyboardAcceleratorInvokedEventArgs const&
+                          args) {
+      args.Handled(true);
+      auto window = weak.get();
+      if (!window) return;
+      auto tab = window->active_pdf_.get();
+      if (!tab || window->epub_active_) return;
+      window->ScrollToPage(*tab, tab->current_page + direction);
+    });
+    Root().KeyboardAccelerators().Append(accel);
+  };
+  add_page_accel(winrt::Windows::System::VirtualKey::PageUp, -1);
+  add_page_accel(winrt::Windows::System::VirtualKey::PageDown, 1);
+
   auto add_accel = [&](winrt::Windows::System::VirtualKey key, bool shift,
                        std::function<void()> action) {
     auto accel = mux::Input::KeyboardAccelerator();

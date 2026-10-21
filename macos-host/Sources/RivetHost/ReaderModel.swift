@@ -96,6 +96,11 @@ final class PDFTab: ObservableObject, Identifiable {
     }
 
     func zoomReset() {
+        if let epub = reader?.epub, reader?.epubActive == true {
+            epub.applyFontScale(1.0)
+            reader?.app?.saveReadingFontScale(1.0)
+            return
+        }
         pdfView.scaleFactor = 1.0
     }
 

@@ -649,10 +649,36 @@ GtkWidget* Shelf::make_header_row(std::string const& label) {
   return row;
 }
 
+void Shelf::delete_collection_menu() {
+  if (!pending_delete_.empty()) delete_collection(pending_delete_);
+}
+
+// Right-click on a collection row opens its little menu (delete).
+static void collection_menu_pressed(GtkGestureClick* gesture, gint, gdouble x,
+                                    gdouble y, gpointer self) {
+  auto* shelf = static_cast<Shelf*>(self);
+  auto* row = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
+  auto const* name = static_cast<char const*>(
+      g_object_get_data(G_OBJECT(row), "shelf-collection"));
+  if (name != nullptr && shelf != nullptr) {
+    shelf->show_collection_menu(row, name, x, y);
+  }
+}
+
 void Shelf::append_collection_rows() {
   for (auto const& name : collections()) {
-    gtk_list_box_append(
-        sidebar_, make_nav_row("folder-symbolic", name, "c:" + name));
+    auto* row = make_nav_row("folder-symbolic", name, "c:" + name);
+    // Right-click delete (mac context-menu parity): books survive, the
+    // grouping goes, behind one confirmation.
+    g_object_set_data_full(G_OBJECT(row), "shelf-collection",
+                           g_strdup(name.c_str()), g_free);
+    auto* gesture = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture),
+                                  GDK_BUTTON_SECONDARY);
+    g_signal_connect(gesture, "pressed",
+                     G_CALLBACK(collection_menu_pressed), this);
+    gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(gesture));
+    gtk_list_box_append(sidebar_, row);
   }
   gtk_list_box_append(sidebar_,
                       make_nav_row("list-add-symbolic",
@@ -681,6 +707,9 @@ void Shelf::rebuild_sidebar() {
   gtk_list_box_append(sidebar_,
                       make_nav_row("bookmark-new-symbolic", Tr("ui.shelf.want"),
                                    "want"));
+  gtk_list_box_append(sidebar_,
+                      make_nav_row("media-playback-start-symbolic",
+                                   Tr("ui.shelf.reading"), "reading"));
   gtk_list_box_append(
       sidebar_, make_nav_row("object-select-symbolic", Tr("ui.shelf.finished"),
                              "finished"));
@@ -750,6 +779,7 @@ void Shelf::select_nav(std::string const& nav) {
 std::string Shelf::current_title() const {
   if (selection_ == "home") return Tr("ui.shelf.home");
   if (selection_ == "want") return Tr("ui.shelf.want");
+  if (selection_ == "reading") return Tr("ui.shelf.reading");
   if (selection_ == "finished") return Tr("ui.shelf.finished");
   if (selection_ == "pdf") return Tr("ui.shelf.pdf");
   if (selection_ == "epub") return Tr("ui.shelf.epub");
@@ -892,7 +922,7 @@ void Shelf::rebuild_home_strips() {
 // ---------------------------------------------------------------------------
 
 std::vector<std::string> Shelf::collections() const {
-  std::vector<std::string> out;
+  std::vector<std::string> out = shelf_collections_;
   for (auto const& entry : library_) {
     for (auto const& name : entry.collections) {
       if (std::find(out.begin(), out.end(), name) == out.end()) {
@@ -910,6 +940,11 @@ std::vector<rivet_app::LibraryEntry const*> Shelf::visible_entries() const {
     // scope semantics (mac shelfEntries switch parity)
     if (selection_ == "want") {
       if (progress_for(entry).has_value()) continue;  // never opened
+    } else if (selection_ == "reading") {
+      auto const progress = progress_for(entry);
+      if (!progress.has_value() || progress->first >= progress->second) {
+        continue;
+      }
     } else if (selection_ == "finished") {
       auto const progress = progress_for(entry);
       if (!progress.has_value() || progress->first < progress->second) {
@@ -1221,6 +1256,14 @@ void Shelf::refresh() {
           }
         });
       });
+  (void)api->library_collections_async(
+      [this](rivet_app::Result<std::vector<std::string>> result) {
+        host::dispatch_ui([this, result]() mutable {
+          if (!result.succeeded()) return;
+          shelf_collections_ = result.get();
+          rebuild();
+        });
+      });
 }
 
 void Shelf::rescan() {
@@ -1231,6 +1274,14 @@ void Shelf::rescan() {
         host::dispatch_ui([this, result]() mutable {
           if (!result.succeeded()) return;
           library_ = result.get();
+          rebuild();
+        });
+      });
+  (void)api->library_collections_async(
+      [this](rivet_app::Result<std::vector<std::string>> result) {
+        host::dispatch_ui([this, result]() mutable {
+          if (!result.succeeded()) return;
+          shelf_collections_ = result.get();
           rebuild();
         });
       });
@@ -1438,6 +1489,10 @@ void Shelf::install_actions() {
   add("lib-remove",
       +[](GSimpleAction*, GVariant*, gpointer data) {
         static_cast<Shelf*>(data)->remove_entry();
+      }, this);
+  add("col-delete",
+      +[](GSimpleAction*, GVariant*, gpointer data) {
+        static_cast<Shelf*>(data)->delete_collection_menu();
       }, this);
 }
 
@@ -1670,6 +1725,77 @@ void Shelf::reveal_entry() {
   gtk_show_uri(window_, uri, GDK_CURRENT_TIME);
   g_free(uri);
   g_object_unref(folder);
+}
+
+void Shelf::show_collection_menu(GtkWidget* row, std::string const& name,
+                                 double x, double y) {
+  pending_delete_ = name;
+  auto* menu = g_menu_new();
+  g_menu_append(menu, Tr("ui.shelf.delete-collection").c_str(),
+                "win.col-delete");
+  auto* popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+  g_object_unref(menu);
+  gtk_widget_set_parent(popover, row);
+  GdkRectangle rect{static_cast<int>(x), static_cast<int>(y), 1, 1};
+  gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
+  hook(popover, "closed",
+       +[](GtkPopover* popover, gpointer) {
+         gtk_widget_unparent(GTK_WIDGET(popover));
+       },
+       nullptr);
+  gtk_popover_popup(GTK_POPOVER(popover));
+}
+
+// The win.col-delete action lands here with pending_delete_ already set.
+void Shelf::delete_collection(std::string const& name) {
+  if (name.empty()) return;
+  pending_delete_ = name;
+  auto* dialog = gtk_message_dialog_new(
+      hooks_.window(), static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
+                                                   GTK_DIALOG_DESTROY_WITH_PARENT),
+      GTK_MESSAGE_WARNING, GTK_BUTTONS_NONE, "%s",
+      Tr("ui.shelf.delete-collection").c_str());
+  gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s",
+      Trf("ui.shelf.delete-collection-confirm", name).c_str());
+  gtk_dialog_add_buttons(
+      GTK_DIALOG(dialog), Tr("ui.password.cancel").c_str(), GTK_RESPONSE_CANCEL,
+      Tr("ui.shelf.delete-collection").c_str(), GTK_RESPONSE_ACCEPT, nullptr);
+  hook(
+      dialog, "response",
+      +[](GtkDialog* dialog, gint response, gpointer self) {
+        auto* shelf = static_cast<Shelf*>(self);
+        gtk_window_destroy(GTK_WINDOW(dialog));
+        if (shelf != nullptr && response == GTK_RESPONSE_ACCEPT) {
+          shelf->apply_delete_collection();
+        }
+      },
+      this);
+  gtk_window_present(GTK_WINDOW(dialog));
+}
+
+void Shelf::apply_delete_collection() {
+  auto* api = hooks_.api();
+  if (api == nullptr || pending_delete_.empty()) return;
+  std::string const name = pending_delete_;
+  pending_delete_.clear();
+  // mac deleteCollection: optimistic label strip, books stay.
+  for (auto& entry : library_) {
+    entry.collections.erase(
+        std::remove(entry.collections.begin(), entry.collections.end(), name),
+        entry.collections.end());
+  }
+  shelf_collections_.erase(
+      std::remove(shelf_collections_.begin(), shelf_collections_.end(), name),
+      shelf_collections_.end());
+  if (selection_ == "c:" + name) {
+    selection_ = "all";
+    if (hooks_.title_changed) hooks_.title_changed();
+  }
+  rebuild();
+  (void)api->library_collection_delete_async(
+      name, [this](rivet_app::Result<void>) {
+        host::dispatch_ui([this]() mutable { refresh(); });
+      });
 }
 
 void Shelf::remove_entry() {

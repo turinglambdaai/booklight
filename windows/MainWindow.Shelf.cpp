@@ -238,16 +238,44 @@ void MainWindow::RebuildShelfNav() {
     add_header(pdfgist::Tr("ui.shelf.lib"));
     add_item(L"all", pdfgist::Tr("ui.shelf.all"), L"\uE8F1", true);
     add_item(L"want", pdfgist::Tr("ui.shelf.want"), L"\uE823", true);
+    add_item(L"reading", pdfgist::Tr("ui.shelf.reading"), L"\uE736", true);
     add_item(L"finished", pdfgist::Tr("ui.shelf.finished"), L"\uE73E", true);
     add_item(L"pdf", pdfgist::Tr("ui.shelf.pdf"), L"\uE8A5", true);
     add_item(L"epub", pdfgist::Tr("ui.shelf.epub"), L"\uE736", true);
     add_header(pdfgist::Tr("ui.shelf.mine"));
+    // The shelf's own list first (stored order, includes empty collections);
+    // entry labels only add names the shelf does not know yet.
     std::set<std::string> seen;
+    auto add_collection = [&](std::string const& name) {
+      if (!seen.insert(name).second) return;
+      auto item = muxc::NavigationViewItem();
+      item.Content(winrt::box_value(to_wide(name)));
+      std::wstring const tag = L"c:" + to_wide(name);
+      item.Tag(winrt::box_value(winrt::hstring(tag)));
+      muxc::FontIcon icon;
+      icon.FontFamily(media::FontFamily(L"Segoe Fluent Icons"));
+      icon.FontSize(16);
+      icon.Glyph(L"\uE8B7");
+      item.Icon(icon);
+      // Right-click delete (mac context-menu parity): books survive, the
+      // grouping goes, behind one confirmation.
+      auto flyout = muxc::MenuFlyout();
+      auto delete_item = muxc::MenuFlyoutItem();
+      delete_item.Text(pdfgist::Tr("ui.shelf.delete-collection"));
+      auto const weak = get_weak();
+      delete_item.Click([weak, tag](
+                            winrt::Windows::Foundation::IInspectable const&,
+                            mux::RoutedEventArgs const&) {
+        if (auto window = weak.get()) window->ConfirmDeleteCollection(tag);
+      });
+      flyout.Items().Append(delete_item);
+      item.ContextFlyout(flyout);
+      menu.Append(item);
+      shelf_nav_items_.emplace(tag, item);
+    };
+    for (auto const& name : library_collections_) add_collection(name);
     for (auto const& entry : library_) {
-      for (auto const& name : entry.collections) {
-        if (!seen.insert(name).second) continue;
-        add_item(L"c:" + to_wide(name), to_wide(name), L"\uE8B7", true);
-      }
+      for (auto const& name : entry.collections) add_collection(name);
     }
     add_item(L"new-collection", pdfgist::Tr("ui.shelf.new-collection"),
              L"\uE710", false);
@@ -275,6 +303,7 @@ void MainWindow::SelectShelfNavItem(std::wstring const& tag) {
 
 std::wstring MainWindow::ShelfTitleFor(std::wstring const& selection) const {
   if (selection == L"want") return pdfgist::Tr("ui.shelf.want");
+  if (selection == L"reading") return pdfgist::Tr("ui.shelf.reading");
   if (selection == L"finished") return pdfgist::Tr("ui.shelf.finished");
   if (selection == L"pdf") return pdfgist::Tr("ui.shelf.pdf");
   if (selection == L"epub") return pdfgist::Tr("ui.shelf.epub");
@@ -366,6 +395,9 @@ std::vector<rivet_app::LibraryEntry> MainWindow::ShelfRows() const {
   for (auto const& entry : library_) {
     if (scope == L"want") {
       if (ShelfProgress(entry).has_value()) continue;  // never opened
+    } else if (scope == L"reading") {
+      auto const progress = ShelfProgress(entry);
+      if (!progress || progress->first >= progress->second) continue;
     } else if (scope == L"finished") {
       auto const progress = ShelfProgress(entry);
       if (!progress || progress->first < progress->second) continue;
@@ -1056,12 +1088,16 @@ void MainWindow::ShelfAddToCollection(rivet_app::LibraryEntry const& entry,
       (void)api.library_collection_create(utf8_name).get();
       (void)api.library_book_collection(path, utf8_name, true).get();
       auto library = api.get_library().get();
-      dispatcher.TryEnqueue([weak, library = std::move(library)]() mutable {
-        if (auto window = weak.get()) {
-          window->library_ = std::move(library);
-          window->RefreshShelf();
-        }
-      });
+      auto collections = api.library_collections().get();
+      dispatcher.TryEnqueue(
+          [weak, library = std::move(library),
+           collections = std::move(collections)]() mutable {
+            if (auto window = weak.get()) {
+              window->library_ = std::move(library);
+              window->library_collections_ = std::move(collections);
+              window->RefreshShelf();
+            }
+          });
     } catch (...) {
     }
   }).detach();
@@ -1088,12 +1124,65 @@ void MainWindow::ShelfRemoveFromCollection(rivet_app::LibraryEntry const& entry,
       rivet_app::API api(*backend);
       (void)api.library_book_collection(path, utf8_name, false).get();
       auto library = api.get_library().get();
-      dispatcher.TryEnqueue([weak, library = std::move(library)]() mutable {
-        if (auto window = weak.get()) {
-          window->library_ = std::move(library);
-          window->RefreshShelf();
-        }
-      });
+      auto collections = api.library_collections().get();
+      dispatcher.TryEnqueue(
+          [weak, library = std::move(library),
+           collections = std::move(collections)]() mutable {
+            if (auto window = weak.get()) {
+              window->library_ = std::move(library);
+              window->library_collections_ = std::move(collections);
+              window->RefreshShelf();
+            }
+          });
+    } catch (...) {
+    }
+  }).detach();
+}
+
+// ---- collection delete (mac context-menu parity) ---------------------------------
+
+void MainWindow::ConfirmDeleteCollection(std::wstring const& name) {
+  ShowDialog(pdfgist::Tr("app.name"),
+             pdfgist::Trf("ui.shelf.delete-collection-confirm", name),
+             pdfgist::Tr("ui.shelf.delete-collection"),
+             pdfgist::Tr("ui.password.cancel"),
+             [weak = get_weak(), name] {
+               if (auto window = weak.get()) window->DeleteCollection(name);
+             });
+}
+
+void MainWindow::DeleteCollection(std::wstring const& name_wide) {
+  std::string const utf8_name = to_utf8(name_wide);
+  // Optimistic: the label strips from every book; books stay on the shelf.
+  for (auto& entry : library_) {
+    auto& cols = entry.collections;
+    cols.erase(std::remove(cols.begin(), cols.end(), utf8_name), cols.end());
+  }
+  library_collections_.erase(
+      std::remove(library_collections_.begin(), library_collections_.end(),
+                  utf8_name),
+      library_collections_.end());
+  if (shelf_selection_ == name_wide) shelf_selection_ = L"all";
+  RefreshShelf();
+  if (!ready_ || !backend_) return;
+  auto const backend = backend_;
+  auto const dispatcher = DispatcherQueue();
+  auto const weak = get_weak();
+  std::thread([weak, dispatcher, backend, utf8_name]() mutable {
+    try {
+      rivet_app::API api(*backend);
+      (void)api.library_collection_delete(utf8_name).get();
+      auto library = api.get_library().get();
+      auto collections = api.library_collections().get();
+      dispatcher.TryEnqueue(
+          [weak, library = std::move(library),
+           collections = std::move(collections)]() mutable {
+            if (auto window = weak.get()) {
+              window->library_ = std::move(library);
+              window->library_collections_ = std::move(collections);
+              window->RefreshShelf();
+            }
+          });
     } catch (...) {
     }
   }).detach();
@@ -1170,11 +1259,14 @@ void MainWindow::ShelfRelink(rivet_app::LibraryEntry const& entry) {
                   rivet_app::API api(*backend);
                   (void)api.library_relink(from, to).get();
                   auto library = api.get_library().get();
+                  auto collections = api.library_collections().get();
                   dispatcher.TryEnqueue(
-                      [relink_weak,
-                       library = std::move(library)]() mutable {
+                      [relink_weak, library = std::move(library),
+                       collections =
+                           std::move(collections)]() mutable {
                         if (auto w = relink_weak.get()) {
                           w->library_ = std::move(library);
+                          w->library_collections_ = std::move(collections);
                           w->RefreshShelf();
                         }
                       });
@@ -1283,10 +1375,13 @@ void MainWindow::ImportBooks(std::vector<std::wstring> const& paths) {
       }
       failed = false;
       auto library = api.get_library().get();
-      dispatcher.TryEnqueue([weak,
-                             library = std::move(library)]() mutable {
+      auto collections = api.library_collections().get();
+      dispatcher.TryEnqueue([weak, library = std::move(library),
+                             collections =
+                                 std::move(collections)]() mutable {
         if (auto window = weak.get()) {
           window->library_ = std::move(library);
+          window->library_collections_ = std::move(collections);
           window->library_loaded_ = true;
           window->library_importing_ = false;
           try {

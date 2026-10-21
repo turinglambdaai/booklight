@@ -3,12 +3,21 @@
 
 #include <glib.h>
 
+#include <algorithm>
+#include <cmath>
 #include <csignal>
 
 namespace pdfgist::tts {
 namespace {
 
 GPid g_child = 0;
+double g_rate = 1.0;
+
+// 0.5x-3.0x maps onto speech-dispatcher's -100..100 rate range (-r flag).
+int rate_flag() {
+  return std::clamp(static_cast<int>(std::llround((g_rate - 1.0) * 50.0)),
+                    -100, 100);
+}
 
 // Child-watch runs on the main loop: process exit (natural end or killed)
 // is the end-of-speech signal.
@@ -21,6 +30,8 @@ void on_child_exited(GPid pid, gint, gpointer) {
 
 bool speaking() { return g_child != 0; }
 
+void set_rate(double rate) { g_rate = std::clamp(rate, 0.5, 3.0); }
+
 bool toggle(std::string const& text) {
   if (g_child != 0) {
     stop();
@@ -31,8 +42,11 @@ bool toggle(std::string const& text) {
   // end-of-speech callback). zh-CN voice for mac parity (AVSpeechUtterance
   // voice "zh-CN"); speech-dispatcher falls back to its default voice when
   // no Chinese one is installed.
+  auto rate_text = std::to_string(rate_flag());
   gchar* argv_vector[] = {const_cast<gchar*>("spd-say"),
                           const_cast<gchar*>("-w"),
+                          const_cast<gchar*>("-r"),
+                          const_cast<gchar*>(rate_text.c_str()),
                           const_cast<gchar*>("-l"),
                           const_cast<gchar*>("zh-CN"),
                           const_cast<gchar*>(text.c_str()),

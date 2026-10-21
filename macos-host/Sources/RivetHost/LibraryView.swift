@@ -13,6 +13,7 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @EnvironmentObject private var app: AppModel
     @State private var newCollectionRequested = false
+    @State private var collectionPendingDelete: String?
 
     var body: some View {
         NavigationSplitView {
@@ -35,7 +36,7 @@ struct LibraryView: View {
         case "home": return L10n.t("ui.shelf.home")
         case "search", "all": return L10n.t("ui.shelf.all")
         case "want": return L10n.t("ui.shelf.want")
-        case "reading": return L10n.t("ui.shelf.continue")
+        case "reading": return L10n.t("ui.shelf.reading")
         case "finished": return L10n.t("ui.shelf.finished")
         case "pdf": return L10n.t("ui.shelf.pdf")
         case "epub": return L10n.t("ui.shelf.epub")
@@ -75,6 +76,8 @@ struct LibraryView: View {
                     .tag("all")
                 Label(L10n.t("ui.shelf.want"), systemImage: "circle.dashed")
                     .tag("want")
+                Label(L10n.t("ui.shelf.reading"), systemImage: "book.pages")
+                    .tag("reading")
                 Label(L10n.t("ui.shelf.finished"), systemImage: "checkmark.circle")
                     .tag("finished")
                 Label(L10n.t("ui.shelf.pdf"), systemImage: "doc.richtext")
@@ -87,6 +90,14 @@ struct LibraryView: View {
                 ForEach(app.shelfCollections, id: \.self) { name in
                     Label(name, systemImage: "folder")
                         .tag("c:\(name)")
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                collectionPendingDelete = name
+                            } label: {
+                                Label(L10n.t("ui.shelf.delete-collection"),
+                                      systemImage: "trash")
+                            }
+                        }
                 }
                 Label(L10n.t("ui.shelf.new-collection"), systemImage: "plus")
                     .tag("new-collection")
@@ -95,6 +106,19 @@ struct LibraryView: View {
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .background(Theme.bg)
+        .confirmationDialog(
+            L10n.t("ui.shelf.delete-collection-confirm", collectionPendingDelete ?? ""),
+            isPresented: Binding(
+                get: { collectionPendingDelete != nil },
+                set: { if !$0 { collectionPendingDelete = nil } }),
+            titleVisibility: .visible) {
+            Button(L10n.t("ui.shelf.delete-collection"), role: .destructive) {
+                if let name = collectionPendingDelete {
+                    app.deleteCollection(name)
+                }
+                collectionPendingDelete = nil
+            }
+        }
         .sheet(isPresented: $newCollectionRequested) {
             NewCollectionSheet { name in
                 app.createCollection(name)

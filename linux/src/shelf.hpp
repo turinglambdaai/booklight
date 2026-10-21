@@ -46,6 +46,12 @@ class Shelf {
   Shelf(Shelf const&) = delete;
   Shelf& operator=(Shelf const&) = delete;
 
+  // Right-click on a collection row: 删除收藏集 behind one confirmation.
+  void show_collection_menu(GtkWidget* row, std::string const& name,
+                            double x, double y);
+  // win.col-delete action entry: the popover menu already staged the name.
+  void delete_collection_menu();
+
   // The whole Books surface (GtkPaned: sidebar | detail) — goes under
   // "shelf" in the window's main stack.
   GtkWidget* page() const { return page_; }
@@ -189,6 +195,11 @@ class Shelf {
 
   // ---- model ----
   std::vector<rivet_app::LibraryEntry> library_;
+  // The shelf's own collection list (stored order, includes empty ones).
+  std::vector<std::string> shelf_collections_;
+  void delete_collection(std::string const& name);
+  void apply_delete_collection();
+  std::string pending_delete_;
   bool loaded_{false};       // get-library answered at least once
   bool scanned_{false};      // background missing-status rescan done
   std::string search_;       // client-side title/author needle
