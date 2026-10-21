@@ -7,10 +7,11 @@
 // flow (deb/rpm → package manager, AppImage → in-place swap + restart,
 // tarball → extraction hint).
 //
-// P0 parity surface: PDF reading (tabs/continuous/double/zoom/dark/keys),
+// Parity surface: PDF reading (tabs/continuous/double/zoom/dark/keys),
 // AI (translate/summarize/chat streaming), settings, EPUB (WebKitGTK),
-// page-level editing, online updates, About. Annotation overlay, TTS,
-// printing, split view and AcroForm are P2 (tracked in the README roadmap).
+// page-level editing, annotation overlay, TTS, printing, split view,
+// AcroForm, online updates, About — the README roadmap tracks what is
+// still open, not this list.
 #include <gtk/gtk.h>
 #include <json-glib/json-glib.h>
 

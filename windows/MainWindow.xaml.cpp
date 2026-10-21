@@ -1467,7 +1467,13 @@ void MainWindow::ZoomOut_Click(winrt::Windows::Foundation::IInspectable const&,
 
 void MainWindow::ZoomReset_Click(winrt::Windows::Foundation::IInspectable const&,
                                  mux::RoutedEventArgs const&) {
-  auto tab = epub_active_ ? nullptr : active_pdf_.get();
+  if (epub_active_ && epub_) {
+    epub_->font_scale = 1.0;
+    ApplyEpubFontScale(*epub_);
+    SaveReadingFontScale(1.0);
+    return;
+  }
+  auto tab = active_pdf_.get();
   if (!tab) return;
   tab->fit_width = false;
   tab->zoom = 1.0;
