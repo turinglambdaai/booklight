@@ -406,12 +406,16 @@ GtkWidget* AiPanel::make_settings_tab() {
   gtk_box_append(GTK_BOX(root),
                  section_label(Tr("ui.reading.theme").c_str()));
   auto* reading_model = gtk_string_list_new(nullptr);
-  for (char const* label : {Tr("ui.reading.theme.system").c_str(),
-                            Tr("ui.reading.theme.paper").c_str(),
-                            Tr("ui.reading.theme.night").c_str()}) {
-    gtk_string_list_append(GTK_STRING_LIST(reading_model), label);
+  // std::string copies: own the labels instead of borrowing .c_str()
+  // from destroyed temporaries.
+  std::string const reading_labels[] = {Tr("ui.reading.theme.system"),
+                                        Tr("ui.reading.theme.paper"),
+                                        Tr("ui.reading.theme.night")};
+  for (auto const& label : reading_labels) {
+    gtk_string_list_append(GTK_STRING_LIST(reading_model), label.c_str());
   }
-  reading_theme_dropdown_ = gtk_drop_down_new(G_LIST_MODEL(reading_model), nullptr);
+  reading_theme_dropdown_ =
+      GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(reading_model), nullptr));
   gtk_box_append(GTK_BOX(root), GTK_WIDGET(reading_theme_dropdown_));
   hook(
       reading_theme_dropdown_, "notify::selected",
