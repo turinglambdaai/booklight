@@ -442,37 +442,6 @@ void EpubTab::highlight_hit(int chapter, int ordinal,
       "if (mark) mark.scrollIntoView({ block: 'center' }); })()");
 }
 
-}  // namespace pdfgist
-
-#else  // !PDFGIST_HAVE_WEBKIT
-
-namespace pdfgist {
-
-// WebKitGTK-less builds keep the host functional without EPUB: opening an
-// EPUB surfaces a readable message instead of a missing feature crash.
-EpubTab::EpubTab(PanelContext*, std::string path, std::string title)
-    : impl(nullptr), ctx_(nullptr), path_(std::move(path)),
-      title_(std::move(title)) {
-  root_ = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-  auto* label = gtk_label_new(
-      "EPUB support is unavailable in this build: install WebKitGTK "
-      "(webkitgtk-6.0) or use a full package.");
-  gtk_label_set_wrap(GTK_LABEL(label), TRUE);
-  gtk_widget_set_valign(label, GTK_ALIGN_CENTER);
-  gtk_widget_set_vexpand(label, TRUE);
-  gtk_box_append(GTK_BOX(root_), label);
-}
-
-EpubTab::~EpubTab() = default;
-
-void EpubTab::set_doc_data(DocData data) {
-  doc_data_ = std::move(data);
-  if (!loaded_) return;
-  auto const bytes = pdfgist::encode_doc_data(doc_data_);
-  std::string const json(bytes.begin(), bytes.end());
-  impl->evaluate("const d = JSON.parse(" + json_string_literal(json) +
-                 "); applyEpubAnnotations(d.annotations);");
-}
 
 void EpubTab::add_annotation(StoredAnnotation const& annotation) {
   doc_data_.annotations.push_back(annotation);
@@ -529,6 +498,39 @@ void EpubTab::restore_annotation(StoredAnnotation const& annotation,
         json_string_literal(annotation.color) + ");");
   }
 }
+
+}  // namespace pdfgist
+
+#else  // !PDFGIST_HAVE_WEBKIT
+
+namespace pdfgist {
+
+// WebKitGTK-less builds keep the host functional without EPUB: opening an
+// EPUB surfaces a readable message instead of a missing feature crash.
+EpubTab::EpubTab(PanelContext*, std::string path, std::string title)
+    : impl(nullptr), ctx_(nullptr), path_(std::move(path)),
+      title_(std::move(title)) {
+  root_ = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+  auto* label = gtk_label_new(
+      "EPUB support is unavailable in this build: install WebKitGTK "
+      "(webkitgtk-6.0) or use a full package.");
+  gtk_label_set_wrap(GTK_LABEL(label), TRUE);
+  gtk_widget_set_valign(label, GTK_ALIGN_CENTER);
+  gtk_widget_set_vexpand(label, TRUE);
+  gtk_box_append(GTK_BOX(root_), label);
+}
+
+EpubTab::~EpubTab() = default;
+
+void EpubTab::set_doc_data(DocData data) {
+  doc_data_ = std::move(data);
+  if (!loaded_) return;
+  auto const bytes = pdfgist::encode_doc_data(doc_data_);
+  std::string const json(bytes.begin(), bytes.end());
+  impl->evaluate("const d = JSON.parse(" + json_string_literal(json) +
+                 "); applyEpubAnnotations(d.annotations);");
+}
+
 
 std::string EpubTab::chapter_text(int) const { return {}; }
 
