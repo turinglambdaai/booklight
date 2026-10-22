@@ -509,7 +509,7 @@ void MainWindow::ToggleTheme() {
   SaveHostPrefs();
 }
 
-std::wstring MainWindow::ReadingSurface() const {
+std::wstring MainWindow::ReadingSurface() {
   using rivet_app::ReadingTheme;
   if (settings_.reading_theme == ReadingTheme::night) return L"dark";
   if (settings_.reading_theme == ReadingTheme::sepia) return L"sepia";
@@ -518,7 +518,7 @@ std::wstring MainWindow::ReadingSurface() const {
                                                          : L"light";
 }
 
-wu::Color MainWindow::SurfaceCanvasColor() const {
+wu::Color MainWindow::SurfaceCanvasColor() {
   auto const surface = ReadingSurface();
   if (surface == L"dark") return wu::Color{0xFF, 0x1A, 0x17, 0x14};
   if (surface == L"sepia") return wu::Color{0xFF, 0xEF, 0xE6, 0xD5};
