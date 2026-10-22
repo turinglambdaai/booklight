@@ -106,7 +106,6 @@ class EpubTab {
   Selection selection_;
   DocData doc_data_;
   std::size_t last_taken_index_{0};
-  bool alive_{true};
   std::map<int, std::string> text_cache_;
 };
 

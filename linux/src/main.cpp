@@ -661,6 +661,8 @@ std::string path_title(std::string const& path) {
 }
 
 void close_tab_index(gint index);
+void schedule_epub_annotation_save();
+void export_annotations_ui();
 
 void build_outline_for_active() {
   if (g_host.epub_active()) {
