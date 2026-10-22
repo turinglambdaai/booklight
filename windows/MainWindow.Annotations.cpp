@@ -914,8 +914,6 @@ void MainWindow::BuildNotesPane(
   }
 }
 
-}  // namespace winrt::RivetHost::implementation
-
 // ---- notes digest export ------------------------------------------------------------
 
 void MainWindow::ExportAnnotations() {
@@ -949,3 +947,5 @@ void MainWindow::ExportAnnotations() {
     });
   }).detach();
 }
+
+}  // namespace winrt::RivetHost::implementation
