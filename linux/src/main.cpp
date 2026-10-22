@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <ctime>
 #include <exception>
 #include <filesystem>
 #include <memory>
@@ -106,6 +107,12 @@ struct Host {
   guint undo_timeout_source{0};
   GtkWidget* notes_undo_bar{nullptr};
   GtkWidget* notes_undo_label{nullptr};
+  // EPUB twin (same banner; the annotation lives on the EpubTab).
+  StoredAnnotation epub_undo_annotation{};
+  bool epub_undo_valid{false};
+  std::size_t epub_undo_index{0};
+  EpubTab* epub_undo_tab{nullptr};
+  guint epub_undo_timeout_source{0};
   GtkRevealer* find_revealer{nullptr};
   GtkSearchEntry* find_entry{nullptr};
   GtkLabel* find_count{nullptr};
@@ -497,7 +504,8 @@ std::optional<TextSource> doc_text() {
 
 std::string selection_text() {
   if (g_host.epub_active()) {
-    return g_host.epub != nullptr ? g_host.epub->pending_selection() : "";
+    return g_host.epub != nullptr ? g_host.epub->pending_selection().text
+                                  : "";
   }
   PdfTab* tab = g_host.active_pdf();
   return tab != nullptr ? tab->selection_text() : "";
@@ -654,6 +662,8 @@ std::string path_title(std::string const& path) {
 }
 
 void close_tab_index(gint index);
+void schedule_epub_annotation_save();
+void export_annotations_ui();
 
 void build_outline_for_active() {
   if (g_host.epub_active()) {
@@ -884,6 +894,18 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
       std::make_unique<EpubTab>(&g_host.panel_ctx, path, path_title(path));
   EpubTab* raw = epub.release();
   g_host.epub = raw;
+  // Annotations share the PDF store (same JSON shape; page = chapter).
+  if (g_host.api != nullptr && g_host.ready) {
+    g_host.api->get_annotations_async(
+        path, g_host.settings.annotation_sidecar,
+        [raw](rivet_app::Result<rivet::Bytes> result) {
+          if (!result.succeeded()) return;
+          host::dispatch_ui([raw, bytes = result.get()]() mutable {
+            if (g_host.epub != raw) return;  // tab closed meanwhile
+            raw->set_doc_data(pdfgist::parse_doc_data(bytes));
+          });
+        });
+  }
   // Persisted typography rides in; EpubTab::load() re-applies it to the
   // page once the web view is up.
   g_host.epub_font_scale =
@@ -911,6 +933,15 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
             "outline") {
       g_host.outline_scroll_pending = true;
       build_epub_outline_for(g_host.epub);
+    }
+  };
+  raw->on_annotations_changed = [] {
+    schedule_epub_annotation_save();
+    if (g_host.left_stack != nullptr &&
+        gtk_stack_get_visible_child_name(g_host.left_stack) != nullptr &&
+        std::string(gtk_stack_get_visible_child_name(g_host.left_stack)) ==
+            "notes") {
+      populate_notes();
     }
   };
   raw->on_load_finished = [raw](std::string const&) {
@@ -1230,6 +1261,84 @@ void notes_undo_restore() {
   notes_undo_hide();
 }
 
+// ---- EPUB annotations (same store; page = chapter ordinal) ---------------
+
+void schedule_epub_annotation_save() {
+  if (g_host.api == nullptr || !g_host.ready) return;
+  if (g_host.epub == nullptr) return;
+  auto bytes = pdfgist::encode_doc_data(g_host.epub->doc_data());
+  (void)g_host.api->set_annotations_async(
+      g_host.epub->path(), g_host.settings.annotation_sidecar,
+      std::move(bytes), [](rivet_app::Result<void>&&) {});
+}
+
+void notes_undo_hide();
+void epub_notes_undo_restore() {
+  if (!g_host.epub_undo_valid) return;
+  auto* epub = g_host.epub;
+  if (epub == g_host.epub_undo_tab && epub != nullptr) {
+    epub->restore_annotation(g_host.epub_undo_annotation,
+                             g_host.epub_undo_index);
+  }
+  notes_undo_hide();
+}
+
+gboolean epub_notes_undo_timeout(gpointer) {
+  g_host.epub_undo_timeout_source = 0;
+  g_host.epub_undo_valid = false;
+  g_host.epub_undo_tab = nullptr;
+  if (g_host.notes_undo_bar != nullptr) {
+    gtk_widget_set_visible(g_host.notes_undo_bar, FALSE);
+  }
+  return G_SOURCE_REMOVE;
+}
+
+void epub_annotate_ui(char const* color, char const* kind) {
+  auto* epub = g_host.epub;
+  if (epub == nullptr) return;
+  auto const& selection = epub->pending_selection();
+  if (selection.text.size() < 2 || selection.chapter < 1) return;
+  auto id = "e-" + std::to_string(static_cast<long long>(std::time(nullptr))) +
+            "-" + std::to_string(std::rand() % 10000);
+  StoredAnnotation annotation;
+  annotation.id = id;
+  annotation.page = selection.chapter;
+  annotation.excerpt = selection.text.substr(0, 800);
+  annotation.color = color;
+  annotation.kind = kind;
+  annotation.created = static_cast<std::int64_t>(std::time(nullptr));
+  annotation.anchor = pdfgist::StoredAnchor{selection.chapter,
+                                            selection.start, selection.end};
+  epub->add_annotation(annotation);
+  epub->clear_pending_selection();
+  schedule_epub_annotation_save();
+  if (g_host.left_stack != nullptr &&
+      std::string(gtk_stack_get_visible_child_name(g_host.left_stack)) ==
+          "notes") {
+    populate_notes();
+  }
+}
+
+void epub_remove_annotation(std::string const& id) {
+  auto* epub = g_host.epub;
+  if (epub == nullptr) return;
+  auto taken = epub->take_annotation(id);
+  if (!taken.has_value()) return;
+  g_host.epub_undo_annotation = *taken;
+  g_host.epub_undo_index = epub->last_taken_index();
+  g_host.epub_undo_tab = epub;
+  g_host.epub_undo_valid = true;
+  if (g_host.epub_undo_timeout_source != 0) {
+    g_source_remove(g_host.epub_undo_timeout_source);
+  }
+  g_host.epub_undo_timeout_source =
+      g_timeout_add(5000, epub_notes_undo_timeout, nullptr);
+  if (g_host.notes_undo_bar != nullptr) {
+    gtk_widget_set_visible(g_host.notes_undo_bar, TRUE);
+  }
+  schedule_epub_annotation_save();
+}
+
 // One annotation card / bookmark row click target: stored id or page.
 void on_note_row_activated(GtkListBox*, GtkListBoxRow* row, gpointer) {
   auto* tab = g_host.active_pdf_only();
@@ -1248,14 +1357,154 @@ void populate_notes() {
     gtk_widget_set_sensitive(g_host.notes_export_button,
                              tab != nullptr);
   }
-  if (tab != g_host.undo_tab) notes_undo_hide();
+  bool const epub_now = g_host.epub_active() && g_host.epub != nullptr;
+  if (!epub_now && tab != g_host.undo_tab) notes_undo_hide();
+  if (epub_now && g_host.epub != g_host.epub_undo_tab) {
+    g_host.epub_undo_valid = false;
+    g_host.epub_undo_tab = nullptr;
+  }
   if (g_host.notes_undo_bar != nullptr) {
-    gtk_widget_set_visible(g_host.notes_undo_bar,
-                           tab != nullptr && g_host.undo_valid &&
-                               tab == g_host.undo_tab);
+    gtk_widget_set_visible(
+        g_host.notes_undo_bar,
+        (tab != nullptr && g_host.undo_valid && tab == g_host.undo_tab) ||
+            (epub_now && g_host.epub_undo_valid));
+  }
+  if (epub_now) {
+    // EPUB annotations: annotate-the-selection row + chapter-labeled cards.
+    auto* epub = g_host.epub;
+    auto const& selection = epub->pending_selection();
+    if (selection.text.size() > 1 && selection.chapter >= 1) {
+      auto* panel_row = gtk_list_box_row_new();
+      auto* panel = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+      gtk_widget_set_margin_start(panel, 8);
+      gtk_widget_set_margin_end(panel, 8);
+      gtk_widget_set_margin_top(panel, 8);
+      auto* heading = gtk_label_new(Tr("ui.notes.epub-annotate").c_str());
+      gtk_widget_set_halign(heading, GTK_ALIGN_START);
+      gtk_widget_add_css_class(heading, "caption");
+      gtk_widget_add_css_class(heading, "dim-label");
+      gtk_box_append(GTK_BOX(panel), heading);
+      auto* row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+      struct {
+        char const* label;
+        char const* color;
+        char const* kind;
+      } const actions[] = {
+          {Tr("ui.menu.highlight-yellow").c_str(), "yellow", "highlight"},
+          {Tr("ui.menu.highlight-green").c_str(), "green", "highlight"},
+          {Tr("ui.menu.highlight-blue").c_str(), "blue", "highlight"},
+          {Tr("ui.menu.underline").c_str(), "", "underline"},
+          {Tr("ui.menu.strike").c_str(), "", "strike"},
+      };
+      for (auto const& action : actions) {
+        auto* btn = gtk_button_new_with_label(action.label);
+        gtk_widget_add_css_class(btn, "flat");
+        gtk_widget_add_css_class(btn, "caption");
+        hook(btn, "clicked",
+             +[](GtkButton*, gpointer user_data) {
+               auto* pair = static_cast<std::pair<char const*, char const*>*>(
+                   user_data);
+               epub_annotate_ui(pair->first, pair->second);
+               delete pair;
+             },
+             new std::pair<char const*, char const*>(action.color, action.kind),
+             +[](gpointer user_data, GClosure*) {
+               delete static_cast<std::pair<char const*, char const*>*>(user_data);
+             },
+             static_cast<GConnectFlags>(0));
+        gtk_box_append(GTK_BOX(row_box), btn);
+      }
+      gtk_box_append(GTK_BOX(panel), row_box);
+      gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(panel_row), panel);
+      gtk_list_box_append(list, panel_row);
+    }
+    auto const& data = epub->doc_data();
+    if (data.annotations.empty()) {
+      auto* row = gtk_list_box_row_new();
+      auto* hint = gtk_label_new(Tr("ui.notes.empty").c_str());
+      gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
+      gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
+      gtk_widget_add_css_class(hint, "dim-label");
+      gtk_widget_add_css_class(hint, "caption");
+      gtk_widget_set_margin_top(hint, 10);
+      gtk_widget_set_margin_start(hint, 10);
+      gtk_widget_set_margin_end(hint, 10);
+      gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hint);
+      gtk_list_box_append(list, row);
+      gtk_widget_set_sensitive(GTK_WIDGET(row), FALSE);
+    }
+    std::vector<StoredAnnotation const*> sorted;
+    sorted.reserve(data.annotations.size());
+    for (auto const& annotation : data.annotations) {
+      sorted.push_back(&annotation);
+    }
+    std::sort(sorted.begin(), sorted.end(),
+              [](auto const* a, auto const* b) {
+                return a->page == b->page ? a->created < b->created
+                                          : a->page < b->page;
+              });
+    for (auto const* annotation : sorted) {
+      auto* card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+      gtk_widget_add_css_class(card, "card");
+      gtk_widget_set_margin_start(card, 8);
+      gtk_widget_set_margin_end(card, 8);
+      gtk_widget_set_margin_top(card, 4);
+      auto* head = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+      auto* chapter_label = gtk_label_new(
+          Trf("ui.epub.chapter-n", std::to_string(annotation->page)).c_str());
+      gtk_widget_set_halign(chapter_label, GTK_ALIGN_START);
+      gtk_widget_add_css_class(chapter_label, "caption");
+      gtk_widget_add_css_class(chapter_label, "dim-label");
+      gtk_box_append(GTK_BOX(head), chapter_label);
+      auto* del = gtk_button_new_with_label(Tr("ui.notes.delete-btn").c_str());
+      gtk_widget_add_css_class(del, "flat");
+      gtk_widget_add_css_class(del, "caption");
+      gtk_widget_set_halign(del, GTK_ALIGN_END);
+      auto* annotation_id = new std::string(annotation->id);
+      hook(del, "clicked",
+           +[](GtkButton*, gpointer user_data) {
+             std::unique_ptr<std::string> id(
+                 static_cast<std::string*>(user_data));
+             epub_remove_annotation(*id);
+           },
+           annotation_id,
+           +[](gpointer user_data, GClosure*) {
+             delete static_cast<std::string*>(user_data);
+           },
+           static_cast<GConnectFlags>(0));
+      gtk_box_append(GTK_BOX(head), del);
+      gtk_box_append(GTK_BOX(card), head);
+      auto* excerpt = gtk_label_new(annotation->excerpt.c_str());
+      gtk_label_set_wrap(GTK_LABEL(excerpt), TRUE);
+      gtk_label_set_xalign(GTK_LABEL(excerpt), 0.0f);
+      gtk_box_append(GTK_BOX(card), excerpt);
+      if (!annotation->note.empty()) {
+        auto* note = gtk_label_new(annotation->note.c_str());
+        gtk_label_set_wrap(GTK_LABEL(note), TRUE);
+        gtk_label_set_xalign(GTK_LABEL(note), 0.0f);
+        gtk_widget_add_css_class(note, "caption");
+        gtk_widget_add_css_class(note, "dim-label");
+        gtk_box_append(GTK_BOX(card), note);
+      }
+      auto* card_row = gtk_list_box_row_new();
+      gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(card_row), card);
+      gtk_list_box_append(list, card_row);
+    }
+    auto* export_row = gtk_list_box_row_new();
+    auto* export_btn =
+        gtk_button_new_with_label(Tr("ui.notes.export").c_str());
+    gtk_widget_set_halign(export_btn, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(export_btn, 8);
+    gtk_widget_set_margin_end(export_btn, 8);
+    gtk_widget_set_margin_bottom(export_btn, 8);
+    hook(export_btn, "clicked",
+         +[](GtkButton*, gpointer) { export_annotations_ui(); }, nullptr);
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(export_row), export_btn);
+    gtk_list_box_append(list, export_row);
+    return;
   }
   if (tab == nullptr) {
-    // EPUB or no document: the pane is PDF-only (mac sidebar semantics).
+    // No document: the pane shows the welcome hint.
     auto* row = gtk_list_box_row_new();
     auto* hint = gtk_label_new(
         g_host.epub_active() ? Tr("ui.need.document").c_str()
@@ -2299,6 +2548,25 @@ void tools_export_page_image() {
 // included — no flush race).
 void export_annotations_ui() {
   auto* tab = g_host.active_pdf_only();
+  auto* epub = g_host.epub_active() ? g_host.epub : nullptr;
+  if (epub != nullptr) {
+    if (g_host.api == nullptr || !g_host.ready) return;
+    auto bytes = encode_doc_data(epub->doc_data());
+    std::string const title = epub->title();
+    g_host.api->export_annotations_async(
+        std::move(bytes), title,
+        [title](rivet_app::Result<std::string> result) {
+          host::dispatch_ui([title, result]() mutable {
+            if (!result.succeeded()) return;
+            auto const markdown = result.get();
+            save_bytes_dialog(
+                Tr("ui.notes.export"),
+                title_stem(title) + Tr("ui.notes.export-suffix") + ".md",
+                rivet::Bytes(markdown.begin(), markdown.end()));
+          });
+        });
+    return;
+  }
   if (tab == nullptr || g_host.api == nullptr || !g_host.ready) return;
   auto bytes = encode_doc_data(tab->doc_data());
   std::string const title = tab->title();
@@ -3643,7 +3911,14 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_widget_add_css_class(undo_btn, "flat");
   gtk_widget_add_css_class(undo_btn, "caption");
   hook(undo_btn, "clicked",
-       +[](GtkButton*, gpointer) { notes_undo_restore(); }, nullptr);
+       +[](GtkButton*, gpointer) {
+         if (g_host.epub_undo_valid) {
+           epub_notes_undo_restore();
+         } else {
+           notes_undo_restore();
+         }
+       },
+       nullptr);
   gtk_box_append(GTK_BOX(notes_undo_bar), undo_btn);
   auto* notes_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   gtk_box_append(GTK_BOX(notes_box), notes_export);

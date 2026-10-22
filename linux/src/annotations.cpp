@@ -11,6 +11,13 @@
 namespace pdfgist {
 namespace {
 
+JsonObject* object_member(JsonObject* obj, char const* key) {
+  if (obj == nullptr || !json_object_has_member(obj, key)) return nullptr;
+  JsonNode* node = json_object_get_member(obj, key);
+  if (node == nullptr || !JSON_NODE_HOLDS_OBJECT(node)) return nullptr;
+  return json_node_get_object(node);
+}
+
 JsonArray* array_member(JsonObject* obj, char const* key) {
   if (obj == nullptr || !json_object_has_member(obj, key)) return nullptr;
   auto* node = json_object_get_member(obj, key);
@@ -133,6 +140,14 @@ DocData parse_doc_data(std::vector<std::uint8_t> const& bytes) {
       annotation.kind = string_member(entry, "kind");
       annotation.note = string_member(entry, "note");
       annotation.created = int_member(entry, "created");
+      if (JsonObject* anchor = object_member(entry, "anchor")) {
+        StoredAnchor parsed_anchor;
+        parsed_anchor.chapter =
+            std::max(1, static_cast<int>(int_member(anchor, "chapter")));
+        parsed_anchor.start = int_member(anchor, "start");
+        parsed_anchor.end = int_member(anchor, "end");
+        annotation.anchor = parsed_anchor;
+      }
       if (JsonArray* rects = array_member(entry, "rects")) {
         guint const rect_count = json_array_get_length(rects);
         for (guint k = 0; k < rect_count; ++k) {
@@ -203,6 +218,12 @@ std::vector<std::uint8_t> encode_doc_data(DocData const& data) {
     out += ",\"kind\":\"" + json_escape(annotation.kind) + "\"";
     out += ",\"note\":\"" + json_escape(annotation.note) + "\"";
     out += ",\"created\":" + std::to_string(annotation.created);
+    if (annotation.anchor) {
+      out += ",\"anchor\":{\"chapter\":" +
+             std::to_string(annotation.anchor->chapter);
+      out += ",\"start\":" + std::to_string(annotation.anchor->start);
+      out += ",\"end\":" + std::to_string(annotation.anchor->end) + "}";
+    }
     out += "}";
   }
   out += "],\"bookmarks\":[";

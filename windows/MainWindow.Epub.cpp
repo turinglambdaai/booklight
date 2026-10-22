@@ -117,6 +117,7 @@ void MainWindow::ActivateEpub() {
 void MainWindow::CloseEpub() {
   if (!epub_) return;
   auto const book = epub_;
+  SaveEpubDocDataNow();
   SaveRecentNow();
   auto const index = IndexOfTabItem(book->tab_item);
   if (index < DocTabs().TabItems().Size()) {
@@ -154,6 +155,13 @@ void MainWindow::LoadEpubBook(std::shared_ptr<EpubBook> book) {
           book->text_cache[i] = to_wide(api.epub_chapter_text(path_utf8, i).get());
         }
       }
+      // Annotations share the PDF store (same JSON shape; page = chapter).
+      try {
+        auto anno_bytes = api.get_annotations(path_utf8, false).get();
+        book->doc_data_bytes.assign(anno_bytes.begin(), anno_bytes.end());
+        book->annotations_pending = true;
+      } catch (...) {
+      }
     } catch (std::exception const& e) {
       failure = e.what();
     }
@@ -177,6 +185,13 @@ void MainWindow::LoadEpubBook(std::shared_ptr<EpubBook> book) {
       book->text_ready = true;
       window->NavigateToEpubController(book, sections);
       window->ApplyEpubTheme(*book);
+      if (book->annotations_pending) {
+        book->annotations_pending = false;
+        if (window->ParseDocData(book->doc_data_bytes, &book->doc_data)) {
+          book->doc_data_loaded = true;
+          window->ApplyEpubAnnotations(*book);
+        }
+      }
       window->RefreshLeftPanel();
       // Opening grows the shelf (mac importOpenedEpub parity).
       window->ImportBook(book->path);
@@ -273,6 +288,16 @@ void MainWindow::OnEpubWebMessage(
     auto const kind = find_string_field(L"kind");
     if (kind == L"selection") {
       book.selection_text = find_string_field(L"text");
+      auto const find_number_field = [&json](wchar_t const* key) -> int {
+        std::wstring const needle = std::wstring(L"\"") + key + L"\":";
+        std::size_t const at = json.find(needle);
+        if (at == std::wstring::npos) return 0;
+        return static_cast<int>(
+            std::wcstol(json.c_str() + at + needle.size(), nullptr, 10));
+      };
+      book.selection_chapter = find_number_field(L"chapter");
+      book.selection_start = find_number_field(L"start");
+      book.selection_end = find_number_field(L"end");
       return;
     }
     if (kind == L"chapter") {
@@ -537,8 +562,82 @@ window.addEventListener('mouseup', () => {
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
   const text = sel.toString().trim();
   if (text.length < 2) return;
-  post(JSON.stringify({ kind: 'selection', text: text.slice(0, 800) }));
+  const range = sel.getRangeAt(0);
+  const startNode = range.startContainer.nodeType === 1
+    ? range.startContainer : range.startContainer.parentNode;
+  const chapterEl = startNode && startNode.closest
+    ? startNode.closest('.epub-chapter') : null;
+  if (!chapterEl) return;
+  const sections = Array.from(document.querySelectorAll('.epub-chapter'));
+  const chapter = sections.indexOf(chapterEl) + 1;
+  if (chapter < 1) return;
+  const walker = document.createTreeWalker(chapterEl, NodeFilter.SHOW_TEXT);
+  let start = -1, end = -1, offset = 0, node;
+  while ((node = walker.nextNode())) {
+    const len = node.nodeValue.length;
+    if (start < 0 && node === range.startContainer) start = offset + range.startOffset;
+    if (node === range.endContainer) end = offset + range.endOffset;
+    offset += len;
+  }
+  if (start < 0 || end < 0 || end <= start) return;
+  post(JSON.stringify({ kind: 'selection', text: text.slice(0, 800),
+                        chapter: chapter, start: start, end: end }));
 });
+
+function epubTextNodeMap(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  let total = 0, node;
+  while ((node = walker.nextNode())) { nodes.push(node); total += node.nodeValue.length; }
+  return { nodes, total };
+}
+function epubMarkColor(color) {
+  return { yellow: '#FFD500', green: '#4CC383', blue: '#569CFF' }[color] || '#FFD500';
+}
+function epubStyleFor(kind, color) {
+  if (kind === 'underline') return 'text-decoration: underline; text-decoration-color:' + epubMarkColor(color) + ';';
+  if (kind === 'strike') return 'text-decoration: line-through; text-decoration-color:' + epubMarkColor(color) + ';';
+  const alpha = { yellow: '0.45', green: '0.35', blue: '0.28' }[color] || '0.4';
+  const v = parseInt(epubMarkColor(color).slice(1), 16);
+  return 'background: rgba(' + ((v >> 16) & 255) + ',' + ((v >> 8) & 255) + ',' + (v & 255) + ',' + alpha + ');';
+}
+// One annotation may wrap several text-node segments (same data-id — the
+// PDF multi-rect model).
+function applyEpubAnnotation(id, chapter, start, end, kind, color) {
+  const root = document.querySelectorAll('.epub-chapter')[chapter - 1];
+  if (!root) return;
+  removeEpubAnnotation(id);
+  const map = epubTextNodeMap(root);
+  if (start < 0 || end > map.total) return;
+  let offset = 0;
+  for (const node of map.nodes) {
+    const len = node.nodeValue.length;
+    const from = Math.max(0, start - offset);
+    const to = Math.min(len, end - offset);
+    if (to > from) {
+      const range = document.createRange();
+      range.setStart(node, from);
+      range.setEnd(node, to);
+      const mark = document.createElement('mark');
+      mark.className = 'epub-anno';
+      mark.dataset.id = id;
+      mark.setAttribute('style', epubStyleFor(kind, color));
+      try { range.surroundContents(mark); } catch (e) {}
+    }
+    offset += len;
+  }
+}
+function applyEpubAnnotations(list) {
+  (list || []).forEach(a => applyEpubAnnotation(a.id, a.anchor.chapter,
+    a.anchor.start, a.anchor.end, a.kind, a.color));
+}
+function removeEpubAnnotation(id) {
+  document.querySelectorAll('mark.epub-anno[data-id="' + id + '"]').forEach(m => {
+    const parent = m.parentNode;
+    parent.replaceChild(document.createTextNode(m.textContent), m);
+    parent.normalize();
+  });
+}
 window.addEventListener('scroll', () => {
   const sections = document.querySelectorAll('.epub-chapter');
   const line = window.scrollY + window.innerHeight * 0.35;
@@ -556,6 +655,130 @@ window.addEventListener('scroll', () => {
   }
   html += L"</body></html>";
   return html;
+}
+
+
+// ---- EPUB annotations (chapter+offset anchored; marks live in the page) ----
+
+void MainWindow::SaveEpubDocDataNow() {
+  auto book = epub_;
+  if (!book || !ready_ || !api_ || !backend_) return;
+  if (!book->anno_dirty && !book->doc_data_loaded) return;
+  book->anno_dirty = false;
+  std::string const json = SerializeDocData(book->doc_data);
+  auto const backend = backend_;
+  auto const path = to_utf8(book->path);
+  bool const sidecar = settings_.annotation_sidecar;
+  std::thread([backend, path, sidecar, json]() mutable {
+    try {
+      rivet_app::API api(*backend);
+      rivet::Bytes bytes(json.begin(), json.end());
+      (void)api.set_annotations(path, sidecar, bytes).get();
+    } catch (...) {
+    }
+  }).detach();
+}
+
+void MainWindow::ApplyEpubAnnotations(EpubBook& book) {
+  if (!book.web || !book.web.CoreWebView2()) return;
+  for (auto const& annotation : book.doc_data.annotations) {
+    if (!annotation.anchor) continue;
+    auto const js = L"applyEpubAnnotation(" + js_string(annotation.id) +
+                    L"," + std::to_wstring(annotation.anchor->chapter) +
+                    L"," + std::to_wstring(annotation.anchor->start) +
+                    L"," + std::to_wstring(annotation.anchor->end) +
+                    L"," + js_string(annotation.kind) +
+                    L"," + js_string(annotation.color) + L");";
+    try {
+      book.web.CoreWebView2().ExecuteScriptAsync(js);
+    } catch (...) {
+    }
+  }
+}
+
+void MainWindow::AddEpubAnnotation(std::wstring const& color,
+                                   std::wstring const& kind) {
+  auto book = epub_;
+  if (!book || book->selection_text.empty() || !book->selection_chapter) return;
+  auto id = L"e-" + std::to_wstring(static_cast<long long>(std::time(nullptr))) +
+            L"-" + std::to_wstring(std::rand() % 10000);
+  StoredAnnotation annotation;
+  annotation.id = id;
+  annotation.page = book->selection_chapter;
+  annotation.excerpt = book->selection_text.substr(0, 800);
+  annotation.color = color;
+  annotation.kind = kind;
+  annotation.created = static_cast<std::int64_t>(std::time(nullptr));
+  annotation.anchor = StoredAnchor{book->selection_chapter,
+                                   book->selection_start,
+                                   book->selection_end};
+  book->doc_data.annotations.push_back(annotation);
+  book->anno_dirty = true;
+  auto const js = L"applyEpubAnnotation(" + js_string(id) +
+                  L"," + std::to_wstring(book->selection_chapter) +
+                  L"," + std::to_wstring(book->selection_start) +
+                  L"," + std::to_wstring(book->selection_end) +
+                  L"," + js_string(kind) + L"," + js_string(color) + L");";
+  try {
+    book->web.CoreWebView2().ExecuteScriptAsync(js);
+  } catch (...) {
+  }
+  QueueAnnotationSave();
+}
+
+void MainWindow::RemoveEpubAnnotation(std::wstring const& id) {
+  auto book = epub_;
+  if (!book) return;
+  auto& annotations = book->doc_data.annotations;
+  auto const it = std::find_if(annotations.begin(), annotations.end(),
+                               [&id](StoredAnnotation const& a) {
+                                 return a.id == id;
+                               });
+  if (it == annotations.end()) return;
+  book->undo_index = static_cast<std::size_t>(it - annotations.begin());
+  book->undo_annotation = *it;
+  annotations.erase(it);
+  book->anno_dirty = true;
+  try {
+    book->web.CoreWebView2().ExecuteScriptAsync(
+        L"removeEpubAnnotation(" + js_string(id) + L");");
+  } catch (...) {
+  }
+  QueueAnnotationSave();
+  RefreshLeftPanel();
+  undo_timer_.Stop();
+  undo_timer_.Start();
+}
+
+void MainWindow::UndoDeleteEpubAnnotation() {
+  auto book = epub_;
+  undo_timer_.Stop();
+  if (!book || !book->undo_annotation) {
+    if (book) book->undo_annotation.reset();
+    return;
+  }
+  auto const index =
+      std::min(book->undo_index, book->doc_data.annotations.size());
+  auto annotation = *book->undo_annotation;
+  book->doc_data.annotations.insert(
+      book->doc_data.annotations.begin() + static_cast<std::ptrdiff_t>(index),
+      annotation);
+  book->undo_annotation.reset();
+  book->anno_dirty = true;
+  if (annotation.anchor) {
+    try {
+      book->web.CoreWebView2().ExecuteScriptAsync(
+          L"applyEpubAnnotation(" + js_string(annotation.id) +
+          L"," + std::to_wstring(annotation.anchor->chapter) +
+          L"," + std::to_wstring(annotation.anchor->start) +
+          L"," + std::to_wstring(annotation.anchor->end) +
+          L"," + js_string(annotation.kind) +
+          L"," + js_string(annotation.color) + L");");
+    } catch (...) {
+    }
+  }
+  QueueAnnotationSave();
+  RefreshLeftPanel();
 }
 
 }  // namespace winrt::RivetHost::implementation

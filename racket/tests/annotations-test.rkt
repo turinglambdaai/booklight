@@ -7,6 +7,7 @@
          rackunit
          racket/file
          racket/list
+         racket/port
          racket/string
          racket/path
          "../booklight/annotations.rkt"
@@ -153,6 +154,48 @@
      (define reread (load-document-bytes sidecar-pdf #t))
      (check-true (string-contains? (bytes->string/utf-8 reread) "\"page\": 3"))
      (check-false (string-contains? (bytes->string/utf-8 reread) "\"id\":\"x\"")))
+
+     ;; ---- EPUB anchor field ----
+     ;; anchored annotations round-trip the chapter+offsets anchor; PDF
+     ;; annotations (no anchor) serialize byte-identically to before.
+     (define anchored-doc
+       (normalize-document-value
+        (hasheq 'annotations
+                (list (hasheq 'id "a1" 'page 2 'rects '()
+                              'excerpt "选中的句子" 'color "green"
+                              'kind "highlight" 'note "" 'created 7
+                              'anchor (hasheq 'chapter 2 'start 120 'end 136)))
+                'bookmarks '())))
+     (define anchored-anno
+       (car (cdr (assoc "annotations" (jobj-fields anchored-doc)))))
+     (define anchor-value (cdr (assoc "anchor" (jobj-fields anchored-anno))))
+     (check-true (jobj? anchor-value))
+     (check-equal? (cdr (assoc "chapter" (jobj-fields anchor-value))) 2)
+     (check-equal? (cdr (assoc "start" (jobj-fields anchor-value))) 120)
+     (check-equal? (cdr (assoc "end" (jobj-fields anchor-value))) 136)
+     ;; re-saving keeps the anchor (normalize is idempotent over the doc)
+     (define re-anchored
+       (normalize-document-value
+        (with-input-from-string
+            (bytes->string/utf-8 (json-value->bytes anchored-doc))
+          read-json)))
+     (check-true
+      (jobj? (cdr (assoc "anchor"
+                         (jobj-fields
+                          (car (cdr (assoc "annotations"
+                                           (jobj-fields re-anchored)))))))))
+     ;; no anchor -> no key (PDF files keep their exact v1 shape)
+     (define plain-doc
+       (normalize-document-value
+        (hasheq 'annotations (list (hasheq 'id "p1" 'page 1 'rects '()
+                                           'excerpt "x" 'color "yellow"
+                                           'kind "highlight" 'note ""
+                                           'created 1))
+                'bookmarks '())))
+     (check-false
+      (assoc "anchor"
+             (jobj-fields (car (cdr (assoc "annotations"
+                                           (jobj-fields plain-doc)))))))
 
      ;; ---- markdown digest ----
      ;; Pages ascend, kinds localize (zh default), notes ride under their

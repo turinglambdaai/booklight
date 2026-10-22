@@ -39,6 +39,15 @@ struct AnnoRectD {
   double height = 0;
 };
 
+// EPUB annotations anchor to chapter + character offsets inside the
+// chapter's plain text; PDF annotations use page-space rects and carry
+// no anchor.
+struct StoredAnchor {
+  int chapter = 1;
+  std::int64_t start = 0;
+  std::int64_t end = 0;
+};
+
 struct StoredAnnotation {
   std::wstring id;
   int page = 1;
@@ -48,6 +57,7 @@ struct StoredAnnotation {
   std::wstring kind;   // highlight / underline / strike
   std::wstring note;
   std::int64_t created = 0;
+  std::optional<StoredAnchor> anchor;
 };
 
 struct StoredBookmark {
@@ -136,7 +146,19 @@ struct EpubBook {
 
   winrt::Microsoft::UI::Xaml::Controls::TabViewItem tab_item{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::WebView2 web{nullptr};
+  // Selection with its chapter+offset anchor (page script computes the
+  // offsets against the chapter's plain text).
   std::wstring selection_text;
+  int selection_chapter = 0;
+  std::int64_t selection_start = 0;
+  std::int64_t selection_end = 0;
+  DocData doc_data;
+  bool doc_data_loaded = false;
+  bool anno_dirty = false;
+  std::string doc_data_bytes;   // fetched on the worker thread, parsed on UI
+  bool annotations_pending = false;
+  std::optional<StoredAnnotation> undo_annotation;
+  std::size_t undo_index = 0;
   int highlight_page = -1;  // page carrying the active find highlight
 };
 
@@ -246,6 +268,13 @@ struct MainWindow : MainWindowT<MainWindow> {
   void DeleteCollection(std::wstring const& name);
   void ExportAnnotations();
   void UndoDeleteAnnotation();
+  void UndoDeleteEpubAnnotation();
+  void AddEpubAnnotation(std::wstring const& color, std::wstring const& kind);
+  void RemoveEpubAnnotation(std::wstring const& id);
+  void ApplyEpubAnnotations(EpubBook& book);
+  void SaveEpubDocDataNow();
+  void BuildEpubNotesPane(
+      winrt::Microsoft::UI::Xaml::Controls::StackPanel const& content);
   void ShelfNav_ItemInvoked(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Microsoft::UI::Xaml::Controls::NavigationViewItemInvokedEventArgs const&);

@@ -25,6 +25,15 @@ struct AnnoRect: Codable, Equatable {
     }
 }
 
+/// EPUB annotations anchor to chapter + character offsets inside the
+/// chapter's plain text (the same text the search uses); PDF annotations
+/// keep page-space rects and have no anchor.
+struct StoredAnchor: Codable, Equatable {
+    var chapter: Int
+    var start: Int
+    var end: Int
+}
+
 struct StoredAnnotation: Codable, Identifiable, Equatable {
     var id: String
     var page: Int
@@ -34,6 +43,7 @@ struct StoredAnnotation: Codable, Identifiable, Equatable {
     var kind: String
     var note: String
     var created: Int
+    var anchor: StoredAnchor?
 }
 
 struct StoredBookmark: Codable, Identifiable, Equatable {

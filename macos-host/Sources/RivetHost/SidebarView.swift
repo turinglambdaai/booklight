@@ -14,7 +14,13 @@ struct ReaderSidebar: View {
     var body: some View {
         Group {
             if reader.epubActive, let epub = reader.epub {
-                EpubTocList(tab: epub)
+                if reader.sidebarMode == 2 {
+                    EpubNotesPane(epub: epub, reader: reader, onExport: {
+                        reader.exportEpubAnnotations()
+                    })
+                } else {
+                    EpubTocList(tab: epub)
+                }
             } else if let tab = reader.pdf {
                 pdfSidebar(tab)
             } else {
@@ -229,6 +235,148 @@ struct EpubTocList: View {
             .padding(.horizontal, 6)
             .padding(.top, 4)
         }
+    }
+}
+
+// MARK: - EPUB annotations (chapter+offset anchored; marks live in the page)
+
+struct EpubNotesPane: View {
+    @EnvironmentObject private var app: AppModel
+    @ObservedObject var epub: EpubTab
+    @ObservedObject var reader: ReaderModel
+    let onExport: () -> Void
+
+    private var sorted: [StoredAnnotation] {
+        epub.docData.annotations.sorted {
+            $0.page == $1.page ? $0.created < $1.created : $0.page < $1.page
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 8) {
+                if let selection = epub.pendingSelection,
+                   selection.text.count > 1 {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.t("ui.notes.epub-annotate"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.textDim)
+                        HStack(spacing: 6) {
+                            annotatePill(L10n.t("ui.menu.highlight-yellow"), "yellow", "highlight")
+                            annotatePill(L10n.t("ui.menu.highlight-green"), "green", "highlight")
+                            annotatePill(L10n.t("ui.menu.highlight-blue"), "blue", "highlight")
+                            annotatePill(L10n.t("ui.menu.underline"), "", "underline")
+                            annotatePill(L10n.t("ui.menu.strike"), "", "strike")
+                        }
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                }
+                if reader.epubUndo != nil {
+                    HStack(spacing: 8) {
+                        Text(L10n.t("ui.notes.deleted"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textDim)
+                        Spacer()
+                        Button(L10n.t("ui.undo")) {
+                            reader.undoDeleteEpubAnnotation()
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.accent)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                }
+                if epub.docData.annotations.isEmpty {
+                    Text(L10n.t("ui.notes.empty"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textFaint)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                }
+                ForEach(sorted) { annotation in
+                    EpubNoteCard(annotation: annotation, reader: reader)
+                }
+                if !sorted.isEmpty {
+                    Button(action: onExport) {
+                        Label(L10n.t("ui.notes.export"), systemImage: "square.and.arrow.up")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.accent)
+                    .padding(.bottom, 2)
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    private func annotatePill(_ title: String, _ color: String, _ kind: String)
+        -> some View {
+        Button {
+            reader.addEpubAnnotation(color: color, kind: kind)
+            epub.pendingSelection = nil
+        } label: {
+            Text(title)
+                .font(.system(size: 11))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Theme.panel))
+                .overlay(Capsule().stroke(Theme.border))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Theme.text)
+    }
+}
+
+struct EpubNoteCard: View {
+    @EnvironmentObject private var app: AppModel
+    let annotation: StoredAnnotation
+    @ObservedObject var reader: ReaderModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(L10n.t("ui.epub.chapter-n", "\(annotation.page)"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textDim)
+                Spacer()
+                Button {
+                    app.activeReader?.translateSelectionText(annotation.excerpt)
+                } label: {
+                    Text(L10n.t("ui.notes.translate-btn"))
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.accent)
+                .help(L10n.t("ui.menu.translate"))
+                Button {
+                    reader.removeEpubAnnotation(annotation.id)
+                } label: {
+                    Text(L10n.t("ui.notes.delete-btn"))
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.textFaint)
+                .help(L10n.t("ui.notes.delete-btn"))
+            }
+            Text(annotation.excerpt)
+                .font(.system(size: 12))
+                .lineLimit(4)
+            if !annotation.note.isEmpty {
+                Text(annotation.note)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textDim)
+            }
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
     }
 }
 

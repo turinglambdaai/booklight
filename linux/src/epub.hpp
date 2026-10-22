@@ -9,8 +9,11 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include "annotations.hpp"
 
 #include "GeneratedBackend.hpp"
 #include "panels.hpp"
@@ -38,8 +41,31 @@ class EpubTab {
   bool loaded() const { return loaded_; }
   std::vector<rivet_app::EpubTocItem> const& toc() const { return toc_; }
 
+  // A text selection with its anchor: character offsets inside the
+  // chapter's plain text, computed by the page script on mouseup.
+  struct Selection {
+    std::string text;
+    int chapter = 0;
+    std::int64_t start = 0;
+    std::int64_t end = 0;
+  };
+
   // Last selection relayed from the web view (mouseup bridge).
-  std::string const& pending_selection() const { return selection_; }
+  Selection const& pending_selection() const { return selection_; }
+  void clear_pending_selection() { selection_ = Selection{}; }
+
+  // Annotations share the PDF store (same JSON shape; page = chapter).
+  DocData const& doc_data() const { return doc_data_; }
+  void set_doc_data(DocData data);
+  // Marks live in the page; these drive them and persist (host saves via
+  // the same on_annotations_changed-style hook).
+  void add_annotation(StoredAnnotation const& annotation);
+  void remove_annotation(std::string const& id);
+  std::optional<StoredAnnotation> take_annotation(std::string const& id);
+  void restore_annotation(StoredAnnotation const& annotation,
+                          std::size_t index);
+  std::size_t last_taken_index() const { return last_taken_index_; }
+  std::function<void()> on_annotations_changed;
 
   // Chapter text from the prefetch cache ("" until loaded).
   std::string chapter_text(int chapter) const;
@@ -77,7 +103,9 @@ class EpubTab {
   double font_scale_{1.0};
   bool loaded_{false};
   std::vector<rivet_app::EpubTocItem> toc_;
-  std::string selection_;
+  Selection selection_;
+  DocData doc_data_;
+  std::size_t last_taken_index_{0};
   std::map<int, std::string> text_cache_;
 };
 

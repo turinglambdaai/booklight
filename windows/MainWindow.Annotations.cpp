@@ -314,6 +314,12 @@ std::string MainWindow::SerializeDocData(DocData const& data) {
     out += ",\"note\":";
     json_append_string(&out, annotation.note);
     out += ",\"created\":" + std::to_string(annotation.created);
+    if (annotation.anchor) {
+      out += ",\"anchor\":{\"chapter\":" + std::to_string(annotation.anchor->chapter);
+      out += ",\"start\":" + std::to_string(annotation.anchor->start);
+      out += ",\"end\":" + std::to_string(annotation.anchor->end);
+      out += '}';
+    }
     out += '}';
   }
   out += "],\"bookmarks\":[";
@@ -371,6 +377,24 @@ bool MainWindow::ParseDocData(std::string const& json, DocData* out) {
             double number = 0;
             cursor.parse_number(&number);
             annotation.created = static_cast<std::int64_t>(number);
+          } else if (field_name == L"anchor" && cursor.peek() == '{') {
+            cursor.eat('{');
+            StoredAnchor anchor;
+            char anchor_field = cursor.peek();
+            while (anchor_field != '\0' && anchor_field != '}') {
+              std::wstring name;
+              if (!cursor.parse_string(&name)) return false;
+              if (!cursor.eat(':')) return false;
+              double number = 0;
+              cursor.parse_number(&number);
+              if (name == L"chapter") anchor.chapter = std::max(1, static_cast<int>(number));
+              if (name == L"start") anchor.start = static_cast<std::int64_t>(number);
+              if (name == L"end") anchor.end = static_cast<std::int64_t>(number);
+              cursor.eat(',');
+              anchor_field = cursor.peek();
+            }
+            cursor.eat('}');
+            annotation.anchor = anchor;
           } else if (field_name == L"rects" && cursor.peek() == '[') {
             cursor.eat('[');
             while (cursor.peek() == '{') {
@@ -976,9 +1000,13 @@ void MainWindow::BuildNotesPane(
 
 void MainWindow::ExportAnnotations() {
   auto tab = active_pdf_.get();
-  if (!tab || !ready_ || !backend_) return;
-  std::string const json = SerializeDocData(tab->doc_data);
-  std::wstring const title = tab->title;
+  auto book = epub_;
+  bool const for_epub = epub_active_ && book != nullptr;
+  if (!for_epub && (!tab || !ready_ || !backend_)) return;
+  std::string const json =
+      for_epub ? SerializeDocData(book->doc_data)
+               : SerializeDocData(tab->doc_data);
+  std::wstring const title = for_epub ? book->title : tab->title;
   auto const backend = backend_;
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
@@ -1004,6 +1032,171 @@ void MainWindow::ExportAnnotations() {
                        L"Markdown", L".md");
     });
   }).detach();
+}
+
+
+// ---- EPUB notes pane (annotate buttons + list + undo + export) ----------
+
+void MainWindow::BuildEpubNotesPane(
+    muxc::StackPanel const& content) {
+  auto book = epub_;
+  if (!book) return;
+
+  if (book->undo_annotation) {
+    auto banner = muxc::Border();
+    banner.Padding({8, 8, 8, 8});
+    banner.CornerRadius({8, 8, 8, 8});
+    banner.BorderThickness({1, 1, 1, 1});
+    banner.BorderBrush(ThemeBorderBrush());
+    banner.Background(ThemePanelBrush());
+    auto stack = muxc::StackPanel();
+    stack.Orientation(muxc::Orientation::Horizontal);
+    stack.Spacing(8);
+    auto label = muxc::TextBlock();
+    label.Text(pdfgist::Tr("ui.notes.deleted"));
+    label.FontSize(11);
+    label.VerticalAlignment(mux::VerticalAlignment::Center);
+    stack.Children().Append(label);
+    auto undo_btn = muxc::Button();
+    auto undo_label = muxc::TextBlock();
+    undo_label.Text(pdfgist::Tr("ui.undo"));
+    undo_label.FontSize(11);
+    undo_btn.Content(undo_label);
+    auto const undo_weak = get_weak();
+    undo_btn.Click([undo_weak](winrt::Windows::Foundation::IInspectable const&,
+                               mux::RoutedEventArgs const&) {
+      if (auto window = undo_weak.get()) window->UndoDeleteEpubAnnotation();
+    });
+    stack.Children().Append(undo_btn);
+    banner.Child(stack);
+    content.Children().Append(banner);
+  }
+
+  // Annotate the pending selection (mac EpubNotesPane annotate row parity).
+  if (!book->selection_text.empty() && book->selection_chapter >= 1) {
+    auto panel = muxc::Border();
+    panel.Padding({8, 8, 8, 8});
+    panel.CornerRadius({8, 8, 8, 8});
+    panel.BorderThickness({1, 1, 1, 1});
+    panel.BorderBrush(ThemeBorderBrush());
+    panel.Background(ThemePanelBrush());
+    auto stack = muxc::StackPanel();
+    auto heading = muxc::TextBlock();
+    heading.Text(pdfgist::Tr("ui.notes.epub-annotate"));
+    heading.FontSize(11);
+    stack.Children().Append(heading);
+    auto row = muxc::StackPanel();
+    row.Orientation(muxc::Orientation::Horizontal);
+    row.Spacing(6);
+    row.Margin({0, 6, 0, 0});
+    auto const weak = get_weak();
+    auto add_button = [&](std::wstring const& title, std::wstring const& color,
+                          std::wstring const& kind) {
+      auto btn = muxc::Button();
+      btn.Padding({8, 2, 8, 2});
+      auto text = muxc::TextBlock();
+      text.Text(title);
+      text.FontSize(11);
+      btn.Content(text);
+      btn.Click([weak, color, kind](
+                    winrt::Windows::Foundation::IInspectable const&,
+                    mux::RoutedEventArgs const&) {
+        if (auto window = weak.get()) {
+          window->AddEpubAnnotation(color, kind);
+        }
+      });
+      row.Children().Append(btn);
+    };
+    add_button(pdfgist::Tr("ui.menu.highlight-yellow"), L"yellow", L"highlight");
+    add_button(pdfgist::Tr("ui.menu.highlight-green"), L"green", L"highlight");
+    add_button(pdfgist::Tr("ui.menu.highlight-blue"), L"blue", L"highlight");
+    add_button(pdfgist::Tr("ui.menu.underline"), L"", L"underline");
+    add_button(pdfgist::Tr("ui.menu.strike"), L"", L"strike");
+    stack.Children().Append(row);
+    panel.Child(stack);
+    content.Children().Append(panel);
+  }
+
+  if (book->doc_data.annotations.empty()) {
+    auto empty = muxc::TextBlock();
+    empty.Text(pdfgist::Tr("ui.notes.empty"));
+    empty.FontSize(11);
+    empty.Opacity(0.6);
+    empty.TextWrapping(mux::TextWrapping::Wrap);
+    empty.Padding({6, 6, 6, 6});
+    content.Children().Append(empty);
+    return;
+  }
+
+  auto sorted = book->doc_data.annotations;
+  std::sort(sorted.begin(), sorted.end(),
+            [](StoredAnnotation const& a, StoredAnnotation const& b) {
+              return a.page == b.page ? a.created < b.created
+                                      : a.page < b.page;
+            });
+  for (auto const& annotation : sorted) {
+    auto card = muxc::Border();
+    card.Padding({8, 8, 8, 8});
+    card.CornerRadius({8, 8, 8, 8});
+    card.BorderThickness({1, 1, 1, 1});
+    card.BorderBrush(ThemeBorderBrush());
+    card.Background(ThemePanelBrush());
+    auto stack = muxc::StackPanel();
+    stack.Spacing(4);
+    auto head = muxc::StackPanel();
+    head.Orientation(muxc::Orientation::Horizontal);
+    head.Spacing(6);
+    auto page_label = muxc::TextBlock();
+    page_label.Text(pdfgist::Trf("ui.epub.chapter-n",
+                                 std::to_wstring(annotation.page)));
+    page_label.FontSize(10);
+    page_label.Opacity(0.6);
+    head.Children().Append(page_label);
+    auto spacer = muxc::Border();
+    spacer.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
+    head.Children().Append(spacer);
+    auto del = muxc::Button();
+    del.Padding({6, 0, 6, 0});
+    auto del_label = muxc::TextBlock();
+    del_label.Text(pdfgist::Tr("ui.notes.delete-btn"));
+    del_label.FontSize(10);
+    del.Content(del_label);
+    auto const weak = get_weak();
+    auto const id = annotation.id;
+    del.Click([weak, id](winrt::Windows::Foundation::IInspectable const&,
+                         mux::RoutedEventArgs const&) {
+      if (auto window = weak.get()) window->RemoveEpubAnnotation(id);
+    });
+    head.Children().Append(del);
+    stack.Children().Append(head);
+    auto excerpt = muxc::TextBlock();
+    excerpt.Text(annotation.excerpt);
+    excerpt.FontSize(12);
+    excerpt.TextWrapping(mux::TextWrapping::Wrap);
+    stack.Children().Append(excerpt);
+    if (!annotation.note.empty()) {
+      auto note = muxc::TextBlock();
+      note.Text(annotation.note);
+      note.FontSize(11);
+      note.Opacity(0.7);
+      note.TextWrapping(mux::TextWrapping::Wrap);
+      stack.Children().Append(note);
+    }
+    card.Child(stack);
+    content.Children().Append(card);
+  }
+
+  auto export_btn = muxc::Button();
+  auto export_label = muxc::TextBlock();
+  export_label.Text(pdfgist::Tr("ui.notes.export"));
+  export_label.FontSize(12);
+  export_btn.Content(export_label);
+  auto const export_weak = get_weak();
+  export_btn.Click([export_weak](winrt::Windows::Foundation::IInspectable const&,
+                                 mux::RoutedEventArgs const&) {
+    if (auto window = export_weak.get()) window->ExportAnnotations();
+  });
+  content.Children().Append(export_btn);
 }
 
 }  // namespace winrt::RivetHost::implementation
