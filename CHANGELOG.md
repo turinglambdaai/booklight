@@ -3,6 +3,33 @@
 All notable changes to Booklight are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semver.
 
+## [0.8.0] - 2026-10-22
+
+### Added
+
+- **The outline follows you.** The outline's active entry — the deepest
+  item at or before the current page, or the current chapter for EPUB —
+  is highlighted and gently scrolled into view as the reading position
+  changes, on all three platforms.
+- **Sepia.** A third page surface (deep cream parchment) between paper
+  and night; existing palettes untouched.
+- **Night inverts PDF page content on macOS.** Windows and Linux already
+  ran a PDF.js-style negative filter inside their PDFium pipelines; the
+  macOS leg uses a custom PDFPage drawing a difference-blend pass, with
+  the document re-opened in place (position, zoom, annotations kept).
+- **EPUB annotations.** Selections anchor by chapter + character offsets
+  (backward-compatible optional `anchor` in the annotations format —
+  PDF files stay byte-identical), render as multi-segment marks in the
+  page, and surface in the notes sidebar with the annotate-selection
+  row (three highlight colors, underline, strike), one-step undo and
+  the Markdown digest export.
+
+### Documented boundaries
+
+- The UI language switch keeps its relaunch-to-apply contract: a live
+  switch would mean rebuilding both the WinUI and GTK window trees;
+  the reasoning is recorded in docs/UX-BENCHMARKS.md.
+
 ## [0.7.0] - 2026-10-22
 
 ### Added
