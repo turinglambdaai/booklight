@@ -1034,7 +1034,6 @@ void MainWindow::ExportAnnotations() {
   }).detach();
 }
 
-}  // namespace winrt::RivetHost::implementation
 
 // ---- EPUB notes pane (annotate buttons + list + undo + export) ----------
 
@@ -1200,3 +1199,5 @@ void MainWindow::BuildEpubNotesPane(
   });
   content.Children().Append(export_btn);
 }
+
+}  // namespace winrt::RivetHost::implementation
