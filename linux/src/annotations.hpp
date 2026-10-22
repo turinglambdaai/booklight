@@ -8,6 +8,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,15 @@ struct AnnoRect {
   double height = 0;
 };
 
+// EPUB annotations anchor to chapter + character offsets inside the
+// chapter's plain text; PDF annotations use page-space rects and carry
+// no anchor.
+struct StoredAnchor {
+  int chapter = 1;
+  std::int64_t start = 0;
+  std::int64_t end = 0;
+};
+
 struct StoredAnnotation {
   std::string id;
   int page = 0;  // 1-based (schema keeps mac/v1 semantics)
@@ -29,6 +39,7 @@ struct StoredAnnotation {
   std::string kind;   // "highlight" | "underline" | "strike"
   std::string note;
   std::int64_t created = 0;  // unix seconds
+  std::optional<StoredAnchor> anchor;
 };
 
 struct StoredBookmark {
