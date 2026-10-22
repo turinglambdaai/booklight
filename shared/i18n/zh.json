@@ -152,6 +152,7 @@
   "ui.reading.theme.system": "跟随应用",
   "ui.reading.theme.paper": "纸张",
   "ui.reading.theme.night": "夜间",
+  "ui.reading.theme.sepia": "深纸",
   "ui.settings.api-key": "API Key",
   "ui.settings.api-key-saved": "已保存（输入新 Key 覆盖）",
   "ui.settings.appearance": "外观",

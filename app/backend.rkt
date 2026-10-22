@@ -62,7 +62,7 @@
 ;; Reading-theme values mirror the settings store: system follows the
 ;; effective app appearance, paper/night force the light/dark reader page
 ;; surface. Font scale crosses as permille because RVT1 has no floats.
-(define-enum ReadingTheme (system paper night))
+(define-enum ReadingTheme (system paper night sepia))
 
 (define-record SettingsView
   ([provider : String]

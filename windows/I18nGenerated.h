@@ -164,6 +164,7 @@ inline constexpr struct WinStringEntry {
     {"ui.reading.theme.system", L"跟随应用", L"Match App"},
     {"ui.reading.theme.paper", L"纸张", L"Paper"},
     {"ui.reading.theme.night", L"夜间", L"Night"},
+    {"ui.reading.theme.sepia", L"深纸", L"Sepia"},
     {"ui.settings.api-key", L"API Key", L"API Key"},
     {"ui.settings.api-key-saved", L"已保存（输入新 Key 覆盖）", L"Saved (enter a new key to replace)"},
     {"ui.settings.appearance", L"外观", L"Appearance"},

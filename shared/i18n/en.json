@@ -152,6 +152,7 @@
   "ui.reading.theme.system": "Match App",
   "ui.reading.theme.paper": "Paper",
   "ui.reading.theme.night": "Night",
+  "ui.reading.theme.sepia": "Sepia",
   "ui.settings.api-key": "API Key",
   "ui.settings.api-key-saved": "Saved (enter a new key to replace)",
   "ui.settings.appearance": "Appearance",

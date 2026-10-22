@@ -111,8 +111,9 @@
 
 ;; Reading-theme values (the reader page surface, independent of the app
 ;; chrome): "system" follows the effective app appearance, "paper" forces the
-;; warm light surface, "night" forces the dark surface.
-(define valid-reading-themes '("system" "paper" "night"))
+;; warm light surface, "night" forces the dark surface, "sepia" the deep
+;; cream parchment.
+(define valid-reading-themes '("system" "paper" "night" "sepia"))
 
 (define default-reading-theme "system")
 (define default-reading-font-scale 1.0)

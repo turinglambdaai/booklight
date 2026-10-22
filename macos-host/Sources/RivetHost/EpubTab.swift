@@ -173,6 +173,7 @@ final class EpubTab: ObservableObject, Identifiable {
         let css = """
         :root { --fs: 1; }
         :root[data-theme="light"] { --fg: #292524; --bg: #F5F2ED; }
+        :root[data-theme="sepia"] { --fg: #57534E; --bg: #EFE6D5; }
         :root[data-theme="dark"] { --fg: #D6D3D1; --bg: #171412; }
         html { background: var(--bg); }
         body { margin: 0; padding: 0 0 40vh; color: var(--fg);

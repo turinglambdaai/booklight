@@ -297,7 +297,7 @@ void MainWindow::OnEpubWebMessage(
 
 void MainWindow::ApplyEpubTheme(EpubBook& book) {
   if (!book.web || !book.web.CoreWebView2()) return;
-  std::wstring const theme = ReadingDark() ? L"dark" : L"light";
+  std::wstring const theme = ReadingSurface();
   auto const script = L"document.documentElement.setAttribute('data-theme', " +
                       js_string(theme) + L");";
   try {

@@ -509,10 +509,20 @@ void MainWindow::ToggleTheme() {
   SaveHostPrefs();
 }
 
-bool MainWindow::ReadingDark() {
-  if (settings_.reading_theme == rivet_app::ReadingTheme::night) return true;
-  if (settings_.reading_theme == rivet_app::ReadingTheme::paper) return false;
-  return Root().ActualTheme() == mux::ElementTheme::Dark;
+std::wstring MainWindow::ReadingSurface() {
+  using rivet_app::ReadingTheme;
+  if (settings_.reading_theme == ReadingTheme::night) return L"dark";
+  if (settings_.reading_theme == ReadingTheme::sepia) return L"sepia";
+  if (settings_.reading_theme == ReadingTheme::paper) return L"light";
+  return Root().ActualTheme() == mux::ElementTheme::Dark ? L"dark"
+                                                         : L"light";
+}
+
+wu::Color MainWindow::SurfaceCanvasColor() {
+  auto const surface = ReadingSurface();
+  if (surface == L"dark") return wu::Color{0xFF, 0x1A, 0x17, 0x14};
+  if (surface == L"sepia") return wu::Color{0xFF, 0xEF, 0xE6, 0xD5};
+  return wu::Color{0xFF, 0xFF, 0xFF, 0xFF};
 }
 
 void MainWindow::ApplyReadingTheme() {
@@ -1196,7 +1206,6 @@ void MainWindow::RelayoutActive() {
 void MainWindow::LayoutTab(PdfTab& tab) {
   if (!tab.doc || !tab.rows) return;
   double const scale = EffectiveScale(tab);
-  bool const dark = ReadingDark();
   double const viewport = tab.scroll ? tab.scroll.ViewportWidth() : 0;
   bool const relayout = tab.cells.empty() ||
                         tab.cells_scale_ != scale ||
@@ -1235,8 +1244,7 @@ void MainWindow::LayoutTab(PdfTab& tab) {
       auto grid = muxc::Grid();
       grid.Width(cell->width);
       grid.Height(cell->height);
-      grid.Background(Brush(dark ? wu::Color{0xFF, 0x1A, 0x17, 0x14}
-                                 : wu::Color{0xFF, 0xFF, 0xFF, 0xFF}));
+      grid.Background(Brush(SurfaceCanvasColor()));
 
       auto image = muxc::Image();
       image.Stretch(media::Stretch::Fill);
@@ -1260,8 +1268,7 @@ void MainWindow::LayoutTab(PdfTab& tab) {
         auto split_grid = muxc::Grid();
         split_grid.Width(cell->width);
         split_grid.Height(cell->height);
-        split_grid.Background(Brush(dark ? wu::Color{0xFF, 0x1A, 0x17, 0x14}
-                                         : wu::Color{0xFF, 0xFF, 0xFF, 0xFF}));
+        split_grid.Background(Brush(SurfaceCanvasColor()));
         auto split_image = muxc::Image();
         split_image.Stretch(media::Stretch::Fill);
         split_image.Width(cell->width);

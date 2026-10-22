@@ -284,9 +284,15 @@ struct PdfTab::Impl {
     if (!layout_valid) rebuild_layout();
     // page paper on a neutral tray; PDFs fill their own background. The dark
     // tray matches the dark page background (0x1A, 0x17, 0x14) so pages sit
-    // flush (same palette as windows/PdfDocument.cpp).
-    cairo_set_source_rgb(cr, dark_ ? 0.102 : 0.88, dark_ ? 0.090 : 0.88,
-                         dark_ ? 0.078 : 0.88);
+    // flush (same palette as windows/PdfDocument.cpp); sepia matches its
+    // cream canvas (0xEF, 0xE6, 0xD5).
+    if (dark_) {
+      cairo_set_source_rgb(cr, 0.102, 0.090, 0.078);
+    } else if (sepia_) {
+      cairo_set_source_rgb(cr, 0.937, 0.902, 0.835);
+    } else {
+      cairo_set_source_rgb(cr, 0.88, 0.88, 0.88);
+    }
     cairo_paint(cr);
 
     double const view_y = gtk_adjustment_get_value(vadj);
@@ -393,6 +399,7 @@ struct PdfTab::Impl {
   std::vector<FindHit> find_hits;
   int find_index_{-1};
   bool dark_{false};
+  bool sepia_{false};
 
   std::vector<pdfium::TextRect> selection_rects_for(int page) {
     if (sel.empty()) return {};
@@ -646,6 +653,29 @@ void PdfTab::set_double_mode(bool on) {
   impl->update_size_request();
   go_to_page(current_page_);
   if (split_tab_ != nullptr) split_tab_->set_double_mode(on);
+}
+
+void PdfTab::set_surface(std::string const& surface) {
+  bool const dark = surface == "dark";
+  bool const sepia = surface == "sepia";
+  if (impl->dark_ == dark && impl->sepia_ == sepia) return;
+  bool const dark_changed = impl->dark_ != dark;
+  impl->dark_ = dark;
+  impl->sepia_ = sepia;
+  // Only a dark flip changes page rendering; sepia just re-tints the tray.
+  if (dark_changed) {
+    // Cached page surfaces are keyed with dark, but stale entries would
+    // still hold memory and the thumbnail cache is keyed by page only —
+    // drop both.
+    impl->clear_cache();
+    for (auto& [page, texture] : impl->thumbs) {
+      (void)page;
+      g_object_unref(texture);
+    }
+    impl->thumbs.clear();
+  }
+  if (impl->draw != nullptr) gtk_widget_queue_draw(impl->draw);
+  if (split_tab_ != nullptr) split_tab_->set_surface(surface);
 }
 
 void PdfTab::set_dark(bool on) {

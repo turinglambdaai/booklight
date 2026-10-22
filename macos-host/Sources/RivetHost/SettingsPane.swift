@@ -154,6 +154,7 @@ struct SettingsPane: View {
                 })) {
                 Text(L10n.t("ui.reading.theme.system")).tag(RivetTypes.ReadingTheme.system)
                 Text(L10n.t("ui.reading.theme.paper")).tag(RivetTypes.ReadingTheme.paper)
+                Text(L10n.t("ui.reading.theme.sepia")).tag(RivetTypes.ReadingTheme.sepia)
                 Text(L10n.t("ui.reading.theme.night")).tag(RivetTypes.ReadingTheme.night)
             }
             .pickerStyle(.segmented)
