@@ -1423,6 +1423,12 @@ void MainWindow::TrackCurrentPage(PdfTab& tab) {
     UpdatePageBar();
     UpdateBookmarkToggle();
     NoteActivity();
+    // Outline follows the reading position (mac OutlineList parity):
+    // rebuild only when the outline pane is the visible left mode.
+    if (!epub_active_ && left_mode_ == 1) {
+      outline_scroll_pending_ = true;
+      RefreshLeftPanel();
+    }
   }
 }
 
@@ -2188,6 +2194,17 @@ void MainWindow::RefreshLeftPanel() {
       }
       auto const weak_window = get_weak();
       auto const weak_tab = std::weak_ptr<PdfTab>(active_pdf_);
+      // Active entry: the deepest outline item at or before the current
+      // page (mac activeID parity).
+      int const current_page = active_pdf_->current_page;
+      int active_page = 0;
+      for (auto const& node : active_pdf_->outline) {
+        if (node.page >= 1 && node.page <= current_page &&
+            node.page > active_page) {
+          active_page = node.page;
+        }
+      }
+      muxc::Button active_button{nullptr};
       for (auto const& node : active_pdf_->outline) {
         if (node.page <= 0 && node.title.empty()) continue;
         auto button = muxc::Button();
@@ -2201,6 +2218,12 @@ void MainWindow::RefreshLeftPanel() {
         label.FontSize(12);
         label.TextTrimming(
             mux::TextTrimming::CharacterEllipsis);
+        label.Foreground(ThemeBrush(
+            node.page == active_page
+                ? wu::Color{0xFF, 0xB4, 0x53, 0x09}
+                : (Root().ActualTheme() == mux::ElementTheme::Dark
+                       ? wu::Color{0xFF, 0xE7, 0xE5, 0xE4}
+                       : wu::Color{0xFF, 0x29, 0x25, 0x24})));
         button.Content(label);
         int const page = node.page;
         button.Click([weak_window, weak_tab, page](
@@ -2212,8 +2235,18 @@ void MainWindow::RefreshLeftPanel() {
             }
           }
         });
+        if (node.page == active_page) active_button = button;
         content.Children().Append(button);
       }
+      // Lightweight scroll-to-visible: only when the reading position
+      // triggered this rebuild, and only when the entry actually changed.
+      if (outline_scroll_pending_) {
+        outline_scroll_pending_ = false;
+        if (active_page != outline_active_page_ && active_button) {
+          active_button.StartBringIntoView();
+        }
+      }
+      outline_active_page_ = active_page;
     }
   } else {
     auto empty = muxc::TextBlock();

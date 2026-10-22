@@ -91,6 +91,10 @@ struct Host {
   GtkWidget* right_sidebar{nullptr};
   GtkFlowBox* thumbs{nullptr};
   GtkListBox* outline_list{nullptr};
+  GtkScrolledWindow* outline_scroll{nullptr};
+  // Outline follows the reading position (mac OutlineList parity).
+  int outline_active_key{0};  // active page (PDF) or chapter (EPUB)
+  bool outline_scroll_pending{false};
   GtkListBox* notes_list{nullptr};
   GtkWidget* notes_export_button{nullptr};
   // One-step undo (taskly banner parity): the annotation the last delete
@@ -526,9 +530,58 @@ void update_recents_debounced(std::string const& path, int page) {
       ctx);
 }
 
+// The accent outline entry (current position). #B45309, the family accent.
+void init_outline_css() {
+  static bool done = false;
+  if (done) return;
+  done = true;
+  auto* provider = gtk_css_provider_new();
+  gtk_css_provider_load_from_string(
+      provider,
+      ".outline-active { color: #b45309; font-weight: 700; }");
+  gtk_style_context_add_provider_for_display(
+      gdk_display_get_default(), GTK_STYLE_PROVIDER(provider),
+      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  g_object_unref(provider);
+}
+
+// Centers the row tagged outline-active inside the outline scroll (light
+// scroll-to-visible; a no-op when the list or the pane is not on screen).
+void scroll_outline_to_active() {
+  if (g_host.outline_scroll == nullptr || g_host.outline_list == nullptr) {
+    return;
+  }
+  GtkListBoxRow* row = nullptr;
+  int index = 0;
+  while ((row = gtk_list_box_get_row_at_index(g_host.outline_list,
+                                              index++)) != nullptr) {
+    if (gtk_widget_has_css_class(GTK_WIDGET(row), "outline-active")) break;
+  }
+  if (row == nullptr) return;
+  if (!gtk_widget_get_visible(GTK_WIDGET(g_host.outline_scroll))) return;
+  GtkAllocation alloc{};
+  gtk_widget_get_allocation(GTK_WIDGET(row), &alloc);
+  auto* va = gtk_scrolled_window_get_vadjustment(g_host.outline_scroll);
+  double const target =
+      alloc.y - (gtk_adjustment_get_page_size(va) - alloc.height) / 2.0;
+  gtk_adjustment_set_value(
+      va, std::max(0.0, std::min(target, gtk_adjustment_get_upper(va) -
+                                            gtk_adjustment_get_page_size(va))));
+}
+
 void build_outline_for(PdfTab* tab) {
+  init_outline_css();
   gtk_list_box_remove_all(g_host.outline_list);
   auto items = pdfgist::pdf_outline(*tab->document());
+  // Active entry: the deepest item at or before the current page.
+  int active_page = 0;
+  for (auto const& item : items) {
+    int const page = item.page + 1;  // outline pages are 0-based here
+    if (page >= 1 && page <= tab->current_page() && page > active_page) {
+      active_page = page;
+    }
+  }
+  g_host.outline_active_key = active_page;
   for (auto const& item : items) {
     auto* row = gtk_list_box_row_new();
     auto* label = gtk_label_new(item.title.c_str());
@@ -538,6 +591,9 @@ void build_outline_for(PdfTab* tab) {
         label, static_cast<guint>(8 + 14 * std::min(item.level, 6)));
     gtk_widget_set_margin_top(label, 3);
     gtk_widget_set_margin_bottom(label, 3);
+    if (item.page >= 0 && item.page + 1 == active_page) {
+      gtk_widget_add_css_class(label, "outline-active");
+    }
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), label);
     if (item.page >= 0) {
       g_object_set_data(G_OBJECT(row), "pdfgist-page",
@@ -545,10 +601,17 @@ void build_outline_for(PdfTab* tab) {
     }
     gtk_list_box_append(g_host.outline_list, row);
   }
+  if (g_host.outline_scroll_pending) {
+    g_host.outline_scroll_pending = false;
+    scroll_outline_to_active();
+  }
 }
 
 void build_epub_outline_for(EpubTab* epub) {
+  init_outline_css();
   gtk_list_box_remove_all(g_host.outline_list);
+  int const current = epub->current_page();  // chapter, 1-based
+  g_host.outline_active_key = current;
   for (auto const& item : epub->toc()) {
     auto* label = gtk_label_new(item.title.c_str());
     gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
@@ -559,6 +622,9 @@ void build_epub_outline_for(EpubTab* epub) {
             8 + 14 * std::min<std::int64_t>(item.level, 6)));
     gtk_widget_set_margin_top(label, 3);
     gtk_widget_set_margin_bottom(label, 3);
+    if (item.chapter == current) {
+      gtk_widget_add_css_class(label, "outline-active");
+    }
     // Let GtkListBox create and parent its GtkListBoxRow.  Explicitly
     // parenting a pre-built row triggered GTK's "widget already has a
     // parent" assertion in the packaged Wayland run and left the native TOC
@@ -569,6 +635,10 @@ void build_epub_outline_for(EpubTab* epub) {
       g_object_set_data(G_OBJECT(row), "booklight-epub-chapter",
                         GINT_TO_POINTER(static_cast<int>(item.chapter)));
     }
+  }
+  if (g_host.outline_scroll_pending) {
+    g_host.outline_scroll_pending = false;
+    scroll_outline_to_active();
   }
 }
 
@@ -637,6 +707,14 @@ void finish_pdf_open(std::string const& path, int resume_page,
     refresh_header_title();
     update_recents_debounced(raw->path(), page);
     refresh_bookmark_button();
+    // Outline follows the reading position when its pane is on screen.
+    if (g_host.left_stack != nullptr &&
+        gtk_stack_get_visible_child_name(g_host.left_stack) != nullptr &&
+        std::string(gtk_stack_get_visible_child_name(g_host.left_stack)) ==
+            "outline") {
+      g_host.outline_scroll_pending = true;
+      build_outline_for(raw);
+    }
   };
   raw->on_selection_changed = [](bool) {};
   raw->on_context_menu = [] { show_selection_menu(); };
@@ -824,6 +902,14 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
     refresh_status();
     refresh_header_title();
     update_recents_debounced(g_host.epub->path(), chapter);
+    // TOC follows the reading position when its pane is on screen.
+    if (g_host.left_stack != nullptr &&
+        gtk_stack_get_visible_child_name(g_host.left_stack) != nullptr &&
+        std::string(gtk_stack_get_visible_child_name(g_host.left_stack)) ==
+            "outline") {
+      g_host.outline_scroll_pending = true;
+      build_epub_outline_for(g_host.epub);
+    }
   };
   raw->on_load_finished = [raw](std::string const&) {
     build_epub_toc_menu();
@@ -3486,6 +3572,7 @@ void on_activate(GtkApplication* app, gpointer) {
                        Tr("ui.viewer.thumbs").c_str());
 
   auto* outline_scroll = gtk_scrolled_window_new();
+  g_host.outline_scroll = GTK_SCROLLED_WINDOW(outline_scroll);
   auto* outline = gtk_list_box_new();
   g_host.outline_list = GTK_LIST_BOX(outline);
   gtk_list_box_set_selection_mode(g_host.outline_list,
