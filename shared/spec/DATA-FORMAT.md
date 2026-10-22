@@ -41,7 +41,11 @@ Format of the sidecar:
     { "id": "a-…", "page": 3,
       "rects": [{ "x": 10.0, "y": 20.0, "width": 100.0, "height": 12.0 }],
       "excerpt": "…", "color": "yellow", "kind": "highlight",
-      "note": "", "created": 1792100000 }
+      "note": "", "created": 1792100000 },
+    { "id": "e-…", "page": 2, "rects": [],
+      "excerpt": "…", "color": "green", "kind": "highlight",
+      "note": "", "created": 1792200000,
+      "anchor": { "chapter": 2, "start": 120, "end": 136 } }
   ],
   "bookmarks": [ { "page": 12, "label": "第 12 页", "created": 1792100000 } ]
 }
@@ -49,6 +53,17 @@ Format of the sidecar:
 
 `rects` are in PDF page space: origin bottom-left, y up, in PDF units.
 (Reader apps that render top-left-origin must flip at paint time.)
+
+**EPUB anchors.** EPUB annotations carry an optional `anchor` instead of
+rects: `chapter` (1-based, same ordinal as `page`) plus `start`/`end`
+character offsets inside the chapter's plain text — the exact text the
+`epub-chapter-text` RPC serves and the whole-book search uses. The
+reader renders marks by mapping offsets onto the chapter's DOM text
+nodes; an annotation may wrap several segments (one mark per segment,
+all sharing `id` — the PDF multi-rect model). Older readers that don't
+know `anchor` simply drop it on re-save, which only loses the highlight
+paint, never the file. PDF annotations carry no `anchor` key at all, so
+pre-0.8 PDF files stay byte-identical.
 
 ## 3. The shelf — `<config-dir>/library.json`
 
