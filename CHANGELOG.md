@@ -3,6 +3,16 @@
 All notable changes to Booklight are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semver.
 
+## [0.7.0] - 2026-10-22
+
+### Added
+
+- **One-step undo for annotation deletes.** Deleting an annotation now
+  shows a five-second 撤销 banner on every platform (taskly-benchmark
+  interaction). Deletion still persists immediately; undo re-inserts the
+  annotation at its old position and persists again. A new delete
+  re-stages the window, switching documents dismisses it.
+
 ## [0.6.0] - 2026-10-22
 
 ### Added
