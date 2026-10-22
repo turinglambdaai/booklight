@@ -44,7 +44,7 @@ struct ReaderSidebar: View {
         case 1:
             OutlineList(tab: tab)
         case 2:
-            NotesPane(tab: tab, onExport: {
+            NotesPane(tab: tab, reader: reader, onExport: {
                 reader.exportAnnotations()
             })
         default:
@@ -463,6 +463,7 @@ struct ChatBubbleView: View {
 struct NotesPane: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var tab: PDFTab
+    @ObservedObject var reader: ReaderModel
     let onExport: () -> Void
 
     private var hasAnything: Bool {
@@ -472,6 +473,23 @@ struct NotesPane: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
+                if reader.pendingUndo != nil {
+                    HStack(spacing: 8) {
+                        Text(L10n.t("ui.notes.deleted"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textDim)
+                        Spacer()
+                        Button(L10n.t("ui.undo")) {
+                            reader.undoDeleteAnnotation()
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.accent)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                }
                 if hasAnything {
                     Button(action: onExport) {
                         Label(L10n.t("ui.notes.export"), systemImage: "square.and.arrow.up")

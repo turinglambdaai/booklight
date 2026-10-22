@@ -903,6 +903,31 @@ void PdfTab::remove_annotation(std::string const& id) {
   impl->notify_annotations_changed();
 }
 
+std::optional<StoredAnnotation> PdfTab::take_annotation(
+    std::string const& id) {
+  auto& annotations = doc_data_.annotations;
+  auto const it = std::find_if(annotations.begin(), annotations.end(),
+                               [&id](StoredAnnotation const& a) {
+                                 return a.id == id;
+                               });
+  if (it == annotations.end()) return std::nullopt;
+  StoredAnnotation taken = *it;
+  auto const index = static_cast<std::size_t>(it - annotations.begin());
+  annotations.erase(it);
+  impl->notify_annotations_changed();
+  last_taken_index_ = index;
+  return taken;
+}
+
+void PdfTab::restore_annotation(StoredAnnotation const& annotation,
+                                std::size_t index) {
+  auto const at = std::min(index, doc_data_.annotations.size());
+  doc_data_.annotations.insert(
+      doc_data_.annotations.begin() + static_cast<std::ptrdiff_t>(at),
+      annotation);
+  impl->notify_annotations_changed();
+}
+
 bool PdfTab::is_bookmarked(int page) const {
   for (auto const& bookmark : doc_data_.bookmarks) {
     if (bookmark.page == page) return true;
