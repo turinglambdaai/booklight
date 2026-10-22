@@ -236,6 +236,15 @@ MainWindow::MainWindow() {
       }
     }
   });
+  undo_timer_ = DispatcherQueue().CreateTimer();
+  undo_timer_.Interval(std::chrono::milliseconds{5000});
+  undo_timer_.IsRepeating(false);
+  undo_timer_.Tick([weak = get_weak()](auto&&, auto&&) {
+    if (auto window = weak.get()) {
+      window->undo_annotation_.reset();
+      if (window->left_mode_ == 2) window->RefreshLeftPanel();
+    }
+  });
 
   StartReadingClock();
 

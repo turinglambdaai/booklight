@@ -570,12 +570,39 @@ void MainWindow::RemoveAnnotation(std::wstring const& id) {
   auto tab = active_pdf_;
   if (!tab) return;
   auto& annotations = tab->doc_data.annotations;
-  annotations.erase(
-      std::remove_if(annotations.begin(), annotations.end(),
-                     [&id](StoredAnnotation const& candidate) {
-                       return candidate.id == id;
-                     }),
-      annotations.end());
+  auto const it = std::find_if(annotations.begin(), annotations.end(),
+                               [&id](StoredAnnotation const& candidate) {
+                                 return candidate.id == id;
+                               });
+  if (it == annotations.end()) return;
+  // One-step undo: keep the removed annotation and its position for the
+  // banner's five-second window (deletion persists as usual).
+  undo_index_ = static_cast<std::size_t>(it - annotations.begin());
+  undo_annotation_ = *it;
+  annotations.erase(it);
+  tab->anno_dirty = true;
+  QueueAnnotationSave();
+  for (auto const& cell : tab->cells) {
+    DrawCellOverlays(*cell, *tab);
+  }
+  if (left_mode_ == 2) RefreshLeftPanel();
+  undo_timer_.Stop();
+  undo_timer_.Start();
+}
+
+void MainWindow::UndoDeleteAnnotation() {
+  auto tab = active_pdf_;
+  undo_timer_.Stop();
+  if (!tab || !undo_annotation_) {
+    undo_annotation_.reset();
+    return;
+  }
+  auto const index =
+      std::min(undo_index_, tab->doc_data.annotations.size());
+  tab->doc_data.annotations.insert(
+      tab->doc_data.annotations.begin() + static_cast<std::ptrdiff_t>(index),
+      *undo_annotation_);
+  undo_annotation_.reset();
   tab->anno_dirty = true;
   QueueAnnotationSave();
   for (auto const& cell : tab->cells) {
@@ -673,6 +700,37 @@ void MainWindow::BuildNotesPane(
     muxc::StackPanel const& content) {
   auto tab = active_pdf_;
   if (!tab) return;
+
+  // One-step undo banner (mac NotesPane banner parity).
+  if (undo_annotation_) {
+    auto banner = muxc::Border();
+    banner.Padding({8, 8, 8, 8});
+    banner.CornerRadius({8, 8, 8, 8});
+    banner.BorderThickness({1, 1, 1, 1});
+    banner.BorderBrush(ThemeBorderBrush());
+    banner.Background(ThemePanelBrush());
+    auto banner_stack = muxc::StackPanel();
+    banner_stack.Orientation(muxc::Orientation::Horizontal);
+    banner_stack.Spacing(8);
+    auto banner_label = muxc::TextBlock();
+    banner_label.Text(pdfgist::Tr("ui.notes.deleted"));
+    banner_label.FontSize(11);
+    banner_label.VerticalAlignment(mux::VerticalAlignment::Center);
+    banner_stack.Children().Append(banner_label);
+    auto undo_btn = muxc::Button();
+    auto undo_label = muxc::TextBlock();
+    undo_label.Text(pdfgist::Tr("ui.undo"));
+    undo_label.FontSize(11);
+    undo_btn.Content(undo_label);
+    auto const undo_weak = get_weak();
+    undo_btn.Click([undo_weak](winrt::Windows::Foundation::IInspectable const&,
+                               mux::RoutedEventArgs const&) {
+      if (auto window = undo_weak.get()) window->UndoDeleteAnnotation();
+    });
+    banner_stack.Children().Append(undo_btn);
+    banner.Child(banner_stack);
+    content.Children().Append(banner);
+  }
 
   // Notes digest export (mac NotesPane export button parity): one click,
   // backend renders the Markdown, SaveData picks the destination.

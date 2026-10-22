@@ -735,8 +735,10 @@ final class ReaderModel: ObservableObject {
     }
 
     func removeAnnotation(_ id: String) {
-        guard let tab = pdf else { return }
-        tab.docData.annotations.removeAll { $0.id == id }
+        guard let tab = pdf,
+              let index = tab.docData.annotations.firstIndex(where: { $0.id == id })
+        else { return }
+        let removed = tab.docData.annotations.remove(at: index)
         guard let doc = tab.document else { return }
         for index in 0..<doc.pageCount {
             guard let page = doc.page(at: index) else { continue }
@@ -745,6 +747,37 @@ final class ReaderModel: ObservableObject {
                 page.removeAnnotation(annotation)
             }
         }
+        queueAnnotationSave(tab)
+        stageUndo(of: removed, at: index, in: tab)
+    }
+
+    // MARK: one-step undo (taskly banner parity)
+
+    /// The annotation the last delete removed, kept for the banner's
+    /// five-second window. Deletion persists immediately; undo re-inserts
+    /// at the old position and persists again.
+    @Published var pendingUndo: StoredAnnotation?
+    var pendingUndoIndex = 0
+    var undoTask: Task<Void, Never>?
+
+    private func stageUndo(of annotation: StoredAnnotation, at index: Int, in tab: PDFTab) {
+        pendingUndo = annotation
+        pendingUndoIndex = index
+        undoTask?.cancel()
+        undoTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.pendingUndo = nil
+        }
+    }
+
+    func undoDeleteAnnotation() {
+        guard let tab = pdf, let annotation = pendingUndo else { return }
+        undoTask?.cancel()
+        pendingUndo = nil
+        let index = min(pendingUndoIndex, tab.docData.annotations.count)
+        tab.docData.annotations.insert(annotation, at: index)
+        renderAnnotation(annotation, in: tab)
         queueAnnotationSave(tab)
     }
 

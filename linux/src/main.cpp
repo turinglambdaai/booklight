@@ -93,6 +93,15 @@ struct Host {
   GtkListBox* outline_list{nullptr};
   GtkListBox* notes_list{nullptr};
   GtkWidget* notes_export_button{nullptr};
+  // One-step undo (taskly banner parity): the annotation the last delete
+  // removed (tab-anchored), the banner widget, and its 5 s timeout.
+  StoredAnnotation undo_annotation{};
+  bool undo_valid{false};
+  std::size_t undo_index{0};
+  PdfTab* undo_tab{nullptr};
+  guint undo_timeout_source{0};
+  GtkWidget* notes_undo_bar{nullptr};
+  GtkWidget* notes_undo_label{nullptr};
   GtkRevealer* find_revealer{nullptr};
   GtkSearchEntry* find_entry{nullptr};
   GtkLabel* find_count{nullptr};
@@ -1104,6 +1113,35 @@ void load_annotations_for_tab(PdfTab* tab) {
       });
 }
 
+// ---- one-step undo (taskly banner parity) ---------------------------------
+
+void notes_undo_hide() {
+  if (g_host.undo_timeout_source != 0) {
+    g_source_remove(g_host.undo_timeout_source);
+    g_host.undo_timeout_source = 0;
+  }
+  g_host.undo_valid = false;
+  g_host.undo_tab = nullptr;
+  if (g_host.notes_undo_bar != nullptr) {
+    gtk_widget_set_visible(g_host.notes_undo_bar, FALSE);
+  }
+}
+
+gboolean notes_undo_timeout(gpointer) {
+  g_host.undo_timeout_source = 0;
+  notes_undo_hide();
+  return G_SOURCE_REMOVE;
+}
+
+void notes_undo_restore() {
+  if (!g_host.undo_valid) return;
+  auto* tab = g_host.active_pdf_only();
+  if (tab == g_host.undo_tab && tab != nullptr) {
+    tab->restore_annotation(g_host.undo_annotation, g_host.undo_index);
+  }
+  notes_undo_hide();
+}
+
 // One annotation card / bookmark row click target: stored id or page.
 void on_note_row_activated(GtkListBox*, GtkListBoxRow* row, gpointer) {
   auto* tab = g_host.active_pdf_only();
@@ -1121,6 +1159,12 @@ void populate_notes() {
   if (g_host.notes_export_button != nullptr) {
     gtk_widget_set_sensitive(g_host.notes_export_button,
                              tab != nullptr);
+  }
+  if (tab != g_host.undo_tab) notes_undo_hide();
+  if (g_host.notes_undo_bar != nullptr) {
+    gtk_widget_set_visible(g_host.notes_undo_bar,
+                           tab != nullptr && g_host.undo_valid &&
+                               tab == g_host.undo_tab);
   }
   if (tab == nullptr) {
     // EPUB or no document: the pane is PDF-only (mac sidebar semantics).
@@ -1237,8 +1281,22 @@ void populate_notes() {
         delete_btn, "clicked",
         +[](GtkButton*, gpointer user_data) {
           std::unique_ptr<std::string> id(static_cast<std::string*>(user_data));
-          if (auto* tab = g_host.active_pdf_only(); tab != nullptr) {
-            tab->remove_annotation(*id);
+          auto* tab = g_host.active_pdf_only();
+          if (tab == nullptr) return;
+          auto taken = tab->take_annotation(*id);
+          if (!taken.has_value()) return;
+          // Stage the banner for a five-second undo window.
+          g_host.undo_annotation = *taken;
+          g_host.undo_index = tab->last_taken_index_;
+          g_host.undo_tab = tab;
+          g_host.undo_valid = true;
+          if (g_host.undo_timeout_source != 0) {
+            g_source_remove(g_host.undo_timeout_source);
+          }
+          g_host.undo_timeout_source = g_timeout_add(
+              5000, notes_undo_timeout, nullptr);
+          if (g_host.notes_undo_bar != nullptr) {
+            gtk_widget_set_visible(g_host.notes_undo_bar, TRUE);
           }
         },
         annotation_id,
@@ -3481,8 +3539,26 @@ void on_activate(GtkApplication* app, gpointer) {
   hook(notes_export, "clicked",
        +[](GtkButton*, gpointer) { export_annotations_ui(); },
        nullptr);
+  auto* notes_undo_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  g_host.notes_undo_bar = notes_undo_bar;
+  gtk_widget_set_visible(notes_undo_bar, FALSE);
+  gtk_widget_set_margin_start(notes_undo_bar, 8);
+  gtk_widget_set_margin_end(notes_undo_bar, 8);
+  auto* undo_label = gtk_label_new(Tr("ui.notes.deleted").c_str());
+  g_host.notes_undo_label = undo_label;
+  gtk_widget_set_halign(undo_label, GTK_ALIGN_START);
+  gtk_widget_add_css_class(undo_label, "caption");
+  gtk_widget_add_css_class(undo_label, "dim-label");
+  gtk_box_append(GTK_BOX(notes_undo_bar), undo_label);
+  auto* undo_btn = gtk_button_new_with_label(Tr("ui.undo").c_str());
+  gtk_widget_add_css_class(undo_btn, "flat");
+  gtk_widget_add_css_class(undo_btn, "caption");
+  hook(undo_btn, "clicked",
+       +[](GtkButton*, gpointer) { notes_undo_restore(); }, nullptr);
+  gtk_box_append(GTK_BOX(notes_undo_bar), undo_btn);
   auto* notes_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   gtk_box_append(GTK_BOX(notes_box), notes_export);
+  gtk_box_append(GTK_BOX(notes_box), notes_undo_bar);
   gtk_box_append(GTK_BOX(notes_box), notes_scroll);
   gtk_stack_add_titled(GTK_STACK(left_stack), notes_box, "notes",
                        Tr("ui.tab.notes").c_str());

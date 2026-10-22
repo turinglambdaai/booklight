@@ -245,6 +245,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ConfirmDeleteCollection(std::wstring const& name);
   void DeleteCollection(std::wstring const& name);
   void ExportAnnotations();
+  void UndoDeleteAnnotation();
   void ShelfNav_ItemInvoked(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Microsoft::UI::Xaml::Controls::NavigationViewItemInvokedEventArgs const&);
@@ -651,6 +652,11 @@ struct MainWindow : MainWindowT<MainWindow> {
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer find_timer_{nullptr};
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer recents_timer_{nullptr};
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer anno_timer_{nullptr};
+  // One-step undo (taskly banner parity): the annotation the last delete
+  // removed and its position; the banner lives for five seconds.
+  std::optional<StoredAnnotation> undo_annotation_;
+  std::size_t undo_index_ = 0;
+  winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer undo_timer_{nullptr};
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer check_timer_{nullptr};
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer update_timer_{nullptr};
   bool update_downloading_ = false;

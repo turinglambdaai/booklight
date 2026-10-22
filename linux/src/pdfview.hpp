@@ -13,6 +13,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -187,6 +188,13 @@ class PdfTab {
   std::string add_annotation_from_selection(std::string const& color,
                                             std::string const& kind);
   void remove_annotation(std::string const& id);
+  // One-step undo (taskly banner parity): take returns the removed
+  // annotation (nullopt when the id is absent), restore re-inserts it at
+  // its old position; both repaint and mark the tab for persistence.
+  std::optional<StoredAnnotation> take_annotation(std::string const& id);
+  void restore_annotation(StoredAnnotation const& annotation,
+                          std::size_t index);
+  std::size_t last_taken_index_{0};
 
   bool is_bookmarked(int page) const;  // 1-based
   void toggle_bookmark(int page);      // 1-based
