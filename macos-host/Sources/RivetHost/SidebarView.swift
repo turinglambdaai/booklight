@@ -70,6 +70,39 @@ struct OutlineList: View {
     @EnvironmentObject private var app: AppModel
     let tab: PDFTab
 
+    // Flattened view (depth + 0-based page index) for the active-entry
+    // lookup: the deepest entry at or before the current page.
+    private struct FlatEntry {
+        let id: UUID
+        let pageIndex: Int
+    }
+
+    private func flatten(_ nodes: [OutlineNode], doc: PDFDocument?,
+                         into out: inout [FlatEntry]) {
+        for node in nodes {
+            var pageIndex = -1
+            if let page = node.destination?.page {
+                pageIndex = doc?.index(for: page) ?? -1
+            }
+            out.append(FlatEntry(id: node.id, pageIndex: pageIndex))
+            flatten(node.children, doc: doc, into: &out)
+        }
+    }
+
+    private var activeID: UUID? {
+        guard let doc = tab.document else { return nil }
+        var entries: [FlatEntry] = []
+        flatten(tab.outline, doc: doc, into: &entries)
+        var best: FlatEntry?
+        for entry in entries where entry.pageIndex >= 0
+            && entry.pageIndex < tab.currentPage {
+            if best == nil || entry.pageIndex >= best?.pageIndex ?? -1 {
+                best = entry
+            }
+        }
+        return best?.id
+    }
+
     var body: some View {
         if tab.outline.isEmpty {
             VStack {
@@ -81,13 +114,25 @@ struct OutlineList: View {
             }
             .frame(maxWidth: .infinity)
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(tab.outline) { node in
-                        OutlineRow(node: node, depth: 0)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(tab.outline) { node in
+                            OutlineRow(node: node, depth: 0, activeID: activeID)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                }
+                .onChange(of: tab.currentPage) { _ in
+                    if let id = activeID {
+                        withAnimation(.easeIn(duration: 0.15)) {
+                            proxy.scrollTo(id, anchor: .center)
+                        }
                     }
                 }
-                .padding(.horizontal, 8)
+                .onAppear {
+                    if let id = activeID { proxy.scrollTo(id, anchor: .center) }
+                }
             }
         }
     }
@@ -97,14 +142,15 @@ struct OutlineRow: View {
     @EnvironmentObject private var app: AppModel
     let node: OutlineNode
     let depth: Int
+    let activeID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !node.label.isEmpty {
                 Text(node.label)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, weight: node.id == activeID ? .semibold : .regular))
                     .lineLimit(1)
-                    .foregroundStyle(Theme.text)
+                    .foregroundStyle(node.id == activeID ? Theme.accent : Theme.text)
                     .padding(.leading, CGFloat(8 + depth * 14))
                     .padding(.vertical, 3)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -112,7 +158,7 @@ struct OutlineRow: View {
                     .onTapGesture { app.activeReader?.goToOutline(node) }
             }
             ForEach(node.children) { child in
-                OutlineRow(node: child, depth: depth + 1)
+                OutlineRow(node: child, depth: depth + 1, activeID: activeID)
             }
         }
     }
@@ -124,6 +170,18 @@ struct EpubTocList: View {
     @ObservedObject var tab: EpubTab
 
     var body: some View {
+        ScrollViewReader { proxy in
+            tocList
+                .onChange(of: tab.currentPage) { chapter in
+                    withAnimation(.easeIn(duration: 0.15)) {
+                        proxy.scrollTo(chapter, anchor: .center)
+                    }
+                }
+                .onAppear { proxy.scrollTo(tab.currentPage, anchor: .center) }
+        }
+    }
+
+    private var tocList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 1) {
                 if tab.toc.isEmpty {
@@ -147,6 +205,7 @@ struct EpubTocList: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(
                         tab.currentPage == Int(item.chapter) ? Theme.accent : Theme.text)
+                    .id(Int(item.chapter))
                 }
                 if tab.toc.isEmpty {
                     ForEach(1...max(1, tab.chapters), id: \.self) { i in
@@ -163,6 +222,7 @@ struct EpubTocList: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(
                             tab.currentPage == i ? Theme.accent : Theme.text)
+                        .id(i)
                     }
                 }
             }

@@ -654,6 +654,11 @@ struct MainWindow : MainWindowT<MainWindow> {
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer anno_timer_{nullptr};
   // One-step undo (taskly banner parity): the annotation the last delete
   // removed and its position; the banner lives for five seconds.
+  // Outline follows the reading position: the active entry's page from
+  // the last build (only re-scroll when the entry actually changed) and
+  // the page-change-triggered rebuild flag.
+  int outline_active_page_ = 0;
+  bool outline_scroll_pending_ = false;
   std::optional<StoredAnnotation> undo_annotation_;
   std::size_t undo_index_ = 0;
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer undo_timer_{nullptr};
