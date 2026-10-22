@@ -500,7 +500,8 @@ std::optional<TextSource> doc_text() {
 
 std::string selection_text() {
   if (g_host.epub_active()) {
-    return g_host.epub != nullptr ? g_host.epub->pending_selection() : "";
+    return g_host.epub != nullptr ? g_host.epub->pending_selection().text
+                                  : "";
   }
   PdfTab* tab = g_host.active_pdf();
   return tab != nullptr ? tab->selection_text() : "";
@@ -1220,8 +1221,8 @@ void epub_annotate_ui(char const* color, char const* kind) {
   annotation.color = color;
   annotation.kind = kind;
   annotation.created = static_cast<std::int64_t>(std::time(nullptr));
-  annotation.anchor = StoredAnchor{selection.chapter, selection.start,
-                                   selection.end};
+  annotation.anchor = pdfgist::StoredAnchor{selection.chapter,
+                                            selection.start, selection.end};
   epub->add_annotation(annotation);
   epub->clear_pending_selection();
   schedule_epub_annotation_save();
