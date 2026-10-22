@@ -293,6 +293,7 @@ final class ReaderModel: ObservableObject {
         sidebarMode = 1
         findVisible = false
         tab.loadBook(api: api)
+        tab.loadAnnotations(api: api, sidecar: app?.settings.annotation_sidecar ?? false)
         if resumeChapter > 1 {
             tab.currentPage = resumeChapter
         }
@@ -351,6 +352,8 @@ final class ReaderModel: ObservableObject {
         }
         if let epub = epub {
             epub.recentTask?.cancel()
+            epub.annoTask?.cancel()
+            Task { await epub.storeAnnotationData() }
             saveEpubRecentNow(epub)
             epub.teardown()
         }
@@ -791,6 +794,11 @@ final class ReaderModel: ObservableObject {
     var pendingUndoIndex = 0
     var undoTask: Task<Void, Never>?
 
+    /// EPUB twin of the one-step undo (annotation + its position).
+    @Published var epubUndo: StoredAnnotation?
+    var epubUndoIndex = 0
+    var epubUndoTask: Task<Void, Never>?
+
     private func stageUndo(of annotation: StoredAnnotation, at index: Int, in tab: PDFTab) {
         pendingUndo = annotation
         pendingUndoIndex = index
@@ -800,6 +808,82 @@ final class ReaderModel: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.pendingUndo = nil
         }
+    }
+
+    // MARK: EPUB annotations (chapter+offset anchored; marks live in the page)
+
+    func addEpubAnnotation(color: String, kind: String) {
+        guard let epub = epub, let selection = epub.pendingSelection else { return }
+        let id = String(format: "e-%lld-%04d",
+                        Int(Date().timeIntervalSince1970),
+                        Int.random(in: 0..<10_000))
+        let annotation = StoredAnnotation(
+            id: id, page: selection.chapter, rects: [],
+            excerpt: String(selection.text.prefix(800)), color: color,
+            kind: kind, note: "", created: Int(Date().timeIntervalSince1970),
+            anchor: StoredAnchor(chapter: selection.chapter,
+                                 start: selection.start, end: selection.end))
+        epub.docData.annotations.append(annotation)
+        epub.webView.evaluateJavaScript(
+            "applyEpubAnnotation(\(EpubTab.jsString(id)), \(selection.chapter), \(selection.start), \(selection.end), \(EpubTab.jsString(kind)), \(EpubTab.jsString(color)));",
+            completionHandler: nil)
+        epub.queueAnnotationSave()
+    }
+
+    /// EPUB digest export (same RPC; page ordinal = chapter).
+    func exportEpubAnnotations() {
+        guard let epub = epub else { return }
+        Task {
+            guard let app, let api = app.api else { return }
+            guard let data = try? JSONEncoder().encode(epub.docData) else { return }
+            do {
+                let markdown = try await api.export_annotations(
+                    data: data, title: epub.title)
+                let name = epub.title + L10n.t("ui.notes.export-suffix") + ".md"
+                saveData(Data(markdown.utf8), defaultName: name, type: .plainText)
+            } catch let e as ClientError {
+                if case .backend(let message) = e {
+                    alert(L10n.t("ui.pages.edit-failed", message))
+                } else {
+                    alert(L10n.t("ui.pages.edit-failed", String(describing: e)))
+                }
+            } catch {
+                alert(L10n.t("ui.pages.edit-failed", String(describing: error)))
+            }
+        }
+    }
+
+    func removeEpubAnnotation(_ id: String) {
+        guard let epub = epub,
+              let index = epub.docData.annotations.firstIndex(where: { $0.id == id })
+        else { return }
+        let removed = epub.docData.annotations.remove(at: index)
+        epub.webView.evaluateJavaScript(
+            "removeEpubAnnotation(\(EpubTab.jsString(id)));",
+            completionHandler: nil)
+        epub.queueAnnotationSave()
+        epubUndo = removed
+        epubUndoIndex = index
+        epubUndoTask?.cancel()
+        epubUndoTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.epubUndo = nil
+        }
+    }
+
+    func undoDeleteEpubAnnotation() {
+        guard let epub = epub, let annotation = epubUndo else { return }
+        epubUndoTask?.cancel()
+        epubUndo = nil
+        let index = min(epubUndoIndex, epub.docData.annotations.count)
+        epub.docData.annotations.insert(annotation, at: index)
+        if let anchor = annotation.anchor {
+            epub.webView.evaluateJavaScript(
+                "applyEpubAnnotation(\(EpubTab.jsString(annotation.id)), \(anchor.chapter), \(anchor.start), \(anchor.end), \(EpubTab.jsString(annotation.kind)), \(EpubTab.jsString(annotation.color)));",
+                completionHandler: nil)
+        }
+        epub.queueAnnotationSave()
     }
 
     func undoDeleteAnnotation() {
@@ -908,7 +992,7 @@ final class ReaderModel: ObservableObject {
 
     func selectionText() -> String? {
         if epubActive, let epub = epub {
-            let text = epub.pendingSelection?
+            let text = epub.pendingSelection?.text
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return text.count > 1 ? text : nil
         }

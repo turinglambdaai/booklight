@@ -234,6 +234,9 @@ MainWindow::MainWindow() {
       for (auto const& tab : window->tabs_) {
         if (tab->anno_dirty) window->SaveDocDataNow(tab);
       }
+      if (window->epub_ && window->epub_->anno_dirty) {
+        window->SaveEpubDocDataNow();
+      }
     }
   });
   undo_timer_ = DispatcherQueue().CreateTimer();
@@ -2099,17 +2102,19 @@ void MainWindow::RefreshLeftPanel() {
   }
   auto const host = LeftContent();
 
-  // mode row: hide for EPUB (TOC only) and when nothing is open
+  // mode row: thumbnails are PDF-only; outline and notes serve both.
   bool const epub_now = epub_active_ && epub_ != nullptr;
   bool const has_reader = epub_now || active_pdf_ != nullptr;
   LeftModeRow().Visibility(has_reader ? Visibility::Visible : Visibility::Collapsed);
   ThumbsMode().Visibility(epub_now ? Visibility::Collapsed : Visibility::Visible);
-  NotesMode().Visibility(epub_now ? Visibility::Collapsed : Visibility::Visible);
+  NotesMode().Visibility(has_reader ? Visibility::Visible : Visibility::Collapsed);
   ThumbsMode().IsChecked(!epub_now && left_mode_ == 0);
-  OutlineMode().IsChecked(epub_now || left_mode_ == 1);
-  NotesMode().IsChecked(!epub_now && left_mode_ == 2);
-  // EPUB forces the TOC (mac sidebarMode parity)
-  int const effective_mode = epub_now ? 1 : left_mode_;
+  OutlineMode().IsChecked(!epub_now && left_mode_ == 1 ? true
+                          : epub_now && left_mode_ != 2);
+  NotesMode().IsChecked(left_mode_ == 2);
+  // EPUB: TOC or notes (mac sidebarMode parity)
+  int const effective_mode =
+      epub_now ? (left_mode_ == 2 ? 2 : 1) : left_mode_;
 
   // page ops row (PDF only — page surgery is a PDF concern)
   page_ops_row_.Visibility(!epub_now && active_pdf_ != nullptr
@@ -2119,9 +2124,13 @@ void MainWindow::RefreshLeftPanel() {
   auto content = muxc::StackPanel();
   content.Spacing(4);
   if (epub_now) {
-    RenderEpubToc(*epub_);
-    return;  // RenderEpubToc assembles the whole panel itself
-  }
+    if (effective_mode == 2) {
+      BuildEpubNotesPane(content);
+    } else {
+      RenderEpubToc(*epub_);
+      return;  // RenderEpubToc assembles the whole panel itself
+    }
+  } else
   if (active_pdf_) {
     if (effective_mode == 0) {
       // thumbnails (rendered lazily at thumbnail scale)
@@ -2222,7 +2231,7 @@ void MainWindow::RefreshLeftPanel() {
         content.Children().Append(button);
       }
     }
-  } else {
+  } else if (!epub_now) {
     auto empty = muxc::TextBlock();
     empty.Text(pdfgist::Tr("ui.welcome.open"));
     empty.FontSize(11);

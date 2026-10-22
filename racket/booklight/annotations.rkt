@@ -63,7 +63,7 @@
 ;; same key order as serde_json output; unknown keys are dropped exactly like
 ;; the old typed deserialization.
 
-(define annotation-field-order '(id page rects excerpt color kind note created))
+(define annotation-field-order '(id page rects excerpt color kind note created anchor))
 (define rect-field-order '(x y width height))
 (define bookmark-field-order '(page label created))
 
@@ -75,7 +75,15 @@
           'color "yellow"
           'kind "highlight"
           'note ""
-          'created 0))
+          'created 0
+          ;; EPUB anchor (chapter + character offsets into the chapter's
+          ;; plain text, the same text epub-chapter-text serves); absent
+          ;; for PDF annotations, whose rects anchor them. A false value
+          ;; serializes no key at all, so PDF files stay byte-identical.
+          'anchor #f))
+
+(define anchor-defaults
+  (hasheq 'chapter 1 'start 0 'end 0))
 
 (define rect-defaults
   (hasheq 'x 0.0 'y 0.0 'width 0.0 'height 0.0))
@@ -97,19 +105,31 @@
 (define (normalize-rect value)
   (ordered-object value rect-field-order rect-defaults))
 
+(define (normalize-anchor value)
+  (ordered-object value '(chapter start end) anchor-defaults))
+
 (define (normalize-annotation value)
   (define source (if (hash? value) value (hasheq)))
   (define rects (hash-ref source 'rects (hash-ref annotation-defaults 'rects)))
+  (define anchor (hash-ref source 'anchor (hash-ref annotation-defaults 'anchor)))
   (define projected
     (ordered-object value annotation-field-order annotation-defaults))
   (jobj
-   (for/list ([field (in-list (jobj-fields projected))])
-     (if (string=? (car field) "rects")
+   (filter
+    (lambda (field) (not (and (string=? (car field) "anchor")
+                              (not (cdr field)))))
+    (for/list ([field (in-list (jobj-fields projected))])
+      (cond
+        [(string=? (car field) "rects")
          (cons "rects"
                (if (list? rects)
                    (map normalize-rect rects)
-                   '()))
-         field))))
+                   '()))]
+        [(string=? (car field) "anchor")
+         (if anchor
+             (cons "anchor" (normalize-anchor anchor))
+             field)]
+        [else field])))))
 
 (define (normalize-bookmark value)
   (ordered-object value bookmark-field-order bookmark-defaults))

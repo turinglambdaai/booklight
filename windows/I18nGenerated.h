@@ -128,6 +128,7 @@ inline constexpr struct WinStringEntry {
     {"ui.notes.bookmarks", L"书签", L"Bookmarks"},
     {"ui.notes.delete-btn", L"删", L"✕"},
     {"ui.notes.deleted", L"已删除批注", L"Annotation deleted"},
+    {"ui.notes.epub-annotate", L"标注选区：", L"Annotate Selection:"},
     {"ui.notes.export", L"导出批注…", L"Export Annotations…"},
     {"ui.notes.export-suffix", L"-批注", L"-Annotations"},
     {"ui.notes.empty", L"在正文中划选文本即可高亮并写笔记；高亮支持三色", L"Select text in the document to highlight it; highlights support three colors"},
