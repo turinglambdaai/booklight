@@ -499,6 +499,15 @@ void EpubTab::restore_annotation(StoredAnnotation const& annotation,
   }
 }
 
+void EpubTab::set_doc_data(DocData data) {
+  doc_data_ = std::move(data);
+  if (!loaded_) return;
+  auto const bytes = pdfgist::encode_doc_data(doc_data_);
+  std::string const json(bytes.begin(), bytes.end());
+  impl->evaluate("const d = JSON.parse(" + json_string_literal(json) +
+                 "); applyEpubAnnotations(d.annotations);");
+}
+
 }  // namespace pdfgist
 
 #else  // !PDFGIST_HAVE_WEBKIT
@@ -522,14 +531,6 @@ EpubTab::EpubTab(PanelContext*, std::string path, std::string title)
 
 EpubTab::~EpubTab() = default;
 
-void EpubTab::set_doc_data(DocData data) {
-  doc_data_ = std::move(data);
-  if (!loaded_) return;
-  auto const bytes = pdfgist::encode_doc_data(doc_data_);
-  std::string const json(bytes.begin(), bytes.end());
-  impl->evaluate("const d = JSON.parse(" + json_string_literal(json) +
-                 "); applyEpubAnnotations(d.annotations);");
-}
 
 
 std::string EpubTab::chapter_text(int) const { return {}; }
