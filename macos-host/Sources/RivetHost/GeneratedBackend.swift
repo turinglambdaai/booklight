@@ -18,6 +18,7 @@ public enum RivetTypes {
         case system = "system"
         case paper = "paper"
         case night = "night"
+        case sepia = "sepia"
     }
 
     public enum SummarizeMode: String, Sendable {

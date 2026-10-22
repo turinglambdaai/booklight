@@ -307,20 +307,22 @@ void set_theme(std::string const& theme) {
 }
 
 // The reading page surface (settings.json) can override the chrome palette:
-// night forces dark, paper forces light, system follows theme_is_dark().
-bool reading_is_dark() {
+// night forces dark, paper forces light, sepia forces the deep cream
+// parchment, system follows theme_is_dark().
+std::string reading_surface() {
   using rivet_app::ReadingTheme;
-  if (g_host.settings.reading_theme == ReadingTheme::night) return true;
-  if (g_host.settings.reading_theme == ReadingTheme::paper) return false;
-  return theme_is_dark();
+  if (g_host.settings.reading_theme == ReadingTheme::night) return "dark";
+  if (g_host.settings.reading_theme == ReadingTheme::sepia) return "sepia";
+  if (g_host.settings.reading_theme == ReadingTheme::paper) return "light";
+  return theme_is_dark() ? "dark" : "light";
 }
 
 // Re-skin open books only; the chrome palette is apply_theme()'s job.
 void apply_reading_theme() {
-  bool const surface_dark = reading_is_dark();
-  for (auto& tab : g_host.tabs) tab->set_dark(surface_dark);
+  std::string const surface = reading_surface();
+  for (auto& tab : g_host.tabs) tab->set_surface(surface);
   if (g_host.epub != nullptr) {
-    g_host.epub->apply_theme(surface_dark ? "dark" : "light");
+    g_host.epub->apply_theme(surface);
   }
   // set_dark dropped each tab's cached thumbnails; rebuild the sidebar so
   // visible thumbs re-render in the new palette.
@@ -630,7 +632,7 @@ void finish_pdf_open(std::string const& path, int resume_page,
   auto tab = std::make_unique<PdfTab>(doc, path, title);
   PdfTab* raw = tab.get();
   raw->set_double_mode(g_host.settings.view_mode == "double");
-  raw->set_dark(reading_is_dark());
+  raw->set_surface(reading_surface());
   raw->on_page_changed = [raw](int page) {
     if (raw != g_host.active_pdf()) return;
     refresh_status();

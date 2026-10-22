@@ -59,10 +59,11 @@ final class PDFTab: ObservableObject, Identifiable {
 
     var document: PDFDocument? { pdfView.document }
 
-    /// Reading-theme page canvas behind the pages (paper/night); the page
-    /// content itself is never tinted.
+    /// Reading-theme page canvas behind the pages (paper/sepia/night); the
+    /// page content itself is never tinted.
     func applyCanvasSurface(_ surface: String) {
-        let color = NSColor(hex: surface == "dark" ? 0x171412 : 0xF5F2ED)
+        let color = NSColor(hex: surface == "dark" ? 0x171412
+                            : surface == "sepia" ? 0xEFE6D5 : 0xF5F2ED)
         pdfView.backgroundColor = color
         splitPdfView.backgroundColor = color
     }

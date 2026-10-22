@@ -165,6 +165,7 @@ inline constexpr struct LinuxStringEntry {
     {"ui.reading.theme.system", "跟随应用", "Match App"},
     {"ui.reading.theme.paper", "纸张", "Paper"},
     {"ui.reading.theme.night", "夜间", "Night"},
+    {"ui.reading.theme.sepia", "深纸", "Sepia"},
     {"ui.settings.api-key", "API Key", "API Key"},
     {"ui.settings.api-key-saved", "已保存（输入新 Key 覆盖）", "Saved (enter a new key to replace)"},
     {"ui.settings.appearance", "外观", "Appearance"},

@@ -261,8 +261,11 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ApplyTheme();
   void ToggleTheme();
   // Reading page surface (settings.json, independent of the chrome theme):
-  // night forces dark, paper forces light, system follows ActualTheme.
-  bool ReadingDark();
+  // night forces dark, paper forces light, sepia forces the deep cream
+  // parchment, system follows ActualTheme.
+  std::wstring ReadingSurface() const;
+  // Cell/page-canvas fill for the surface (the LayoutTab dark shortcut).
+  wu::Color SurfaceCanvasColor() const;
   void ApplyReadingTheme();
   void SaveReadingPrefs(rivet_app::ReadingTheme theme);
   void SaveReadingFontScale(double scale);

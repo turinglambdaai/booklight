@@ -152,6 +152,9 @@ class PdfTab {
   void fit_width();
   void set_double_mode(bool on);
   void set_dark(bool on);  // tray background behind pages
+  // Reading page surface: "dark" (inverted render + dark tray), "sepia"
+  // (normal render + cream tray) or anything else (normal + light tray).
+  void set_surface(std::string const& surface);
   void reload_document(std::shared_ptr<PdfDocument> doc);  // page edit
 
   std::string selection_text();

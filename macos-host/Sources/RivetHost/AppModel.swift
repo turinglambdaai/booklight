@@ -423,6 +423,7 @@ final class AppModel: ObservableObject {
         switch settings.reading_theme {
         case .paper: return "light"
         case .night: return "dark"
+        case .sepia: return "sepia"
         case .system: return EpubTab.systemTheme()
         }
     }

@@ -116,7 +116,7 @@
      ;; ---- reading prefs normalization ----
      (define bad-reading
        (storage->settings
-        (hasheq 'reading_theme "sepia" 'reading_font_scale "big")))
+        (hasheq 'reading_theme "solarized" 'reading_font_scale "big")))
      (check-equal? (settings-reading-theme bad-reading) "system")
      (check-equal? (settings-reading-font-scale bad-reading) 1.0)
      (check-equal? (settings-reading-font-scale
@@ -128,6 +128,9 @@
      (check-equal? (settings-reading-theme
                     (storage->settings (hasheq 'reading_theme "paper")))
                    "paper")
+     (check-equal? (settings-reading-theme
+                    (storage->settings (hasheq 'reading_theme "sepia")))
+                   "sepia")
 
      ;; ---- language mapping ----
      (check-equal? (language-name->code "繁體中文") "zh-hant")

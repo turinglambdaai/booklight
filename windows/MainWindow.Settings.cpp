@@ -285,6 +285,7 @@ void MainWindow::BuildSettingsPane() {
   settings_reading_theme_.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
   for (std::wstring const label :
        {pdfgist::Tr("ui.reading.theme.system"), pdfgist::Tr("ui.reading.theme.paper"),
+        pdfgist::Tr("ui.reading.theme.sepia"),
         pdfgist::Tr("ui.reading.theme.night")}) {
     auto item = muxc::ComboBoxItem();
     muxc::TextBlock label_block;
@@ -296,16 +297,22 @@ void MainWindow::BuildSettingsPane() {
   settings_reading_theme_.SelectedIndex(
       settings_.reading_theme == rivet_app::ReadingTheme::paper
           ? 1
-          : settings_.reading_theme == rivet_app::ReadingTheme::night ? 2 : 0);
+          : settings_.reading_theme == rivet_app::ReadingTheme::sepia
+                ? 2
+                : settings_.reading_theme == rivet_app::ReadingTheme::night
+                      ? 3
+                      : 0);
   settings_reading_theme_.SelectionChanged(
       [weak = get_weak()](winrt::Windows::Foundation::IInspectable const& sender,
                           muxc::SelectionChangedEventArgs const&) {
         if (auto window = weak.get()) {
           auto const combo = sender.as<muxc::ComboBox>();
           using rivet_app::ReadingTheme;
-          window->SaveReadingPrefs(combo.SelectedIndex() == 1  ? ReadingTheme::paper
-                                   : combo.SelectedIndex() == 2 ? ReadingTheme::night
-                                                                : ReadingTheme::system);
+          window->SaveReadingPrefs(
+              combo.SelectedIndex() == 1   ? ReadingTheme::paper
+              : combo.SelectedIndex() == 2 ? ReadingTheme::sepia
+              : combo.SelectedIndex() == 3 ? ReadingTheme::night
+                                           : ReadingTheme::system);
         }
       });
   stack.Children().Append(settings_reading_theme_);
@@ -517,8 +524,11 @@ void MainWindow::LoadSettingsIntoPane() {
     settings_reading_theme_.SelectedIndex(
         settings_.reading_theme == rivet_app::ReadingTheme::paper
             ? 1
-            : settings_.reading_theme == rivet_app::ReadingTheme::night ? 2
-                                                                        : 0);
+            : settings_.reading_theme == rivet_app::ReadingTheme::sepia
+                  ? 2
+                  : settings_.reading_theme == rivet_app::ReadingTheme::night
+                        ? 3
+                        : 0);
   }
 }
 
