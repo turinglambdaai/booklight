@@ -201,6 +201,37 @@ final class GistPDFView: PDFView {
     }
 }
 
+// MARK: - night content inversion (mac PDFKit leg; Windows/Linux invert
+// inside their PDFium render pipelines)
+
+/// A PDFPage that can draw itself through a difference-blend white pass —
+/// the PDF.js-style negative filter. The flag is app-wide (the reading
+/// surface is a setting, not per-document) and only consulted at draw
+/// time, so a flip needs a fresh document (see InvertedPDFDocument users).
+final class InvertedPDFPage: PDFPage {
+    // Draw-time read only; flips happen on the main actor (applyCanvasSurface)
+    // before any fresh document draws — same pattern as L10n.language.
+    nonisolated(unsafe) static var isInverted = false
+
+    override func draw(with box: PDFDisplayBox, to context: CGContext) {
+        super.draw(with: box, to: context)
+        guard Self.isInverted else { return }
+        context.saveGState()
+        // difference with white inverts everything drawn so far: paper goes
+        // dark, text goes light — same semantics as the PDFium negative
+        // filter on Windows/Linux.
+        context.setBlendMode(.difference)
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(bounds(for: box))
+        context.restoreGState()
+    }
+}
+
+/// A PDFDocument whose pages are InvertedPDFPage instances.
+final class InvertedPDFDocument: PDFDocument {
+    override var pageClass: AnyClass { InvertedPDFPage.self }
+}
+
 // MARK: - target-language display names (shared by reader + settings)
 
 func languageName(_ code: RivetTypes.TargetLanguage) -> String {

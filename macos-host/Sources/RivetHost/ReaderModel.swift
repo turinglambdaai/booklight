@@ -60,7 +60,8 @@ final class PDFTab: ObservableObject, Identifiable {
     var document: PDFDocument? { pdfView.document }
 
     /// Reading-theme page canvas behind the pages (paper/sepia/night); the
-    /// page content itself is never tinted.
+    /// page content inversion is coordinated by the ReaderModel (it owns
+    /// the stored annotations that must survive the document swap).
     func applyCanvasSurface(_ surface: String) {
         let color = NSColor(hex: surface == "dark" ? 0x171412
                             : surface == "sepia" ? 0xEFE6D5 : 0xF5F2ED)
@@ -240,7 +241,7 @@ final class ReaderModel: ObservableObject {
             return
         }
         guard pdf == nil && epub == nil else { return }
-        guard let doc = PDFDocument(url: URL(fileURLWithPath: path)) else {
+        guard let doc = InvertedPDFDocument(url: URL(fileURLWithPath: path)) else {
             alert(L10n.t("ui.open-failed", path))
             return
         }
@@ -254,7 +255,9 @@ final class ReaderModel: ObservableObject {
         let title = URL(fileURLWithPath: path).lastPathComponent
         let tab = PDFTab(path: path, title: title, document: doc, reader: self)
         tab.resumePage = max(resumePage ?? app?.recentPage(path) ?? 1, 1)
-        tab.applyCanvasSurface(app?.readingSurface() ?? "light")
+        let surface = app?.readingSurface() ?? "light"
+        tab.applyCanvasSurface(surface)
+        InvertedPDFPage.isInverted = (surface == "dark")
         pdf = tab
         epubActive = false
         sidebarMode = 0
@@ -304,10 +307,37 @@ final class ReaderModel: ObservableObject {
     // MARK: window lifecycle
 
     /// Reading-theme re-skin from the settings pane: EPUB page theme now,
-    /// PDF page canvas in both panes.
+    /// PDF page canvas in both panes — and on a night flip, the page
+    /// content inversion (Books parity; the Windows and Linux hosts invert
+    /// inside their PDFium pipelines — PDFKit has no render hook, so the
+    /// flip re-creates the document from the same file).
     func applyReadingSurface(_ surface: String) {
         epub?.applyTheme(surface)
         pdf?.applyCanvasSurface(surface)
+        applyInversion(surface)
+    }
+
+    private func applyInversion(_ surface: String) {
+        guard let tab = pdf else { return }
+        let inverted = surface == "dark"
+        guard inverted != InvertedPDFPage.isInverted else { return }
+        InvertedPDFPage.isInverted = inverted
+        // Fresh pages draw with the current flag; same file, position,
+        // zoom, mode and stored annotations restored.
+        guard let doc = InvertedPDFDocument(url: URL(fileURLWithPath: tab.path)),
+              !doc.isLocked else { return }
+        let page = tab.currentPage
+        let scale = tab.pdfView.scaleFactor
+        let mode = tab.pdfView.displayMode
+        tab.pdfView.document = doc
+        tab.splitPdfView.document = doc
+        tab.pageCount = doc.pageCount
+        applyStoredAnnotations(tab)
+        rebuildOutline(tab)
+        tab.refreshBookmarkFlag()
+        tab.pdfView.displayMode = mode
+        tab.goToPage(page)
+        tab.pdfView.scaleFactor = scale
     }
 
     /// Called when the window closes: flush pending persistence, stop live
