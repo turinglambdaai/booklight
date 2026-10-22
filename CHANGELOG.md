@@ -3,6 +3,17 @@
 All notable changes to Booklight are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semver.
 
+## [0.6.0] - 2026-10-22
+
+### Added
+
+- **Annotation export.** The notes pane gains 导出批注…: the domain core
+  renders your highlights, underlines, strikes and notes — plus a
+  bookmarks section — as a Markdown digest you keep beside the book.
+  Pages ascend, content stays verbatim, and what lands in the file is
+  exactly what the pane shows (unsaved edits included). Labels follow
+  the interface language.
+
 ## [0.5.0] - 2026-10-22
 
 ### Added
