@@ -1150,8 +1150,7 @@ void MainWindow::BuildEpubNotesPane(
     page_label.Text(pdfgist::Trf("ui.epub.chapter-n",
                                  std::to_wstring(annotation.page)));
     page_label.FontSize(10);
-    page_label.Foreground(Brush(TextDimColor(
-        Root().ActualTheme() == mux::ElementTheme::Dark)));
+    page_label.Opacity(0.6);
     head.Children().Append(page_label);
     auto spacer = muxc::Border();
     spacer.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
