@@ -116,6 +116,7 @@
   "ui.notes.bookmarks": "Bookmarks",
   "ui.notes.delete-btn": "✕",
   "ui.notes.deleted": "Annotation deleted",
+  "ui.notes.epub-annotate": "Annotate Selection:",
   "ui.notes.export": "Export Annotations…",
   "ui.notes.export-suffix": "-Annotations",
   "ui.notes.empty": "Select text in the document to highlight it; highlights support three colors",

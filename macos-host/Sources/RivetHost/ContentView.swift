@@ -271,15 +271,20 @@ struct ReaderWindowView: View {
         // mode while the sidebar is collapsed opens it.
         ToolbarItem(placement: .navigation) {
             Picker("", selection: $reader.sidebarMode) {
-                Text(L10n.t("ui.viewer.thumbs")).tag(0)
-                Text(L10n.t("ui.viewer.outline")).tag(1)
-                Text(L10n.t("ui.sidebar.annotations")).tag(2)
-                Text(L10n.t("ui.sidebar.forms")).tag(3)
+                if reader.epubActive {
+                    Text(L10n.t("ui.viewer.outline")).tag(1)
+                    Text(L10n.t("ui.sidebar.annotations")).tag(2)
+                } else {
+                    Text(L10n.t("ui.viewer.thumbs")).tag(0)
+                    Text(L10n.t("ui.viewer.outline")).tag(1)
+                    Text(L10n.t("ui.sidebar.annotations")).tag(2)
+                    Text(L10n.t("ui.sidebar.forms")).tag(3)
+                }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            .disabled(reader.pdf == nil)
+            .disabled(reader.pdf == nil && reader.epub == nil)
             .help(L10n.t("ui.toolbar.panel"))
         }
 

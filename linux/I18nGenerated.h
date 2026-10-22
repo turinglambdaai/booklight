@@ -129,6 +129,7 @@ inline constexpr struct LinuxStringEntry {
     {"ui.notes.bookmarks", "书签", "Bookmarks"},
     {"ui.notes.delete-btn", "删", "✕"},
     {"ui.notes.deleted", "已删除批注", "Annotation deleted"},
+    {"ui.notes.epub-annotate", "标注选区：", "Annotate Selection:"},
     {"ui.notes.export", "导出批注…", "Export Annotations…"},
     {"ui.notes.export-suffix", "-批注", "-Annotations"},
     {"ui.notes.empty", "在正文中划选文本即可高亮并写笔记；高亮支持三色", "Select text in the document to highlight it; highlights support three colors"},

@@ -23,13 +23,32 @@ final class EpubTab: ObservableObject, Identifiable {
 
     var recentTask: Task<Void, Never>?
 
+    /// A text selection with its anchor: character offsets inside the
+    /// chapter's plain text (the same text the search uses), computed by
+    /// the page script on mouseup. Consumed by the AI selection actions
+    /// and by annotation adds.
+    struct Selection {
+        let text: String
+        let chapter: Int
+        let start: Int
+        let end: Int
+    }
+
     /// Last selection relayed from the web view (mouseup bridge, v1
-    /// onSelection). Consumed by the AI selection actions.
-    var pendingSelection: String?
+    /// onSelection). Consumed by the AI selection actions and by the
+    /// EPUB annotation flow.
+    var pendingSelection: Selection?
 
     /// chapter-text cache for search + repeated AI calls
     var textCache: [Int: String] = [:]
     var searchHits: [(chapter: Int, range: Range<String.Index>)] = []
+
+    /// Annotations + bookmarks, same JSON shape as the PDF store (page =
+    /// chapter ordinal; EPUB annotations carry the chapter/offset anchor).
+    @Published var docData = DocData.empty
+    var annoTask: Task<Void, Never>?
+    /// Marks are injected after the page finished loading.
+    var marksApplied = false
 
     /// last theme pushed into the page ("light"/"dark") so the view layer
     /// only re-applies on system appearance changes
@@ -153,6 +172,47 @@ final class EpubTab: ObservableObject, Identifiable {
             completionHandler: nil)
     }
 
+    // MARK: annotations (same JSON store as PDFs; page = chapter ordinal)
+
+    func queueAnnotationSave() {
+        annoTask?.cancel()
+        annoTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.storeAnnotationData()
+        }
+    }
+
+    func storeAnnotationData() async {
+        guard let reader, let app = reader.app, let api = app.api else { return }
+        guard let data = try? JSONEncoder().encode(docData) else { return }
+        try? await api.set_annotations(
+            pdf_path: path, sidecar: app.settings.annotation_sidecar, data: data)
+    }
+
+    func loadAnnotations(api: RivetAPI, sidecar: Bool) {
+        Task { [weak self] in
+            guard let self else { return }
+            if let data = try? await api.get_annotations(
+                pdf_path: path, sidecar: sidecar),
+               let decoded = try? JSONDecoder().decode(DocData.self, from: data) {
+                self.docData = decoded
+                self.applyAnnotationsScript()
+            }
+        }
+    }
+
+    /// (Re)inject every stored annotation into the page (no-op until the
+    /// page finished loading).
+    func applyAnnotationsScript() {
+        guard loaded else { return }
+        guard let data = try? JSONEncoder().encode(docData),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "const d = JSON.parse(\(Self.jsString(json))); applyEpubAnnotations(d.annotations);",
+            completionHandler: nil)
+    }
+
     // MARK: static page assets
 
     static func escapeHTML(_ s: String) -> String {
@@ -226,9 +286,95 @@ final class EpubTab: ObservableObject, Identifiable {
           if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
           const text = sel.toString().trim();
           if (text.length < 2) return;
+          // Anchor: character offsets within the start chapter's plain
+          // text (its textContent), so a mark survives reloads without
+          // fragile DOM paths.
+          const range = sel.getRangeAt(0);
+          const root = range.startContainer.nodeType === 1
+            ? range.startContainer
+            : range.startContainer.parentNode;
+          const chapterEl = root && root.closest
+            ? root.closest('.epub-chapter') : null;
+          if (!chapterEl) return;
+          const sections = Array.from(document.querySelectorAll('.epub-chapter'));
+          const chapter = sections.indexOf(chapterEl) + 1;
+          if (chapter < 1) return;
+          const walker = document.createTreeWalker(chapterEl, NodeFilter.SHOW_TEXT);
+          let start = -1, end = -1, offset = 0, node;
+          while ((node = walker.nextNode())) {
+            const len = node.nodeValue.length;
+            if (start < 0 && node === range.startContainer) start = offset + range.startOffset;
+            if (node === range.endContainer) end = offset + range.endOffset;
+            offset += len;
+          }
+          if (start < 0 || end < 0 || end <= start) return;
           window.webkit.messageHandlers.bridge.postMessage(
-            JSON.stringify({ kind: 'selection', text: text.slice(0, 800) }));
+            JSON.stringify({ kind: 'selection', text: text.slice(0, 800),
+                             chapter: chapter, start: start, end: end }));
         });
+
+        function textNodeMap(root) {
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          const nodes = [];
+          let total = 0, node;
+          while ((node = walker.nextNode())) { nodes.push(node); total += node.nodeValue.length; }
+          return { nodes, total };
+        }
+
+        function styleFor(kind, color) {
+          if (kind === 'underline') return 'text-decoration: underline; text-decoration-color:' + markColor(color) + ';';
+          if (kind === 'strike') return 'text-decoration: line-through; text-decoration-color:' + markColor(color) + ';';
+          const alpha = { yellow: '0.45', green: '0.35', blue: '0.28' }[color] || '0.4';
+          return 'background:' + hexToRgba(markColor(color), alpha) + ';';
+        }
+        function markColor(color) {
+          return { yellow: '#FFD500', green: '#4CC383', blue: '#569CFF' }[color] || '#FFD500';
+        }
+        function hexToRgba(hex, alpha) {
+          const v = parseInt(hex.slice(1), 16);
+          return 'rgba(' + ((v >> 16) & 255) + ',' + ((v >> 8) & 255) + ',' + (v & 255) + ',' + alpha + ')';
+        }
+
+        // One annotation may wrap several text-node segments (each gets
+        // its own mark with the same data-id — the PDF multi-rect model).
+        function applyEpubAnnotation(id, chapter, start, end, kind, color) {
+          const root = document.querySelectorAll('.epub-chapter')[chapter - 1];
+          if (!root) return;
+          removeEpubAnnotation(id);
+          const map = textNodeMap(root);
+          if (start < 0 || end > map.total) return;  // offsets drifted
+          let offset = 0;
+          for (const node of map.nodes) {
+            const len = node.nodeValue.length;
+            const from = Math.max(0, start - offset);
+            const to = Math.min(len, end - offset);
+            if (to > from) {
+              const range = document.createRange();
+              range.setStart(node, from);
+              range.setEnd(node, to);
+              const mark = document.createElement('mark');
+              mark.className = 'epub-anno';
+              mark.dataset.id = id;
+              mark.setAttribute('style', styleFor(kind, color));
+              try { range.surroundContents(mark); } catch (e) {}
+            }
+            offset += len;
+          }
+        }
+
+        function applyEpubAnnotations(list) {
+          (list || []).forEach(a =>
+            applyEpubAnnotation(a.id, a.anchor.chapter, a.anchor.start,
+                                a.anchor.end, a.kind, a.color));
+        }
+
+        function removeEpubAnnotation(id) {
+          document.querySelectorAll('mark.epub-anno[data-id="' + id + '"]').forEach(m => {
+            const parent = m.parentNode;
+            parent.replaceChild(document.createTextNode(m.textContent), m);
+            parent.normalize();
+          });
+        }
         window.addEventListener('scroll', () => {
           const sections = document.querySelectorAll('.epub-chapter');
           const line = window.scrollY + window.innerHeight * 0.35;
@@ -267,6 +413,7 @@ extension EpubTab {
             if let tab, tab.fontScale != 1.0 {
                 tab.applyFontScale(tab.fontScale)
             }
+            tab?.applyAnnotationsScript()
         }
     }
 }
@@ -310,7 +457,13 @@ extension EpubTab {
                 guard let tab = self.tab else { return }
                 switch obj["kind"] as? String {
                 case "selection":
-                    tab.pendingSelection = obj["text"] as? String
+                    if let text = obj["text"] as? String {
+                        tab.pendingSelection = EpubTab.Selection(
+                            text: text,
+                            chapter: obj["chapter"] as? Int ?? tab.currentPage,
+                            start: obj["start"] as? Int ?? 0,
+                            end: obj["end"] as? Int ?? 0)
+                    }
                 case "chapter":
                     if let ch = obj["chapter"] as? Int {
                         tab.currentPage = ch
