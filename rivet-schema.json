@@ -859,6 +859,29 @@
     {
       "arguments": [
         {
+          "name": "data",
+          "type": {
+            "kind": "scalar",
+            "name": "Bytes"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "export-annotations",
+      "result": {
+        "kind": "scalar",
+        "name": "String"
+      }
+    },
+    {
+      "arguments": [
+        {
           "name": "pdf-path",
           "type": {
             "kind": "scalar",

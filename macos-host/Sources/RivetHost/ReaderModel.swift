@@ -426,6 +426,31 @@ final class ReaderModel: ObservableObject {
         saveData(png, defaultName: "\(stem)-\(tab.currentPage).png", type: .png)
     }
 
+    /// Notes sidebar export: the digest renders backend-side over exactly
+    /// the bytes this tab holds (unsaved edits included — no flush race).
+    func exportAnnotations() {
+        guard let tab = pdf else { return }
+        Task {
+            guard let app, let api = app.api else { return }
+            guard let data = try? JSONEncoder().encode(tab.docData) else { return }
+            do {
+                let markdown = try await api.export_annotations(
+                    data: data, title: tab.title)
+                let stem = (tab.title as NSString).deletingPathExtension
+                let name = stem + L10n.t("ui.notes.export-suffix") + ".md"
+                saveData(Data(markdown.utf8), defaultName: name, type: .plainText)
+            } catch let e as ClientError {
+                if case .backend(let message) = e {
+                    alert(L10n.t("ui.pages.edit-failed", message))
+                } else {
+                    alert(L10n.t("ui.pages.edit-failed", String(describing: e)))
+                }
+            } catch {
+                alert(L10n.t("ui.pages.edit-failed", String(describing: error)))
+            }
+        }
+    }
+
     /// Tools > Export Text: the whole document's text layer as .txt.
     func exportDocumentText() {
         guard let tab = pdf, let doc = tab.document else { return }

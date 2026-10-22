@@ -244,6 +244,7 @@ struct MainWindow : MainWindowT<MainWindow> {
                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void ConfirmDeleteCollection(std::wstring const& name);
   void DeleteCollection(std::wstring const& name);
+  void ExportAnnotations();
   void ShelfNav_ItemInvoked(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Microsoft::UI::Xaml::Controls::NavigationViewItemInvokedEventArgs const&);

@@ -31,7 +31,7 @@
          (prefix-in pdfedit: "../racket/booklight/pdfedit.rkt")
          (prefix-in prompts: "../racket/booklight/prompts.rkt")
          (prefix-in recents: "../racket/booklight/recents.rkt")
-         "../racket/booklight/annotations.rkt"
+         (prefix-in annotations: "../racket/booklight/annotations.rkt")
          "../racket/booklight/i18n.rkt"
          "../racket/booklight/providers.rkt"
          "../racket/booklight/settings.rkt"
@@ -381,14 +381,19 @@
 ;; Annotations cross the boundary as validated JSON bytes, so the on-disk
 ;; format (including page-space float rects) stays byte-compatible with v1.
 (define-rpc (get-annotations [pdf-path : String] [sidecar : Bool] : Bytes)
-  (load-document-bytes pdf-path sidecar))
+  (annotations:load-document-bytes pdf-path sidecar))
 
 (define-rpc (set-annotations [pdf-path : String]
                              [sidecar : Bool]
                              [data : Bytes]
                              : Void)
-  (store-document-bytes! pdf-path sidecar data)
+  (annotations:store-document-bytes! pdf-path sidecar data)
   (void))
+
+;; The host sends the annotation document it currently holds (unsaved
+;; edits included — no flush race) and gets back a Markdown digest.
+(define-rpc (export-annotations [data : Bytes] [title : String] : String)
+  (annotations:document-bytes->markdown data title))
 
 ;; scroll-ratio-scaled: round(ratio * 100000); last-read-ms: unix seconds on
 ;; disk multiplied by 1000 on the wire.

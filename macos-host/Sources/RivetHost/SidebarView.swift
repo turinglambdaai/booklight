@@ -44,7 +44,9 @@ struct ReaderSidebar: View {
         case 1:
             OutlineList(tab: tab)
         case 2:
-            NotesPane(tab: tab)
+            NotesPane(tab: tab, onExport: {
+                reader.exportAnnotations()
+            })
         default:
             FormsPane(tab: tab)
         }
@@ -461,10 +463,24 @@ struct ChatBubbleView: View {
 struct NotesPane: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var tab: PDFTab
+    let onExport: () -> Void
+
+    private var hasAnything: Bool {
+        !tab.docData.annotations.isEmpty || !tab.docData.bookmarks.isEmpty
+    }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
+                if hasAnything {
+                    Button(action: onExport) {
+                        Label(L10n.t("ui.notes.export"), systemImage: "square.and.arrow.up")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.accent)
+                    .padding(.bottom, 2)
+                }
                 if tab.docData.annotations.isEmpty {
                     Text(L10n.t("ui.notes.empty"))
                         .font(.system(size: 12))
