@@ -265,7 +265,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   // parchment, system follows ActualTheme.
   std::wstring ReadingSurface() const;
   // Cell/page-canvas fill for the surface (the LayoutTab dark shortcut).
-  wu::Color SurfaceCanvasColor() const;
+  winrt::Windows::UI::Color SurfaceCanvasColor() const;
   void ApplyReadingTheme();
   void SaveReadingPrefs(rivet_app::ReadingTheme theme);
   void SaveReadingFontScale(double scale);
