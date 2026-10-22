@@ -13,6 +13,7 @@
 ;; cross the RPC as opaque JSON bytes, so no coordinate scaling happens here.
 
 (require json
+         racket/date
          racket/file
          racket/path
          racket/port
@@ -31,7 +32,8 @@
          load-document-bytes
          store-document-bytes!
          normalize-document-value
-         normalize-annotation)
+         normalize-annotation
+         document-bytes->markdown)
 
 ;; ---- paths ----
 
@@ -208,3 +210,99 @@
       (lambda (out) (write-bytes (json-value->bytes normalized) out))
       #:exists 'replace))
   (void))
+
+;; ---- markdown digest (the reader keeps it beside the book) ----
+;;
+;; Renders the v1 document bytes — exactly what a host annotation pane
+;; holds, unsaved edits included — as a Markdown file. Section/kind labels
+;; follow the backend locale; excerpts and notes stay verbatim. The doc
+;; shape is the shared storage shape, so the same bytes hosts save are the
+;; bytes this digests.
+
+(define (doc-field obj key default)
+  (cond
+    [(jobj? obj)
+     (define pair (assoc key (jobj-fields obj)))
+     (if pair (cdr pair) default)]
+    [(hash? obj) (hash-ref obj (string->symbol key) default)]
+    [else default]))
+
+;; List items are single-line: collapse the user content's line breaks.
+(define (one-line text)
+  (string-replace (string-replace text "\r\n" " ") "\n" " "))
+
+(define (iso-day)
+  (define now (current-date))
+  (define (two n)
+    (if (< n 10)
+        (string-append "0" (number->string n))
+        (number->string n)))
+  (string-append (number->string (date-year now))
+                 "-"
+                 (two (date-month now))
+                 "-"
+                 (two (date-day now))))
+
+(define (annotation-less? a b)
+  (define pa (doc-field a "page" 1))
+  (define pb (doc-field b "page" 1))
+  (if (equal? pa pb)
+      (< (doc-field a "created" 0) (doc-field b "created" 0))
+      (< pa pb)))
+
+(define (document-bytes->markdown data title)
+  (define value
+    (with-handlers
+        ([exn:fail?
+          (lambda (e)
+            (raise (exn:fail (tf "backend.error.parse-annotations" (exn-message e))
+                             (current-continuation-marks))))])
+      (read-json (open-input-bytes data))))
+  (define doc (normalize-document-value value))
+  (define annotations
+    (sort (doc-field doc "annotations" '()) annotation-less?))
+  (define bookmarks
+    (sort (doc-field doc "bookmarks" '())
+          (lambda (a b) (< (doc-field a "page" 1) (doc-field b "page" 1)))))
+  (define lines
+    (list (string-append "# " (tf "export.digest-title" title))
+          (string-append "> " (tf "export.meta" (iso-day)))))
+  (define annotation-lines
+    (apply append
+           (for/list ([anno (in-list annotations)])
+             (define page (doc-field anno "page" 1))
+             (define kind (doc-field anno "kind" "highlight"))
+             (define excerpt (one-line (doc-field anno "excerpt" "")))
+             (define note (one-line (doc-field anno "note" "")))
+             (define heading
+               (string-append "## "
+                              (tf "export.page-heading"
+                                  (number->string page))))
+             (define bullet
+               (string-append
+                "- **" (tf (string-append "export.kind." kind)) "**"
+                (if (string=? excerpt "")
+                    ""
+                    (string-append " 「" excerpt "」"))))
+             (if (string=? note "")
+                 (list "" heading bullet)
+                 (list "" heading bullet
+                       (string-append "  - " (tf "export.note-line" note)))))))
+  (define bookmark-lines
+    (if (null? bookmarks)
+        '()
+        (cons (string-append "## " (tf "export.bookmarks-heading"))
+              (for/list ([mark (in-list bookmarks)])
+                (define page (doc-field mark "page" 1))
+                (define label (one-line (doc-field mark "label" "")))
+                (string-append "- "
+                               (tf "export.page-heading"
+                                   (number->string page))
+                               (if (string=? label "")
+                                   ""
+                                   (string-append " · " label)))))))
+  (define body
+    (if (and (null? annotations) (null? bookmarks))
+        (list "" (tf "export.empty"))
+        (append annotation-lines (cons "" bookmark-lines))))
+  (string-join (append lines body) "\n"))

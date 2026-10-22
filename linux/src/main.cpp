@@ -92,6 +92,7 @@ struct Host {
   GtkFlowBox* thumbs{nullptr};
   GtkListBox* outline_list{nullptr};
   GtkListBox* notes_list{nullptr};
+  GtkWidget* notes_export_button{nullptr};
   GtkRevealer* find_revealer{nullptr};
   GtkSearchEntry* find_entry{nullptr};
   GtkLabel* find_count{nullptr};
@@ -1117,6 +1118,10 @@ void populate_notes() {
   if (list == nullptr) return;
   gtk_list_box_remove_all(list);
   auto* tab = g_host.active_pdf_only();
+  if (g_host.notes_export_button != nullptr) {
+    gtk_widget_set_sensitive(g_host.notes_export_button,
+                             tab != nullptr);
+  }
   if (tab == nullptr) {
     // EPUB or no document: the pane is PDF-only (mac sidebar semantics).
     auto* row = gtk_list_box_row_new();
@@ -2141,6 +2146,28 @@ void tools_export_page_image() {
                     title_stem(tab->title()) + "-" + std::to_string(page) +
                         ".png",
                     std::move(png));
+}
+
+// Notes sidebar export (mac NotesPane export button parity): the backend
+// renders the Markdown over the bytes this tab holds (unsaved edits
+// included — no flush race).
+void export_annotations_ui() {
+  auto* tab = g_host.active_pdf_only();
+  if (tab == nullptr || g_host.api == nullptr || !g_host.ready) return;
+  auto bytes = encode_doc_data(tab->doc_data());
+  std::string const title = tab->title();
+  g_host.api->export_annotations_async(
+      std::move(bytes), title,
+      [title](rivet_app::Result<std::string> result) {
+        host::dispatch_ui([title, result]() mutable {
+          if (!result.succeeded()) return;
+          auto const markdown = result.get();
+          save_bytes_dialog(
+              Tr("ui.notes.export"),
+              title_stem(title) + Tr("ui.notes.export-suffix") + ".md",
+              rivet::Bytes(markdown.begin(), markdown.end()));
+        });
+      });
 }
 
 // Tools > Export Text: the whole document's text layer as .txt (mac
@@ -3437,13 +3464,27 @@ void on_activate(GtkApplication* app, gpointer) {
       nullptr);
 
   // notes (annotations + bookmarks) — the sidebar's third mode (mac
-  // NotesPane)
+  // NotesPane); the header carries the digest export button (insensitive
+  // while the document has nothing to export).
   auto* notes_scroll = gtk_scrolled_window_new();
   auto* notes = gtk_list_box_new();
   g_host.notes_list = GTK_LIST_BOX(notes);
   gtk_list_box_set_selection_mode(g_host.notes_list, GTK_SELECTION_NONE);
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(notes_scroll), notes);
-  gtk_stack_add_titled(GTK_STACK(left_stack), notes_scroll, "notes",
+  auto* notes_export = gtk_button_new_with_label(Tr("ui.notes.export").c_str());
+  g_host.notes_export_button = notes_export;
+  gtk_widget_set_halign(notes_export, GTK_ALIGN_START);
+  gtk_widget_set_margin_start(notes_export, 8);
+  gtk_widget_set_margin_top(notes_export, 8);
+  gtk_widget_set_margin_end(notes_export, 8);
+  gtk_widget_set_sensitive(notes_export, FALSE);
+  hook(notes_export, "clicked",
+       +[](GtkButton*, gpointer) { export_annotations_ui(); },
+       nullptr);
+  auto* notes_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_box_append(GTK_BOX(notes_box), notes_export);
+  gtk_box_append(GTK_BOX(notes_box), notes_scroll);
+  gtk_stack_add_titled(GTK_STACK(left_stack), notes_box, "notes",
                        Tr("ui.tab.notes").c_str());
   hook(notes, "row-activated", on_note_row_activated, nullptr);
 

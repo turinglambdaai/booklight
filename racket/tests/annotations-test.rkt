@@ -6,6 +6,7 @@
 (require json
          rackunit
          racket/file
+         racket/list
          racket/string
          racket/path
          "../booklight/annotations.rkt"
@@ -151,6 +152,36 @@
      ;; …and from then on the new file wins
      (define reread (load-document-bytes sidecar-pdf #t))
      (check-true (string-contains? (bytes->string/utf-8 reread) "\"page\": 3"))
-     (check-false (string-contains? (bytes->string/utf-8 reread) "\"id\":\"x\""))))
+     (check-false (string-contains? (bytes->string/utf-8 reread) "\"id\":\"x\"")))
+
+     ;; ---- markdown digest ----
+     ;; Pages ascend, kinds localize (zh default), notes ride under their
+     ;; bullet, bookmarks get their own section, newlines collapse.
+     (define digest
+       (document-bytes->markdown
+        (string->bytes/utf-8
+         "{\"annotations\":[{\"page\":12,\"excerpt\":\"line one\\nline two\",\"kind\":\"highlight\",\"note\":\"check this\",\"created\":5},{\"page\":3,\"excerpt\":\"earlier\",\"kind\":\"underline\",\"created\":9}],\"bookmarks\":[{\"page\":7,\"label\":\"重读\"}]}")
+        "我的书"))
+     (check-true (string-contains? digest "我的书 — 批注与书签"))
+     (check-true (string-contains? digest "导出自 Booklight"))
+     ;; page 3 sorts before page 12 despite a later creation stamp
+     (check-true (< (index-of (string-split digest "\n") "## 第 3 页")
+                    (index-of (string-split digest "\n") "## 第 12 页")))
+     (check-true (string-contains? digest "- **下划线** 「earlier」"))
+     ;; the excerpt newline collapsed into one line
+     (check-true (string-contains? digest "- **高亮** 「line one line two」"))
+     (check-true (string-contains? digest "  - 笔记：check this"))
+     (check-true (string-contains? digest "## 书签"))
+     (check-true (string-contains? digest "- 第 7 页 · 重读"))
+     ;; empty document degrades to the empty note, not an empty file
+     (define empty-digest
+       (document-bytes->markdown
+        (string->bytes/utf-8 "{\"annotations\":[],\"bookmarks\":[]}") "书"))
+     (check-true (string-contains? empty-digest "没有批注或书签。"))
+     ;; malformed shape raises instead of writing junk
+     (check-exn exn:fail?
+                (lambda ()
+                  (document-bytes->markdown
+                   (string->bytes/utf-8 "not json") "书"))))
  (lambda ()
    (delete-directory/files temp-root)))

@@ -674,6 +674,24 @@ void MainWindow::BuildNotesPane(
   auto tab = active_pdf_;
   if (!tab) return;
 
+  // Notes digest export (mac NotesPane export button parity): one click,
+  // backend renders the Markdown, SaveData picks the destination.
+  if (!tab->doc_data.annotations.empty() ||
+      !tab->doc_data.bookmarks.empty()) {
+    auto export_btn = muxc::Button();
+    auto label = muxc::TextBlock();
+    label.Text(pdfgist::Tr("ui.notes.export"));
+    label.FontSize(12);
+    export_btn.Content(label);
+    export_btn.Margin({0, 0, 0, 6});
+    auto const weak = get_weak();
+    export_btn.Click([weak](winrt::Windows::Foundation::IInspectable const&,
+                            mux::RoutedEventArgs const&) {
+      if (auto window = weak.get()) window->ExportAnnotations();
+    });
+    content.Children().Append(export_btn);
+  }
+
   if (tab->doc_data.annotations.empty()) {
     auto empty = muxc::TextBlock();
     empty.Text(pdfgist::Tr("ui.notes.empty"));
@@ -894,6 +912,40 @@ void MainWindow::BuildNotesPane(
     });
     content.Children().Append(row);
   }
+}
+
+// ---- notes digest export ------------------------------------------------------------
+
+void MainWindow::ExportAnnotations() {
+  auto tab = active_pdf_.get();
+  if (!tab || !ready_ || !backend_) return;
+  std::string const json = SerializeDocData(tab->doc_data);
+  std::wstring const title = tab->title;
+  auto const backend = backend_;
+  auto const dispatcher = DispatcherQueue();
+  auto const weak = get_weak();
+  std::thread([weak, dispatcher, backend, json, title]() mutable {
+    std::string markdown;
+    try {
+      rivet_app::API api(*backend);
+      rivet::Bytes bytes(json.begin(), json.end());
+      markdown = api.export_annotations(bytes, to_utf8(title)).get();
+    } catch (...) {
+      return;  // best effort; the pane stays usable
+    }
+    dispatcher.TryEnqueue([weak, markdown = std::move(markdown),
+                           title]() {
+      auto window = weak.get();
+      if (!window) return;
+      std::wstring stem = title;
+      auto const dot = stem.find_last_of(L'.');
+      if (dot != std::wstring::npos) stem.resize(dot);
+      std::vector<std::uint8_t> bytes(markdown.begin(), markdown.end());
+      window->SaveData(std::move(bytes),
+                       stem + pdfgist::Tr("ui.notes.export-suffix") + L".md",
+                       L"Markdown", L".md");
+    });
+  }).detach();
 }
 
 }  // namespace winrt::RivetHost::implementation

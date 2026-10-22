@@ -345,6 +345,10 @@ public struct RivetAPI: Sendable {
         let rivetResult = try await client.call("epub-open", arguments: [encode_String(path)])
         return try decode_EpubView(rivetResult)
     }
+    public func export_annotations(data: Data, title: String) async throws -> String {
+        let rivetResult = try await client.call("export-annotations", arguments: [encode_Bytes(data), encode_String(title)])
+        return try decode_String(rivetResult)
+    }
     public func get_annotations(pdf_path: String, sidecar: Bool) async throws -> Data {
         let rivetResult = try await client.call("get-annotations", arguments: [encode_String(pdf_path), encode_Bool(sidecar)])
         return try decode_Bytes(rivetResult)
