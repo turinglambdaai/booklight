@@ -1,41 +1,39 @@
-# Booklight 产品与收费方案
+# Booklight product and pricing plan
 
-## 首发与执行边界
+**English** · [简体中文](PRICING.zh-CN.md)
 
-- 本方案版本 `2026-10-v2`。用户确认所有产品仍在开发、没有实际用户；本文件替代此前冲突的定价/早鸟/Pro 设想，不存在需要迁移的现有客户群。**价格是首发目标，不表示已经开卖或已完成相应功能。**
-- 只发布已交付平台的权益；新计划不改变已经发布源码的 LICENSE。开源源码的使用/修改/再分发权与官方商品、更新和服务分别说明。
-- 修复安全漏洞、读取/备份/导出自己的数据不以再次购买作为条件。模型 key、支付渠道密钥和签发私钥各有边界，不在宿主代码里直接收款或签发。
+## Launch status and implementation boundaries
 
-## 决策
+- Policy version: `2026-10-v2`, 2026-10-23. The owner confirmed that every product is still in development and has no actual users. This document replaces conflicting previous pricing, early-bird and Pro proposals; there is no existing customer cohort to migrate. **Prices are launch targets, not live offers or claims that the listed features are implemented.**
+- Entitlements cover delivered platforms only. New commercial plans do not change the LICENSE of released source. Source use, modification and redistribution rights are separate from official products, updates and services.
+- Security fixes and reading, backing up or exporting your own data must not require another purchase. BYOK keys, payment-provider secrets and issuer private keys have different owners. Native hosts do not collect payment or issue credentials directly.
 
-**免费阅读器 + 研究工作台 Pro 买断**
+## Decision
 
-首发目标：**¥128 / US$19；续购 12 个月更新 ¥48 / US$7**。人民币和美元是分别设定的地区目标价格，不是实时汇率换算。
+**Free reader with a purchase for a new research workbench**
 
-通用阅读器难收费，跨文档研究有明确成果；避免和 PodLens 同时各建一套托管模型服务。
+Launch target: **¥128 / US$19; optional 12-month update renewal: ¥48 / US$7**. CNY and USD are independently set regional targets, not a live exchange-rate conversion.
 
-## 免费与付费边界
+A general reader is difficult to differentiate commercially; cross-document research produces a concrete result. Do not build separate hosted-model businesses for both Booklight and PodLens.
 
-免费 / 评估：现有 PDF/EPUB 阅读、书架、批注、检索、打印、表单、轻编辑、单文档 BYOK AI 与批注导出保持免费。模型供应商费用由用户承担，不经过本站转售。
+## Free and paid scope
 
-付费：新增的跨书研究项目、带页码/段落来源的多文档检索、可审计的引用工作流、批量研究笔记整理；一名用户覆盖已交付的三桌面平台。付费依据是研究工作流，不是限制打开书本或拿走自己的批注。
+Free / evaluation: Existing PDF/EPUB reading, bookshelf, annotations, search, printing, forms, light editing, single-document BYOK AI and annotation export remain free. Users pay their model provider directly; this product does not resell those requests.
 
-## 买断、试用与更新
+Paid: New cross-book research projects, multi-document retrieval with page/paragraph provenance, auditable citation workflows and batch research-note organization. One named user covers the three desktop platforms actually delivered. The paid result is a research workflow, not permission to open books or recover your annotations.
 
-首购包含 12 个月新版本资格；到期后，更新窗内已获得的版本继续使用。续购自 `max(支付时间, 当前 updates_through)` 起增加 12 个月，不追收中断月份，不自动扣款；团队续购按所购命名席位数执行。无“终身所有未来更新”方案。一个命名用户可在本人电脑使用，不采集硬件指纹；离线席位是合同约定，不宣传实时并发强制执行。团队购买只合并席位，不隐含协作云服务。
+## Purchase, trial and updates
 
-新增付费层完整试用 14 天，到期回到免费层；完整买断产品试用结束保留读取/搜索/备份/导出。离线试用只作便利和约定，不宣传防回拨或不可重置。付费技术/平台门禁通过前不发预售码。支付成功后由 Commerce 幂等签发 Permit；用发行时间与 `updates_through` 判断更新资格，不能拿当前时间让已获版本突然失效。离线退款/撤销的及时性不做无法实现的承诺。
+A purchase includes 12 months of new-version eligibility. Versions obtained within that update window remain usable afterwards. Optional renewal adds 12 months from `max(payment time, current updates_through)`, with no back-billing for a gap and no automatic charge. Team renewals apply to the purchased number of named seats. There is no lifetime-all-future-updates plan. One named user can use their own computers; no hardware fingerprint is collected. Offline seat limits are contractual, not real-time concurrency enforcement. A team purchase combines seats; it does not imply a collaboration cloud.
 
-无定制开发、硬件采购、认证或响应时限 SLA 包含在上述标价中。支持范围为购买版本、明确支持平台及已验证组合的异步问题处理，不能承诺一人团队全天响应。公开销售前补齐退款/取消说明、币种/税费最终价、隐私与支持范围并在结账页确认；本文件不代替最终结账条款。
+A new paid tier has a full 14-day trial, then returns to the free tier. For a complete paid product, trial expiry preserves reading/search/backup/export. Offline trial state is a convenience and an agreement, not advertised as rollback-proof or impossible to reset. Do not presell codes before technical and platform gates pass. After a successful payment, Commerce issues Permit credentials idempotently. Use release time and `updates_through` for update eligibility; the current date must not suddenly invalidate an acquired version. Do not promise prompt offline refund/revocation enforcement that cannot be implemented.
 
-## 开卖前的下一步
+The target price includes no custom development, hardware procurement, certification or response-time SLA. Support is asynchronous issue handling for the purchased version, supported platforms and validated combinations; a solo maintainer must not promise round-the-clock responses. Before sales, publish refund/cancellation rules, currency/tax totals, privacy terms and support scope, and confirm them at checkout. This plan is not a substitute for final checkout terms.
 
-先完成 #20 的阅读/批注恢复及 AI 数据边界。Pro 必须能从多文档答案跳回真实来源，并证明撤回/缺失文件不生成假引用，再接权益；没有该闭环不收费。
+## Next gate before sales
 
-执行入口：[本仓 #20](https://github.com/turinglambdaai/booklight/issues/20)。先交付这个切片，再扩展商业功能。
+Complete reading/annotation recovery and AI data-boundary work in #20 first. Before adding entitlements, prove that answers across documents jump back to real sources and that withdrawn or missing files do not produce fabricated citations. No sale without that complete scenario.
 
-## English
+Execution entry: [issue #20](https://github.com/turinglambdaai/booklight/issues/20). Complete this bounded slice before expanding commercial features.
 
-Launch design, not a live offer. Booklight: ¥128 / US$19；续购 12 个月更新 ¥48 / US$7. One named user; perpetual use of eligible official releases with 12 months of updates. Renewal is optional and never an automatic charge. Current development previews are not retroactively restricted.
-
-组合定位及通用边界：[PORTFOLIO](https://github.com/turinglambdaai/turinglambdaai.github.io/blob/master/PORTFOLIO.md)。
+Portfolio role and shared boundaries: [PORTFOLIO](https://github.com/turinglambdaai/turinglambdaai.github.io/blob/master/PORTFOLIO.md).
