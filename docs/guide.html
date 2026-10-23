@@ -135,6 +135,8 @@ var _hmt = _hmt || [];
   s.parentNode.insertBefore(hm, s);
 })();
 </script>
+<style>.lang-menu li.lang-choice{padding:0}.lang-menu .lang-choice button{display:block;width:100%;padding:8px 12px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.lang-menu .lang-choice button:focus-visible{outline:2px solid currentColor;outline-offset:-2px;border-radius:4px}</style>
+<style>.guide-status{margin:20px 0;padding:16px 20px;border:1px solid currentColor;border-radius:10px;font-size:.95rem;line-height:1.65}.guide-status p{margin:0 0 8px}.guide-status a{text-decoration:underline;text-underline-offset:4px}html:lang(en) .reader-zh,html:lang(zh) .reader-en{display:none!important}</style>
 </head>
 <body>
 <nav class="nav">
@@ -150,8 +152,8 @@ var _hmt = _hmt || [];
               <span id="current-lang-label">English</span>
           </button>
           <ul class="lang-menu">
-              <li onclick="setLanguage('en')">English</li>
-              <li onclick="setLanguage('zh')">简体中文</li>
+              <li class="lang-choice"><button type="button" onclick="setLanguage('en')">English</button></li>
+              <li class="lang-choice"><button type="button" onclick="setLanguage('zh')">简体中文</button></li>
           </ul>
       </div>
       <a class="nav-cta" href="index.html#download" data-en="Download" data-zh="下载">下载</a>
@@ -162,6 +164,7 @@ var _hmt = _hmt || [];
 <section class="manual-hero container">
   <span class="eyebrow" data-en="User Guide" data-zh="用户手册">用户手册</span>
   <h1 data-en="Read, translate, and ask — in five minutes" data-zh="五分钟上手：读、译、问">五分钟上手：读、译、问</h1>
+<aside class="guide-status"><p class="reader-en " lang="en">Existing reading, annotation, light editing and single-document BYOK features remain free. No research Pro checkout is open.</p><p class="reader-zh " lang="zh">已有阅读、批注、轻量编辑和单文档 BYOK 功能保持免费；研究 Pro 尚未开售。</p><a class="reader-en" lang="en" href="https://github.com/turinglambdaai/booklight/blob/main/docs/USER-GUIDE.md">Current installation, privacy and recovery</a><a class="reader-zh" lang="zh" href="https://github.com/turinglambdaai/booklight/blob/main/docs/USER-GUIDE.zh-CN.md">当前安装、隐私与恢复</a></aside>
   <p class="lead" data-en="Install, open your first PDF, set your own model key, and go. Short sentences. Verb first." data-zh="安装、打开第一份 PDF、配好自己的模型 Key，开工。句子短，动词开头。">安装、打开第一份 PDF、配好自己的模型 Key，开工。句子短，动词开头。</p>
 </section>
 

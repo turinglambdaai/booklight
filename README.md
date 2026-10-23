@@ -9,8 +9,13 @@
 Apple built the best reading experience and then locked it to its devices.
 Booklight is that calm, for every desktop: a shelf you own, reading that
 stays out of the way, and AI when you want it — your files, your model,
-your cost. Nothing is copied into an app library and nothing leaves your
-machine except the requests you make to your own provider.
+your cost. Books are referenced in place. Reading stays local; AI requests, update checks and user-configured integrations have separate network destinations.
+
+## Start here
+
+Existing reading, annotation, light editing and single-document BYOK features remain free. No research Pro checkout is open. Desktop previews for macOS, Windows and Linux. Check the release for the architecture you need; mobile is not included.
+
+[Installation, first use, privacy, backup and recovery](docs/USER-GUIDE.md) · [简体中文](docs/USER-GUIDE.zh-CN.md)
 
 ## The shelf
 
@@ -101,15 +106,3 @@ raco test racket/          # domain-core tests
 ## License
 
 [AGPL-3.0](LICENSE)
-
-## Delivery priorities (2026-10-23)
-
-The current product review issue linked from AGENTS owns the next bounded slice and its acceptance scenarios. Follow the existing product specification and the [family delivery standard](https://github.com/turinglambdaai/turinglambdaai.github.io/blob/master/docs/PRODUCT-STANDARD.md). Hardware, native-platform and live-payment gates remain explicit; this documentation update does not claim they passed.
-
-## Feedback and diagnostics
-
-Report reproducible bugs and feature requests through [GitHub Issues](https://github.com/turinglambdaai/booklight/issues). Include the release, OS/architecture and steps; inspect and redact diagnostics before sharing. Do not post API keys, license files, vault contents or private documents. For sensitive security reports, follow SECURITY.md when present; otherwise request a private contact route without disclosing sensitive details. Nothing is uploaded automatically.
-
-## Product & pricing
-
-Free reader with a purchase for a new research workbench. Read the complete [English pricing and product policy](PRICING.md) or [简体中文](PRICING.zh-CN.md) for target prices, free/paid boundaries and launch gates. This is a launch design, not a live offer; this documentation does not add payment restrictions to current development builds.

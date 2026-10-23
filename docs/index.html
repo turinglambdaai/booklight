@@ -164,6 +164,13 @@ var _hmt = _hmt || [];
   #product-support a:focus-visible { outline:2px solid currentColor; outline-offset:4px; }
   html:lang(en) #product-support .support-zh, html:lang(zh) #product-support .support-en { display:none; }
 </style>
+<style id="product-start-style">
+.product-availability{font-size:.95rem;line-height:1.65;max-width:72ch;margin:18px 0;opacity:.85} .hero .product-availability{margin-left:auto;margin-right:auto}
+.product-start{max-width:1120px;margin:64px auto;padding:32px 24px;border-top:1px solid var(--border,#aaa);font:inherit;line-height:1.65}
+.product-start h2{font-size:clamp(1.7rem,3vw,2.4rem);letter-spacing:-.025em;margin:0 0 16px}.product-start h3{font-size:1.05rem;margin:0 0 10px}.product-start p{margin:0 0 16px;max-width:74ch}.product-start-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px;margin:28px 0}.product-start a{text-decoration:underline;text-underline-offset:4px;overflow-wrap:anywhere}.product-start a:focus-visible{outline:2px solid currentColor;outline-offset:5px}.product-start .start-links{display:flex;gap:16px 24px;flex-wrap:wrap}.product-start .start-status{font-weight:600}.product-start .start-limits{font-size:.95em}
+html:lang(en) .reader-zh,html:lang(zh) .reader-en{display:none!important}@media(max-width:700px){.product-start{margin:40px auto;padding:24px 20px}.product-start-grid{grid-template-columns:1fr;gap:18px}}
+</style>
+<style>.lang-menu li.lang-choice{padding:0}.lang-menu .lang-choice button{display:block;width:100%;padding:8px 12px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.lang-menu .lang-choice button:focus-visible{outline:2px solid currentColor;outline-offset:-2px;border-radius:4px}</style>
 </head>
 <body>
 <nav class="nav">
@@ -180,8 +187,8 @@ var _hmt = _hmt || [];
               <span id="current-lang-label">English</span>
           </button>
           <ul class="lang-menu">
-              <li onclick="setLanguage('en')">English</li>
-              <li onclick="setLanguage('zh')">简体中文</li>
+              <li class="lang-choice"><button type="button" onclick="setLanguage('en')">English</button></li>
+              <li class="lang-choice"><button type="button" onclick="setLanguage('zh')">简体中文</button></li>
           </ul>
       </div>
       <a class="nav-cta" href="#download" data-en="Download" data-zh="下载">下载</a>
@@ -192,6 +199,7 @@ var _hmt = _hmt || [];
 <header class="hero container">
   <div class="hero-badge" data-en="Open source · AGPL-3.0 · macOS 14+ · Windows 10+ · Linux" data-zh="开源 · AGPL-3.0 · macOS 14+ · Windows 10+ · Linux">开源 · AGPL-3.0 · macOS 14+ · Windows 10+ · Linux</div>
   <h1 data-en='A calm bookshelf, <em>for every desktop</em>' data-zh='把安静的书架，带给<em>每个桌面</em>'>把安静的书架，带给<em>每个桌面</em></h1>
+<p class="reader-en product-availability" lang="en">Development preview. Existing reading, annotation, light editing and single-document BYOK features remain free. No research Pro checkout is open.</p><p class="reader-zh product-availability" lang="zh">开发预览。已有阅读、批注、轻量编辑和单文档 BYOK 功能保持免费；研究 Pro 尚未开售。</p>
   <p class="sub" data-en="Launch into your shelf — covers, collections, continue-reading. PDF and EPUB reading with selection translation, paragraph-aligned bilingual reading, one-click summaries and document chat, streamed from any OpenAI-compatible endpoint you choose. Your books stay your files; your key never leaves your machine." data-zh="启动即书架——封面、收藏集、续读。PDF 与 EPUB 沉浸阅读，划词翻译、段落对照精读、一键总结、与文档对话——流式输出，接你选择的任意 OpenAI 协议端点。书永远是你的文件，API Key 只存本机。">启动即书架——封面、收藏集、续读。PDF 与 EPUB 沉浸阅读，划词翻译、段落对照精读、一键总结、与文档对话——流式输出，接你选择的任意 OpenAI 协议端点。书永远是你的文件，API Key 只存本机。</p>
   <div class="hero-actions">
     <a class="btn btn-primary" href="https://github.com/turinglambdaai/booklight/releases/latest/download/booklight-macos-arm64.dmg" data-en="Download for macOS" data-zh="下载 macOS 版">下载 macOS 版</a>
@@ -302,7 +310,7 @@ var _hmt = _hmt || [];
   <div class="container">
     <div class="sec-head animate-on-scroll">
       <h2 data-en="Download" data-zh="下载">下载</h2>
-      <p data-en="Free reader; a new research workbench is planned as an optional purchase. Not on sale. See Product & pricing." data-zh="现有阅读器免费；新增研究工作台规划为可选买断，尚未开售。见产品与收费方案。">现有阅读器免费；新增研究工作台规划为可选买断，尚未开售。见产品与收费方案。</p>
+      <p data-en="The existing reader is free. New research features are not on sale. Read the installation, privacy and recovery guide before using valuable documents." data-zh="现有阅读器免费，新增研究能力尚未开售。处理重要文档前请阅读安装、隐私与恢复说明。">现有阅读器免费，新增研究能力尚未开售。处理重要文档前请阅读安装、隐私与恢复说明。</p>
     </div>
     <div class="dl-grid animate-on-scroll">
       <div class="dl-card">
@@ -327,17 +335,20 @@ var _hmt = _hmt || [];
       </div>
     </div>
     <p style="text-align:center;margin-top:10px"><a href="https://github.com/turinglambdaai/booklight/releases" target="_blank" rel="noopener" data-en="All releases" data-zh="全部版本">全部版本</a></p>
-    <p class="hero-note" style="text-align:center;margin-top:18px" data-en="All downloads ship SHA-256 checksums. Linux also comes as deb / rpm / tar.gz (arm64 builds on the release page); Windows portable zip and macOS portable zip are on the release page too. All three platforms auto-update in place." data-zh="所有下载附 SHA-256 校验文件。Linux 另有 deb / rpm / tar.gz（arm64 版在 Release 页）；Windows 便携 zip 与 macOS 便携 zip 同在 Release 页。三平台均支持应用内自动更新。">所有下载附 SHA-256 校验文件。Linux 另有 deb / rpm / tar.gz（arm64 版在 Release 页）；Windows 便携 zip 与 macOS 便携 zip 同在 Release 页。三平台均支持应用内自动更新。</p>
+    <p class="hero-note" style="text-align:center;margin-top:18px" data-en="All downloads ship SHA-256 checksums. Linux also comes as deb / rpm / tar.gz (arm64 builds on the release page); Windows portable zip and macOS portable zip are on the release page too. Update behavior depends on the installation channel; consult the release notes and user guide." data-zh="所有下载附 SHA-256 校验文件。Linux 另有 deb / rpm / tar.gz（arm64 版在 Release 页）；Windows 便携 zip 与 macOS 便携 zip 同在 Release 页。三平台均支持应用内自动更新。">所有下载附 SHA-256 校验文件。Linux 另有 deb / rpm / tar.gz（arm64 版在 Release 页）；Windows 便携 zip 与 macOS 便携 zip 同在 Release 页。三平台均支持应用内自动更新。</p>
   </div>
 </section>
 
+<section id="start-here" class="product-start" aria-label="Get started / 开始使用">
+<h2 class="reader-en " lang="en">Start with one useful session.</h2><h2 class="reader-zh " lang="zh">从一次有效使用开始。</h2><p class="reader-en start-status" lang="en">Existing reading, annotation, light editing and single-document BYOK features remain free. No research Pro checkout is open.</p><p class="reader-zh start-status" lang="zh">已有阅读、批注、轻量编辑和单文档 BYOK 功能保持免费；研究 Pro 尚未开售。</p><p class="reader-en " lang="en">Desktop previews for macOS, Windows and Linux. Check the release for the architecture you need; mobile is not included.</p><p class="reader-zh " lang="zh">提供 macOS、Windows、Linux 桌面预览版。所需架构以发布附件为准；不包含移动端。</p><div class="product-start-grid"><article><h3 class="reader-en " lang="en">01</h3><h3 class="reader-zh " lang="zh">01</h3><p class="reader-en " lang="en">Open a copy of a small PDF or EPUB. Import references the file in place rather than making a second book copy.</p><p class="reader-zh " lang="zh">先打开一份小型 PDF 或 EPUB 副本。导入会引用原文件，不会额外复制一份书籍。</p></article><article><h3 class="reader-en " lang="en">02</h3><h3 class="reader-zh " lang="zh">02</h3><p class="reader-en " lang="en">Add an annotation, close and reopen the book, and confirm it persists before working on valuable material.</p><p class="reader-zh " lang="zh">添加批注，关闭并重新打开，确认批注保存后再处理重要材料。</p></article><article><h3 class="reader-en " lang="en">03</h3><h3 class="reader-zh " lang="zh">03</h3><p class="reader-en " lang="en">Try page editing or export only on a duplicate. Relink moved books instead of assuming the library copied them.</p><p class="reader-zh " lang="zh">页编辑或导出先在副本试用；文件移动后需重新关联，不要假定书库已复制原件。</p></article></div><p class="reader-en start-limits" lang="en">Save/reopen/export, damaged-file recovery and AI cancellation/secret storage remain release qualification work (<a href="https://github.com/turinglambdaai/booklight/issues/20">#20</a>). A new multi-document research workbench is not delivered.</p><p class="reader-zh start-limits" lang="zh">保存、重开、导出、损坏文件恢复，以及 AI 取消和密钥存储仍需发行验收（<a href="https://github.com/turinglambdaai/booklight/issues/20">#20</a>）。新增多文档研究工作台尚未交付。</p><div class="start-links"><a class="reader-en" lang="en" href="https://github.com/turinglambdaai/booklight/blob/main/docs/USER-GUIDE.md">Installation, privacy &amp; recovery</a><a class="reader-zh" lang="zh" href="https://github.com/turinglambdaai/booklight/blob/main/docs/USER-GUIDE.zh-CN.md">安装、隐私与恢复</a><a href="https://github.com/turinglambdaai/booklight/issues"><span class="reader-en " lang="en">Get help</span><span class="reader-zh " lang="zh">反馈与帮助</span></a></div>
+</section>
 <footer>
   <div class="container foot-inner">
     <span>© 2026 TuringLambdaAI · Booklight is free software under AGPL-3.0</span>
     <span><a href="https://github.com/turinglambdaai/booklight" target="_blank" rel="noopener">GitHub</a> · <a href="https://jrtx.site" target="_blank" rel="noopener">jrtx.site</a></span>
   </div>
 </footer>
-<nav id="product-support" aria-label="Support / 支持"><a href="https://github.com/turinglambdaai/booklight/issues"><span class="support-zh">反馈</span><span class="support-en" lang="en">Feedback</span></a> <a href="https://github.com/turinglambdaai/booklight/releases"><span class="support-zh">发布与更新</span><span class="support-en" lang="en">Releases</span></a> <a href="https://github.com/turinglambdaai/booklight/blob/main/LICENSE"><span class="support-zh">源码许可</span><span class="support-en" lang="en">Source license</span></a> <a class="support-zh" href="https://github.com/turinglambdaai/booklight/blob/main/PRICING.zh-CN.md">产品与收费方案</a> <a class="support-en" lang="en" href="https://github.com/turinglambdaai/booklight/blob/main/PRICING.md">Product & pricing</a></nav>
+<nav id="product-support" aria-label="Support / 支持"><a href="https://github.com/turinglambdaai/booklight/issues"><span class="support-zh">反馈</span><span class="support-en" lang="en">Feedback</span></a> <a href="https://github.com/turinglambdaai/booklight/releases"><span class="support-zh">发布与更新</span><span class="support-en" lang="en">Releases</span></a> <a href="https://github.com/turinglambdaai/booklight/blob/main/LICENSE"><span class="support-zh">源码许可</span><span class="support-en" lang="en">Source license</span></a> <a class="support-zh" href="https://github.com/turinglambdaai/booklight/blob/main/docs/USER-GUIDE.zh-CN.md">使用与帮助</a> <a class="support-en" lang="en" href="https://github.com/turinglambdaai/booklight/blob/main/docs/USER-GUIDE.md">Usage & help</a></nav>
 
 <script>
   var lang = localStorage.getItem("booklight-lang") || "zh";
