@@ -28,7 +28,7 @@ raco rivet doctor --json   # 工具链自检
 raco rivet schema check rivet-schema.json --json # RPC 兼容性门禁
 raco rivet build           # 生成三端客户端 + 编译后端 bundle + 宿主构建
 raco rivet dev             # 开发循环
-raco test racket/          # 领域核心测试（341 项）
+raco test racket/          # 领域核心测试（项目测试）
 raco test racket/tests/backend-test.rkt # 真实 RVT1 wire test
 raco rivet acceptance --json # 当前平台的打包产品验收
 ```
@@ -58,7 +58,7 @@ raco rivet acceptance --json # 当前平台的打包产品验收
 ## 项目结构
 
 ```
-├── rivet.rktd          Rivet 应用清单（0.1.0，与 VERSION / app/version.rkt 对齐）
+├── rivet.rktd          Rivet 应用清单（与 VERSION / app/version.rkt 对齐）
 ├── rivet-schema.json   RPC 面基线
 ├── app/backend.rkt     Rivet 后端入口（装配领域层）
 ├── racket/             Racket 领域核心（含 pdfdoc PDF 读写器）+ tests/
@@ -76,3 +76,10 @@ raco rivet acceptance --json # 当前平台的打包产品验收
 - 轨道与授权：轨道 2 消费买断（BYO-key，无托管成本）；授权形态：AGPL-3.0；商业归属：适合收费（收费节奏第二棒；买断 + 更新窗 + 试用）。
 - 组合归属唯一权威：[PORTFOLIO.md](https://github.com/turinglambdaai/turinglambdaai.github.io/blob/master/PORTFOLIO.md)（turinglambdaai.github.io 仓库）。改归属/授权先改权威档，再同步本节。
 - 纪律：价格只进本仓 `PRICING.md`，且收费开始时才发布；README 与产品站不做价格预告。
+
+## 产品交付与下一步（2026-10-23）
+
+- 家族[交付标准](https://github.com/turinglambdaai/turinglambdaai.github.io/blob/master/docs/PRODUCT-STANDARD.md)与[组合策略](https://github.com/turinglambdaai/turinglambdaai.github.io/blob/master/PORTFOLIO.md)是共用政策；本仓具体行为以 `README.md` 为准，不复制五库依赖图。
+- 当前执行入口：[产品审查 issue](https://github.com/turinglambdaai/booklight/issues/20)。先验证批注/页编辑的保存、重开、导出和坏文件恢复，以及 AI 发送范围/取消/密钥存储。数据可迁移与原件保护先于移动端扩张。
+- 开工先检查干净工作树与远端，以 fast-forward-only 更新并记录 SHA；共享文件一次一个写入者，保留其他 checkout 的未提交工作。
+- 每次只完成一个可验收切片，记录 owned files、依赖 pin、命令/平台/产物证据和回滚。已实现、已发布、实机验收分别陈述；不修改 requirements 或复用旧证据来制造通过。
