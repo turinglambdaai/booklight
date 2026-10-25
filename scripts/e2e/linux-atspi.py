@@ -82,8 +82,14 @@ def main():
         outline = wait_for("native EPUB outline page", lambda: next((node for node in walk(window) if role(node) == "page tab" and (node.name or "") == "Outline"), None))
         click(outline)
         wait_for("EPUB table of contents parsed by the embedded backend", lambda: contains(window, "First Chapter"))
+        notes = wait_for("native Notes page", lambda: next((node for node in walk(window) if role(node) == "page tab" and (node.name or "") == "Notes"), None))
+        click(notes)
+        wait_for("recovered annotation status", lambda: contains(window, "Recovered unsaved annotations"))
+        wait_for("retry action", lambda: contains(window, "Retry Save"))
+        wait_for("export action", lambda: contains(window, "Export Annotations"))
+        wait_for("recovery fixture note", lambda: contains(window, "Recovered fixture note"))
         (args.output / "accessibility.json").write_text(json.dumps(snapshot(application), ensure_ascii=False, indent=2), encoding="utf-8")
-        (args.output / "interaction-trace.json").write_text(json.dumps({"platform":"linux","actions":["launch:sample.epub","press:Outline"],"assertions":["packaged GTK4 frame activated on native Wayland","sample EPUB crossed RVT1 into the embedded backend","native accessibility tree contains The Sample Book","native accessibility tree contains First Chapter"]}, indent=2), encoding="utf-8")
+        (args.output / "interaction-trace.json").write_text(json.dumps({"platform":"linux","actions":["launch:sample.epub","press:Outline","press:Notes"],"assertions":["packaged GTK4 frame activated on native Wayland","sample EPUB crossed RVT1 into the embedded backend","native accessibility tree contains The Sample Book","native accessibility tree contains First Chapter","pending recovery crosses RVT1 on reopen","native Notes pane exposes recovered status and Retry Save","recovered annotation remains visible and exportable"]}, indent=2), encoding="utf-8")
     except Exception:
         if application is not None: (args.output / "accessibility-failure.json").write_text(json.dumps(snapshot(application), ensure_ascii=False, indent=2), encoding="utf-8")
         raise
