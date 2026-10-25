@@ -383,6 +383,15 @@
 (define-rpc (get-annotations [pdf-path : String] [sidecar : Bool] : Bytes)
   (annotations:load-document-bytes pdf-path sidecar))
 
+;; Hosts use this after loading to distinguish an ordinary stored document
+;; from an app-owned recovery draft.  The bytes still come from
+;; get-annotations so the established data format and old clients remain
+;; compatible; this narrow status RPC only drives visible retry/export UI.
+(define-rpc (annotation-recovery-pending [pdf-path : String]
+                                         [sidecar : Bool]
+                                         : Bool)
+  (annotations:annotation-recovery-pending? pdf-path sidecar))
+
 (define-rpc (set-annotations [pdf-path : String]
                              [sidecar : Bool]
                              [data : Bytes]

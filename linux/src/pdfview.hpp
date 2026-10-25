@@ -206,6 +206,11 @@ class PdfTab {
   // Host-owned debounce timer id for set-annotations (removed on destroy so
   // the callback never fires on a dead tab).
   guint annotation_save_source{0};
+  bool annotations_loaded{false};
+  bool annotation_dirty{false};
+  std::uint64_t annotation_revision{0};
+  AnnotationSavePhase annotation_save_phase{AnnotationSavePhase::Saved};
+  std::string annotation_save_error;
 
   // Drops the rendered-page cache and repaints (appearance streams changed
   // underneath us — form fills, page edits).

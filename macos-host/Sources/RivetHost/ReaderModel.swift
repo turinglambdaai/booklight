@@ -6,6 +6,13 @@ import PDFKit
 import WebKit
 import RivetRuntime
 
+enum AnnotationPersistenceState: Equatable {
+    case saved
+    case pending
+    case recovered
+    case failed(String)
+}
+
 /// One open PDF document inside one reader window. Owns exactly one PDFView
 /// (plus a split mirror) so selection, zoom and scroll survive for the
 /// window's lifetime; business actions live in ReaderModel.
@@ -30,6 +37,7 @@ final class PDFTab: ObservableObject, Identifiable {
     var didInitialLayout = false
     var recentTask: Task<Void, Never>?
     var annoTask: Task<Void, Never>?
+    var annotationsLoaded = false
 
     init(path: String, title: String, document: PDFDocument, reader: ReaderModel) {
         self.path = path
@@ -188,6 +196,12 @@ final class ReaderModel: ObservableObject {
     @Published var showAlert = false
     @Published var alertText = ""
     @Published var passwordPrompt: PasswordPrompt?
+    /// Per-window persistence state. Keeping this on ReaderModel rather than
+    /// AppModel prevents one document's save result from appearing in another
+    /// native window.
+    @Published var annotationPersistence: AnnotationPersistenceState = .saved
+
+    private var annotationRevision: UInt64 = 0
 
     private var chatHistory: [[String]] = []
     private var chatLive: StreamCard?
@@ -254,6 +268,8 @@ final class ReaderModel: ObservableObject {
         }
         let title = URL(fileURLWithPath: path).lastPathComponent
         let tab = PDFTab(path: path, title: title, document: doc, reader: self)
+        annotationRevision = 0
+        annotationPersistence = .saved
         tab.resumePage = max(resumePage ?? app?.recentPage(path) ?? 1, 1)
         let surface = app?.readingSurface() ?? "light"
         tab.applyCanvasSurface(surface)
@@ -284,6 +300,8 @@ final class ReaderModel: ObservableObject {
         let view = WKWebView(frame: .zero, configuration: config)
         view.setValue(false, forKey: "drawsBackground")
         let tab = EpubTab(path: path, title: title, view: view, reader: self)
+        annotationRevision = 0
+        annotationPersistence = .saved
         // Persisted typography: the stored scale rides in until the page
         // finishes loading (didFinish pushes it into the CSS variable).
         tab.fontScale = Double(app?.settings.reading_font_scale_permille ?? 1000) / 1000.0
@@ -347,13 +365,11 @@ final class ReaderModel: ObservableObject {
         if let tab = pdf {
             tab.recentTask?.cancel()
             tab.annoTask?.cancel()
-            flushAnnotationSave(tab)
             saveRecentNow(tab)
         }
         if let epub = epub {
             epub.recentTask?.cancel()
             epub.annoTask?.cancel()
-            Task { await epub.storeAnnotationData() }
             saveEpubRecentNow(epub)
             epub.teardown()
         }
@@ -361,6 +377,20 @@ final class ReaderModel: ObservableObject {
             .map { $0.requestId }
             .filter { $0 > 0 }
         app?.stopStreams(live)
+    }
+
+    /// The application delegate uses macOS terminate-later semantics and
+    /// awaits this handoff before allowing process exit. Window close remains
+    /// non-blocking because the shared backend stays alive on the shelf.
+    func flushAnnotationsBeforeTermination() async {
+        if let tab = pdf, tab.annotationsLoaded || annotationRevision > 0 {
+            tab.annoTask?.cancel()
+            await storeAnnotationData(tab, revision: annotationRevision)
+        }
+        if let tab = epub, tab.annotationsLoaded || annotationRevision > 0 {
+            tab.annoTask?.cancel()
+            await storeEpubAnnotationData(tab)
+        }
     }
 
     // MARK: page navigation (Go menu / toolbar)
@@ -719,6 +749,10 @@ final class ReaderModel: ObservableObject {
                 self.applyStoredAnnotations(tab)
                 tab.refreshBookmarkFlag()
                 self.rebuildOutline(tab)
+                tab.annotationsLoaded = true
+                let recovered = (try? await api.annotation_recovery_pending(
+                    pdf_path: tab.path, sidecar: app.settings.annotation_sidecar)) ?? false
+                self.annotationPersistence = recovered ? .recovered : .saved
             }
         }
     }
@@ -897,24 +931,102 @@ final class ReaderModel: ObservableObject {
     }
 
     func queueAnnotationSave(_ tab: PDFTab) {
+        annotationRevision &+= 1
+        let revision = annotationRevision
+        annotationPersistence = .pending
         tab.annoTask?.cancel()
         tab.annoTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled else { return }
-            await self?.storeAnnotationData(tab)
+            await self?.storeAnnotationData(tab, revision: revision)
         }
     }
 
     func flushAnnotationSave(_ tab: PDFTab) {
         tab.annoTask?.cancel()
-        Task { await storeAnnotationData(tab) }
+        let revision = annotationRevision
+        Task { await storeAnnotationData(tab, revision: revision) }
     }
 
-    private func storeAnnotationData(_ tab: PDFTab) async {
-        guard let app, let api = app.api else { return }
-        guard let data = try? JSONEncoder().encode(tab.docData) else { return }
-        try? await api.set_annotations(
-            pdf_path: tab.path, sidecar: app.settings.annotation_sidecar, data: data)
+    private func storeAnnotationData(_ tab: PDFTab, revision: UInt64) async {
+        guard let app, let api = app.api else {
+            if revision == annotationRevision {
+                annotationPersistence = .failed(L10n.t("ui.backend-not-ready"))
+            }
+            return
+        }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(tab.docData)
+        } catch {
+            if revision == annotationRevision {
+                annotationPersistence = .failed(String(describing: error))
+            }
+            return
+        }
+        do {
+            try await api.set_annotations(
+                pdf_path: tab.path, sidecar: app.settings.annotation_sidecar, data: data)
+            if revision == annotationRevision { annotationPersistence = .saved }
+        } catch {
+            if revision == annotationRevision {
+                annotationPersistence = .failed(String(describing: error))
+            }
+        }
+    }
+
+    func queueEpubAnnotationSave(_ tab: EpubTab) {
+        annotationRevision &+= 1
+        let revision = annotationRevision
+        annotationPersistence = .pending
+        tab.annoTask?.cancel()
+        tab.annoTask = Task { [weak self, weak tab] in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled, let self, let tab else { return }
+            await self.storeEpubAnnotationData(tab, revision: revision)
+        }
+    }
+
+    func storeEpubAnnotationData(_ tab: EpubTab, revision: UInt64? = nil) async {
+        let expected = revision ?? annotationRevision
+        guard let app, let api = app.api else {
+            if expected == annotationRevision {
+                annotationPersistence = .failed(L10n.t("ui.backend-not-ready"))
+            }
+            return
+        }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(tab.docData)
+        } catch {
+            if expected == annotationRevision {
+                annotationPersistence = .failed(String(describing: error))
+            }
+            return
+        }
+        do {
+            try await api.set_annotations(
+                pdf_path: tab.path, sidecar: app.settings.annotation_sidecar, data: data)
+            if expected == annotationRevision { annotationPersistence = .saved }
+        } catch {
+            if expected == annotationRevision {
+                annotationPersistence = .failed(String(describing: error))
+            }
+        }
+    }
+
+    func annotationLoadFinished(recovered: Bool) {
+        annotationPersistence = recovered ? .recovered : .saved
+    }
+
+    func retryAnnotationSave() {
+        annotationPersistence = .pending
+        if epubActive, let epub {
+            Task { await storeEpubAnnotationData(epub) }
+        } else if let pdf {
+            let revision = annotationRevision
+            Task { await storeAnnotationData(pdf, revision: revision) }
+        }
     }
 
     func toggleBookmark() {

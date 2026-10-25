@@ -487,14 +487,16 @@ void MainWindow::LoadDocData(std::shared_ptr<PdfTab> tab) {
   bool const sidecar = settings_.annotation_sidecar;
   std::thread([weak, dispatcher, backend, tab, path, sidecar]() mutable {
     std::string json;
+    bool recovered = false;
     try {
       rivet_app::API api(*backend);
       rivet::Bytes const bytes = api.get_annotations(path, sidecar).get();
       json.assign(bytes.begin(), bytes.end());
+      recovered = api.annotation_recovery_pending(path, sidecar).get();
     } catch (...) {
       return;  // annotations stay empty; the file may simply have none yet
     }
-    dispatcher.TryEnqueue([weak, tab, json = std::move(json)]() mutable {
+    dispatcher.TryEnqueue([weak, tab, json = std::move(json), recovered]() mutable {
       auto window = weak.get();
       if (!window) return;
       // The tab may have closed or been reloaded meanwhile.
@@ -516,7 +518,10 @@ void MainWindow::LoadDocData(std::shared_ptr<PdfTab> tab) {
       if (!window->ParseDocData(json, &data)) return;
       tab->doc_data = std::move(data);
       tab->doc_data_loaded = true;
-      tab->anno_dirty = false;
+      tab->anno_dirty = recovered;
+      tab->anno_save_phase = recovered ? AnnotationSavePhase::Recovered
+                                       : AnnotationSavePhase::Saved;
+      tab->anno_save_error.clear();
       if (window->active_pdf_.get() == tab.get()) {
         window->UpdateBookmarkToggle();
         window->RefreshLeftPanel();
@@ -529,6 +534,18 @@ void MainWindow::LoadDocData(std::shared_ptr<PdfTab> tab) {
 }
 
 void MainWindow::QueueAnnotationSave() {
+  for (auto const& tab : tabs_) {
+    if (!tab->anno_dirty) continue;
+    ++tab->anno_revision;
+    tab->anno_save_phase = AnnotationSavePhase::Pending;
+    tab->anno_save_error.clear();
+  }
+  if (epub_ && epub_->anno_dirty) {
+    ++epub_->anno_revision;
+    epub_->anno_save_phase = AnnotationSavePhase::Pending;
+    epub_->anno_save_error.clear();
+  }
+  if (left_mode_ == 2) RefreshLeftPanel();
   anno_timer_.Stop();
   anno_timer_.Start();  // 800 ms debounce (mac queueAnnotationSave)
 }
@@ -536,19 +553,36 @@ void MainWindow::QueueAnnotationSave() {
 void MainWindow::SaveDocDataNow(std::shared_ptr<PdfTab> tab) {
   if (!ready_ || !api_ || !backend_ || !tab) return;
   if (!tab->anno_dirty && !tab->doc_data_loaded) return;
-  tab->anno_dirty = false;
   std::string const json = SerializeDocData(tab->doc_data);
   auto const backend = backend_;
+  auto const dispatcher = DispatcherQueue();
+  auto const weak = get_weak();
   auto const path = to_utf8(tab->path);
   bool const sidecar = settings_.annotation_sidecar;
-  std::thread([backend, path, sidecar, json]() mutable {
+  auto const revision = tab->anno_revision;
+  tab->anno_save_phase = AnnotationSavePhase::Pending;
+  std::thread([weak, dispatcher, backend, tab, path, sidecar, json, revision]() mutable {
+    std::wstring error;
     try {
       rivet_app::API api(*backend);
       rivet::Bytes bytes(json.begin(), json.end());
       (void)api.set_annotations(path, sidecar, bytes).get();
+    } catch (std::exception const& e) {
+      error = to_wide(e.what());
     } catch (...) {
-      // best effort; the next change retries with the full document
+      error = L"Unknown annotation save failure";
     }
+    dispatcher.TryEnqueue([weak, tab, revision, error = std::move(error)]() mutable {
+      auto window = weak.get();
+      if (!window || tab->anno_revision != revision) return;
+      tab->anno_dirty = !error.empty();
+      tab->anno_save_phase = error.empty() ? AnnotationSavePhase::Saved
+                                           : AnnotationSavePhase::Failed;
+      tab->anno_save_error = std::move(error);
+      if (window->active_pdf_.get() == tab.get() && window->left_mode_ == 2) {
+        window->RefreshLeftPanel();
+      }
+    });
   }).detach();
 }
 
@@ -720,10 +754,71 @@ void MainWindow::DrawStoredOverlays(PdfTab::Cell& cell, PdfTab const& tab) {
 
 // ---- notes pane ----------------------------------------------------------------------
 
+void MainWindow::AppendAnnotationSaveBanner(
+    muxc::StackPanel const& content, AnnotationSavePhase phase,
+    std::wstring const& error) {
+  if (phase == AnnotationSavePhase::Saved) return;
+
+  auto banner = muxc::Border();
+  banner.Padding({8, 8, 8, 8});
+  banner.CornerRadius({8, 8, 8, 8});
+  banner.BorderThickness({1, 1, 1, 1});
+  banner.BorderBrush(ThemeBorderBrush());
+  banner.Background(ThemePanelBrush());
+  auto stack = muxc::StackPanel();
+  stack.Spacing(6);
+  auto label = muxc::TextBlock();
+  label.TextWrapping(mux::TextWrapping::Wrap);
+  label.FontSize(11);
+  if (phase == AnnotationSavePhase::Pending) {
+    label.Text(pdfgist::Tr("ui.notes.save-pending"));
+  } else if (phase == AnnotationSavePhase::Recovered) {
+    label.Text(pdfgist::Tr("ui.notes.recovery-pending"));
+  } else {
+    label.Text(pdfgist::Trf("ui.notes.save-failed", error));
+  }
+  stack.Children().Append(label);
+
+  if (phase == AnnotationSavePhase::Recovered ||
+      phase == AnnotationSavePhase::Failed) {
+    auto actions = muxc::StackPanel();
+    actions.Orientation(muxc::Orientation::Horizontal);
+    actions.Spacing(8);
+    auto retry = muxc::Button();
+    retry.Content(winrt::box_value(pdfgist::Tr("ui.notes.retry-save")));
+    auto weak = get_weak();
+    retry.Click([weak](auto&&, auto&&) {
+      if (auto window = weak.get()) {
+        if (window->epub_active_ && window->epub_) {
+          window->epub_->anno_dirty = true;
+          window->SaveEpubDocDataNow();
+        } else if (window->active_pdf_) {
+          window->active_pdf_->anno_dirty = true;
+          window->SaveDocDataNow(window->active_pdf_);
+        }
+        window->RefreshLeftPanel();
+      }
+    });
+    actions.Children().Append(retry);
+    auto export_button = muxc::Button();
+    export_button.Content(winrt::box_value(pdfgist::Tr("ui.notes.export")));
+    export_button.Click([weak](auto&&, auto&&) {
+      if (auto window = weak.get()) window->ExportAnnotations();
+    });
+    actions.Children().Append(export_button);
+    stack.Children().Append(actions);
+  }
+  banner.Child(stack);
+  content.Children().Append(banner);
+}
+
 void MainWindow::BuildNotesPane(
     muxc::StackPanel const& content) {
   auto tab = active_pdf_;
   if (!tab) return;
+
+  AppendAnnotationSaveBanner(content, tab->anno_save_phase,
+                             tab->anno_save_error);
 
   // One-step undo banner (mac NotesPane banner parity).
   if (undo_annotation_) {
@@ -1041,6 +1136,9 @@ void MainWindow::BuildEpubNotesPane(
     muxc::StackPanel const& content) {
   auto book = epub_;
   if (!book) return;
+
+  AppendAnnotationSaveBanner(content, book->anno_save_phase,
+                             book->anno_save_error);
 
   if (book->undo_annotation) {
     auto banner = muxc::Border();

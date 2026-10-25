@@ -531,6 +531,29 @@
     {
       "arguments": [
         {
+          "name": "pdf-path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "sidecar",
+          "type": {
+            "kind": "scalar",
+            "name": "Bool"
+          }
+        }
+      ],
+      "name": "annotation-recovery-pending",
+      "result": {
+        "kind": "scalar",
+        "name": "Bool"
+      }
+    },
+    {
+      "arguments": [
+        {
           "name": "context-text",
           "type": {
             "kind": "scalar",

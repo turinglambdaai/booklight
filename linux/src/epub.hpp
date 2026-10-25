@@ -66,6 +66,11 @@ class EpubTab {
                           std::size_t index);
   std::size_t last_taken_index() const { return last_taken_index_; }
   std::function<void()> on_annotations_changed;
+  bool annotations_loaded{false};
+  bool annotation_dirty{false};
+  std::uint64_t annotation_revision{0};
+  AnnotationSavePhase annotation_save_phase{AnnotationSavePhase::Saved};
+  std::string annotation_save_error;
 
   // Chapter text from the prefetch cache ("" until loaded).
   std::string chapter_text(int chapter) const;

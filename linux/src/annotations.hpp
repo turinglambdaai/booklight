@@ -53,6 +53,8 @@ struct DocData {
   std::vector<StoredBookmark> bookmarks;
 };
 
+enum class AnnotationSavePhase { Saved, Pending, Recovered, Failed };
+
 // Tolerant decode: missing members become zero values; garbage returns an
 // empty DocData rather than throwing.
 DocData parse_doc_data(std::vector<std::uint8_t> const& bytes);

@@ -135,10 +135,11 @@ void MainWindow::LoadEpubBook(std::shared_ptr<EpubBook> book) {
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   auto const path_utf8 = to_utf8(book->path);
+  bool const sidecar = settings_.annotation_sidecar;
 
   // Serial chapter fetches (mac loadBook parity: concurrent epub RPCs can
   // stall on the embedded channel).
-  std::thread([weak, dispatcher, backend, book, path_utf8]() mutable {
+  std::thread([weak, dispatcher, backend, book, path_utf8, sidecar]() mutable {
     std::string failure;
     rivet_app::EpubView view{};
     std::vector<std::pair<int, std::wstring>> sections;
@@ -157,9 +158,11 @@ void MainWindow::LoadEpubBook(std::shared_ptr<EpubBook> book) {
       }
       // Annotations share the PDF store (same JSON shape; page = chapter).
       try {
-        auto anno_bytes = api.get_annotations(path_utf8, false).get();
+        auto anno_bytes = api.get_annotations(path_utf8, sidecar).get();
         book->doc_data_bytes.assign(anno_bytes.begin(), anno_bytes.end());
         book->annotations_pending = true;
+        book->annotations_recovered =
+            api.annotation_recovery_pending(path_utf8, sidecar).get();
       } catch (...) {
       }
     } catch (std::exception const& e) {
@@ -189,6 +192,10 @@ void MainWindow::LoadEpubBook(std::shared_ptr<EpubBook> book) {
         book->annotations_pending = false;
         if (window->ParseDocData(book->doc_data_bytes, &book->doc_data)) {
           book->doc_data_loaded = true;
+          book->anno_dirty = book->annotations_recovered;
+          book->anno_save_phase = book->annotations_recovered
+                                      ? AnnotationSavePhase::Recovered
+                                      : AnnotationSavePhase::Saved;
           window->ApplyEpubAnnotations(*book);
         }
       }
@@ -664,18 +671,38 @@ void MainWindow::SaveEpubDocDataNow() {
   auto book = epub_;
   if (!book || !ready_ || !api_ || !backend_) return;
   if (!book->anno_dirty && !book->doc_data_loaded) return;
-  book->anno_dirty = false;
   std::string const json = SerializeDocData(book->doc_data);
   auto const backend = backend_;
+  auto const dispatcher = DispatcherQueue();
+  auto const weak = get_weak();
   auto const path = to_utf8(book->path);
   bool const sidecar = settings_.annotation_sidecar;
-  std::thread([backend, path, sidecar, json]() mutable {
+  auto const revision = book->anno_revision;
+  book->anno_save_phase = AnnotationSavePhase::Pending;
+  std::thread([weak, dispatcher, backend, book, path, sidecar, json,
+               revision]() mutable {
+    std::wstring error;
     try {
       rivet_app::API api(*backend);
       rivet::Bytes bytes(json.begin(), json.end());
       (void)api.set_annotations(path, sidecar, bytes).get();
+    } catch (std::exception const& e) {
+      error = to_wide(e.what());
     } catch (...) {
+      error = L"Unknown annotation save failure";
     }
+    dispatcher.TryEnqueue([weak, book, revision,
+                           error = std::move(error)]() mutable {
+      auto window = weak.get();
+      if (!window || book->anno_revision != revision) return;
+      book->anno_dirty = !error.empty();
+      book->anno_save_phase = error.empty() ? AnnotationSavePhase::Saved
+                                            : AnnotationSavePhase::Failed;
+      book->anno_save_error = std::move(error);
+      if (window->epub_.get() == book.get() && window->left_mode_ == 2) {
+        window->RefreshLeftPanel();
+      }
+    });
   }).detach();
 }
 
