@@ -902,22 +902,31 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
         [raw, path, sidecar](rivet_app::Result<rivet::Bytes> result) {
           if (!result.succeeded()) return;
           auto bytes = result.get();
-          if (g_host.api == nullptr) return;
-          (void)g_host.api->annotation_recovery_pending_async(
-              path, sidecar,
-              [raw, bytes = std::move(bytes)](rivet_app::Result<bool> status) mutable {
-                bool const recovered = status.succeeded() && status.get();
-                host::dispatch_ui([raw, bytes = std::move(bytes), recovered]() mutable {
-                  if (g_host.epub != raw) return;  // tab closed meanwhile
-                  raw->set_doc_data(pdfgist::parse_doc_data(bytes));
-                  raw->annotations_loaded = true;
-                  raw->annotation_dirty = recovered;
-                  raw->annotation_save_phase =
-                      recovered ? pdfgist::AnnotationSavePhase::Recovered
+          // Do not start another bridge request from inside a bridge
+          // completion: the Linux runtime delivers completions while holding
+          // its channel turn. Re-entering here can stall unrelated EPUB RPCs.
+          host::dispatch_ui([raw, path, sidecar,
+                             bytes = std::move(bytes)]() mutable {
+            if (g_host.epub != raw || g_host.api == nullptr) return;
+            (void)g_host.api->annotation_recovery_pending_async(
+                path, sidecar,
+                [raw, bytes = std::move(bytes)](
+                    rivet_app::Result<bool> status) mutable {
+                  bool const recovered = status.succeeded() && status.get();
+                  host::dispatch_ui(
+                      [raw, bytes = std::move(bytes), recovered]() mutable {
+                        if (g_host.epub != raw) return;  // tab closed meanwhile
+                        raw->set_doc_data(pdfgist::parse_doc_data(bytes));
+                        raw->annotations_loaded = true;
+                        raw->annotation_dirty = recovered;
+                        raw->annotation_save_phase =
+                            recovered
+                                ? pdfgist::AnnotationSavePhase::Recovered
                                 : pdfgist::AnnotationSavePhase::Saved;
-                  populate_notes();
+                        populate_notes();
+                      });
                 });
-              });
+          });
         });
   }
   // Persisted typography rides in; EpubTab::load() re-applies it to the
@@ -1266,26 +1275,37 @@ void load_annotations_for_tab(PdfTab* tab) {
   (void)g_host.api->get_annotations_async(
       path, sidecar,
       [tab, path, sidecar](rivet_app::Result<rivet::Bytes> result) {
-        if (!result.succeeded() || g_host.api == nullptr) return;
+        if (!result.succeeded()) return;
         auto bytes = result.get();
-        (void)g_host.api->annotation_recovery_pending_async(
-            path, sidecar,
-            [tab, bytes = std::move(bytes)](rivet_app::Result<bool> status) mutable {
-              bool const recovered = status.succeeded() && status.get();
-              host::dispatch_ui([tab, bytes = std::move(bytes), recovered]() mutable {
-                auto const it = std::find_if(
-                    g_host.tabs.begin(), g_host.tabs.end(),
-                    [tab](auto const& candidate) { return candidate.get() == tab; });
-                if (it == g_host.tabs.end()) return;
-                tab->set_doc_data(pdfgist::parse_doc_data(bytes));
-                tab->annotations_loaded = true;
-                tab->annotation_dirty = recovered;
-                tab->annotation_save_phase =
-                    recovered ? pdfgist::AnnotationSavePhase::Recovered
-                              : pdfgist::AnnotationSavePhase::Saved;
-                if (g_host.active_pdf_only() == tab) populate_notes();
+        host::dispatch_ui([tab, path, sidecar,
+                           bytes = std::move(bytes)]() mutable {
+          auto const it = std::find_if(
+              g_host.tabs.begin(), g_host.tabs.end(),
+              [tab](auto const& candidate) { return candidate.get() == tab; });
+          if (it == g_host.tabs.end() || g_host.api == nullptr) return;
+          (void)g_host.api->annotation_recovery_pending_async(
+              path, sidecar,
+              [tab, bytes = std::move(bytes)](
+                  rivet_app::Result<bool> status) mutable {
+                bool const recovered = status.succeeded() && status.get();
+                host::dispatch_ui(
+                    [tab, bytes = std::move(bytes), recovered]() mutable {
+                      auto const live = std::find_if(
+                          g_host.tabs.begin(), g_host.tabs.end(),
+                          [tab](auto const& candidate) {
+                            return candidate.get() == tab;
+                          });
+                      if (live == g_host.tabs.end()) return;
+                      tab->set_doc_data(pdfgist::parse_doc_data(bytes));
+                      tab->annotations_loaded = true;
+                      tab->annotation_dirty = recovered;
+                      tab->annotation_save_phase =
+                          recovered ? pdfgist::AnnotationSavePhase::Recovered
+                                    : pdfgist::AnnotationSavePhase::Saved;
+                      if (g_host.active_pdf_only() == tab) populate_notes();
+                    });
               });
-            });
+        });
       });
 }
 
