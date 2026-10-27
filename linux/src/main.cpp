@@ -1244,41 +1244,41 @@ void load_annotations_for_tab(PdfTab* tab) {
   if (g_host.api == nullptr || !g_host.ready || tab == nullptr) return;
   auto const path = tab->path();
   bool const sidecar = g_host.settings.annotation_sidecar;
-  (void)g_host.api->get_annotations_async(
-      path, sidecar,
-      [tab, path, sidecar](rivet_app::Result<rivet::Bytes> result) {
-        if (!result.succeeded()) return;
-        auto bytes = result.get();
-        host::dispatch_ui([tab, path, sidecar,
-                           bytes = std::move(bytes)]() mutable {
-          auto const it = std::find_if(
+  auto* api = g_host.api;
+  std::thread([tab, api, path, sidecar] {
+    std::optional<rivet_app::AnnotationDocument> document;
+    std::string error;
+    try {
+      document = api->load_annotations(path, sidecar).get();
+    } catch (std::exception const& exception) {
+      error = exception.what();
+    } catch (...) {
+      error = "unknown annotation recovery failure";
+    }
+    host::dispatch_ui(
+        [tab, document = std::move(document), error = std::move(error)]() mutable {
+          auto const live = std::find_if(
               g_host.tabs.begin(), g_host.tabs.end(),
               [tab](auto const& candidate) { return candidate.get() == tab; });
-          if (it == g_host.tabs.end() || g_host.api == nullptr) return;
-          (void)g_host.api->annotation_recovery_pending_async(
-              path, sidecar,
-              [tab, bytes = std::move(bytes)](
-                  rivet_app::Result<bool> status) mutable {
-                bool const recovered = status.succeeded() && status.get();
-                host::dispatch_ui(
-                    [tab, bytes = std::move(bytes), recovered]() mutable {
-                      auto const live = std::find_if(
-                          g_host.tabs.begin(), g_host.tabs.end(),
-                          [tab](auto const& candidate) {
-                            return candidate.get() == tab;
-                          });
-                      if (live == g_host.tabs.end()) return;
-                      tab->set_doc_data(pdfgist::parse_doc_data(bytes));
-                      tab->annotations_loaded = true;
-                      tab->annotation_dirty = recovered;
-                      tab->annotation_save_phase =
-                          recovered ? pdfgist::AnnotationSavePhase::Recovered
-                                    : pdfgist::AnnotationSavePhase::Saved;
-                      if (g_host.active_pdf_only() == tab) populate_notes();
-                    });
-              });
+          if (live == g_host.tabs.end()) return;
+          if (!document.has_value()) {
+            tab->annotations_loaded = true;
+            tab->annotation_dirty = true;
+            tab->annotation_save_phase = pdfgist::AnnotationSavePhase::Failed;
+            tab->annotation_save_error = error;
+          } else {
+            tab->set_doc_data(pdfgist::parse_doc_data(document->data));
+            tab->annotations_loaded = true;
+            tab->annotation_dirty = document->recovery_pending;
+            tab->annotation_save_phase =
+                document->recovery_pending
+                    ? pdfgist::AnnotationSavePhase::Recovered
+                    : pdfgist::AnnotationSavePhase::Saved;
+            tab->annotation_save_error.clear();
+          }
+          if (g_host.active_pdf_only() == tab) populate_notes();
         });
-      });
+  }).detach();
 }
 
 void load_annotations_for_epub(EpubTab* epub) {
@@ -1288,23 +1288,44 @@ void load_annotations_for_epub(EpubTab* epub) {
   }
   auto const path = epub->path();
   bool const sidecar = g_host.settings.annotation_sidecar;
-  (void)g_host.api->load_annotations_async(
-      path, sidecar,
-      [epub](rivet_app::Result<rivet_app::AnnotationDocument> result) {
-        if (!result.succeeded()) return;
-        auto document = result.get();
-        host::dispatch_ui([epub, document = std::move(document)]() mutable {
+  auto* api = g_host.api;
+  // EpubTab's whole-book fetch has just drained the embedded channel. Keep
+  // recovery on the same proven request shape: one blocking call on a worker,
+  // followed by one UI dispatch. request_async can wait forever here on the
+  // packaged GTK runtime even though the backend has already returned (the
+  // native completion pump is also owned by the main context).
+  std::thread([epub, api, path, sidecar] {
+    std::optional<rivet_app::AnnotationDocument> document;
+    std::string error;
+    try {
+      document = api->load_annotations(path, sidecar).get();
+    } catch (std::exception const& exception) {
+      error = exception.what();
+    } catch (...) {
+      error = "unknown annotation recovery failure";
+    }
+    host::dispatch_ui(
+        [epub, document = std::move(document), error = std::move(error)]() mutable {
           if (g_host.epub != epub) return;
-          epub->set_doc_data(pdfgist::parse_doc_data(document.data));
+          if (!document.has_value()) {
+            epub->annotations_loaded = true;
+            epub->annotation_dirty = true;
+            epub->annotation_save_phase = pdfgist::AnnotationSavePhase::Failed;
+            epub->annotation_save_error = error;
+            populate_notes();
+            return;
+          }
+          epub->set_doc_data(pdfgist::parse_doc_data(document->data));
           epub->annotations_loaded = true;
-          epub->annotation_dirty = document.recovery_pending;
+          epub->annotation_dirty = document->recovery_pending;
           epub->annotation_save_phase =
-              document.recovery_pending
+              document->recovery_pending
                   ? pdfgist::AnnotationSavePhase::Recovered
                   : pdfgist::AnnotationSavePhase::Saved;
+          epub->annotation_save_error.clear();
           populate_notes();
         });
-      });
+  }).detach();
 }
 
 // ---- one-step undo (taskly banner parity) ---------------------------------
