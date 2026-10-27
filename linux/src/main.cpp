@@ -225,6 +225,7 @@ void populate_notes();
 void refresh_bookmark_button();
 void refresh_forms_pane();
 void load_annotations_for_tab(PdfTab* tab);
+void load_annotations_for_epub(EpubTab* epub);
 void schedule_annotation_save(PdfTab* tab);
 void store_annotations_now(PdfTab* tab);
 int epub_find_run(std::string const& query);
@@ -894,41 +895,6 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
       std::make_unique<EpubTab>(&g_host.panel_ctx, path, path_title(path));
   EpubTab* raw = epub.release();
   g_host.epub = raw;
-  // Annotations share the PDF store (same JSON shape; page = chapter).
-  if (g_host.api != nullptr && g_host.ready) {
-    bool const sidecar = g_host.settings.annotation_sidecar;
-    g_host.api->get_annotations_async(
-        path, sidecar,
-        [raw, path, sidecar](rivet_app::Result<rivet::Bytes> result) {
-          if (!result.succeeded()) return;
-          auto bytes = result.get();
-          // Do not start another bridge request from inside a bridge
-          // completion: the Linux runtime delivers completions while holding
-          // its channel turn. Re-entering here can stall unrelated EPUB RPCs.
-          host::dispatch_ui([raw, path, sidecar,
-                             bytes = std::move(bytes)]() mutable {
-            if (g_host.epub != raw || g_host.api == nullptr) return;
-            (void)g_host.api->annotation_recovery_pending_async(
-                path, sidecar,
-                [raw, bytes = std::move(bytes)](
-                    rivet_app::Result<bool> status) mutable {
-                  bool const recovered = status.succeeded() && status.get();
-                  host::dispatch_ui(
-                      [raw, bytes = std::move(bytes), recovered]() mutable {
-                        if (g_host.epub != raw) return;  // tab closed meanwhile
-                        raw->set_doc_data(pdfgist::parse_doc_data(bytes));
-                        raw->annotations_loaded = true;
-                        raw->annotation_dirty = recovered;
-                        raw->annotation_save_phase =
-                            recovered
-                                ? pdfgist::AnnotationSavePhase::Recovered
-                                : pdfgist::AnnotationSavePhase::Saved;
-                        populate_notes();
-                      });
-                });
-          });
-        });
-  }
   // Persisted typography rides in; EpubTab::load() re-applies it to the
   // page once the web view is up.
   g_host.epub_font_scale =
@@ -979,6 +945,12 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
     refresh_header_title();
     if (raw == g_host.epub) {
       raw->apply_theme(theme_is_dark() ? "dark" : "light");
+      // EpubTab assembles the whole book with a serial sequence of blocking
+      // bridge calls. Start annotation recovery only after that sequence has
+      // completed: the embedded Linux transport is single-channel, so an
+      // overlapping async request can starve either reader and leave the
+      // native sidebars half-populated.
+      load_annotations_for_epub(raw);
     }
   };
   raw->on_load_failed = [](std::string const& message) {
@@ -1303,6 +1275,44 @@ void load_annotations_for_tab(PdfTab* tab) {
                           recovered ? pdfgist::AnnotationSavePhase::Recovered
                                     : pdfgist::AnnotationSavePhase::Saved;
                       if (g_host.active_pdf_only() == tab) populate_notes();
+                    });
+              });
+        });
+      });
+}
+
+void load_annotations_for_epub(EpubTab* epub) {
+  if (g_host.api == nullptr || !g_host.ready || epub == nullptr ||
+      g_host.epub != epub) {
+    return;
+  }
+  auto const path = epub->path();
+  bool const sidecar = g_host.settings.annotation_sidecar;
+  (void)g_host.api->get_annotations_async(
+      path, sidecar,
+      [epub, path, sidecar](rivet_app::Result<rivet::Bytes> result) {
+        if (!result.succeeded()) return;
+        auto bytes = result.get();
+        // Completions run on the transport reader. Yield to GTK before
+        // enqueueing the status request so the reader can release its turn.
+        host::dispatch_ui([epub, path, sidecar,
+                           bytes = std::move(bytes)]() mutable {
+          if (g_host.epub != epub || g_host.api == nullptr) return;
+          (void)g_host.api->annotation_recovery_pending_async(
+              path, sidecar,
+              [epub, bytes = std::move(bytes)](
+                  rivet_app::Result<bool> status) mutable {
+                bool const recovered = status.succeeded() && status.get();
+                host::dispatch_ui(
+                    [epub, bytes = std::move(bytes), recovered]() mutable {
+                      if (g_host.epub != epub) return;
+                      epub->set_doc_data(pdfgist::parse_doc_data(bytes));
+                      epub->annotations_loaded = true;
+                      epub->annotation_dirty = recovered;
+                      epub->annotation_save_phase =
+                          recovered ? pdfgist::AnnotationSavePhase::Recovered
+                                    : pdfgist::AnnotationSavePhase::Saved;
+                      populate_notes();
                     });
               });
         });
