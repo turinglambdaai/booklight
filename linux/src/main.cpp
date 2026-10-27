@@ -157,6 +157,9 @@ struct Host {
   // backend boot handshake (mirrors the scaffold)
   std::thread startup_thread;
   std::thread bootstrap_thread;  // joined on shutdown (holds a raw api ptr)
+  // Blocking annotation loads use the embedded channel from workers. Keep
+  // their lifetimes explicit so shutdown never destroys api/backend first.
+  std::vector<std::thread> annotation_load_threads;
   std::mutex startup_mutex;
   std::unique_ptr<rivet::linux_runtime::Backend> startup_backend;
   std::string startup_error;
@@ -1245,7 +1248,7 @@ void load_annotations_for_tab(PdfTab* tab) {
   auto const path = tab->path();
   bool const sidecar = g_host.settings.annotation_sidecar;
   auto* api = g_host.api;
-  std::thread([tab, api, path, sidecar] {
+  g_host.annotation_load_threads.emplace_back([tab, api, path, sidecar] {
     std::optional<rivet_app::AnnotationDocument> document;
     std::string error;
     try {
@@ -1278,7 +1281,7 @@ void load_annotations_for_tab(PdfTab* tab) {
           }
           if (g_host.active_pdf_only() == tab) populate_notes();
         });
-  }).detach();
+  });
 }
 
 void load_annotations_for_epub(EpubTab* epub) {
@@ -1294,7 +1297,7 @@ void load_annotations_for_epub(EpubTab* epub) {
   // followed by one UI dispatch. request_async can wait forever here on the
   // packaged GTK runtime even though the backend has already returned (the
   // native completion pump is also owned by the main context).
-  std::thread([epub, api, path, sidecar] {
+  g_host.annotation_load_threads.emplace_back([epub, api, path, sidecar] {
     std::optional<rivet_app::AnnotationDocument> document;
     std::string error;
     try {
@@ -1325,7 +1328,7 @@ void load_annotations_for_epub(EpubTab* epub) {
           epub->annotation_save_error.clear();
           populate_notes();
         });
-  }).detach();
+  });
 }
 
 // ---- one-step undo (taskly banner parity) ---------------------------------
@@ -4300,6 +4303,10 @@ void on_shutdown(GApplication*, gpointer) {
   if (g_host.bootstrap_thread.joinable()) {
     g_host.bootstrap_thread.join();
   }
+  for (auto& thread : g_host.annotation_load_threads) {
+    if (thread.joinable()) thread.join();
+  }
+  g_host.annotation_load_threads.clear();
   std::unique_ptr<rivet::linux_runtime::Backend> startup_backend;
   {
     std::lock_guard lock(g_host.startup_mutex);
