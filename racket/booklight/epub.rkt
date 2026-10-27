@@ -19,6 +19,9 @@
                   cdata? cdata-string entity? entity-text))
 
 (provide (struct-out exn:fail:epub)
+         (struct-out exn:fail:epub:resource)
+         (struct-out epub-resource-budget)
+         default-epub-resource-budget
          (struct-out epub-book)
          (struct-out epub-toc-item)
          open-epub
@@ -29,20 +32,102 @@
          epub-doc-text)
 
 (struct exn:fail:epub exn:fail ())
+;; Resource-budget failures are machine distinguishable inside the domain
+;; core.  Rivet hosts currently surface the message, whose stable prefix and
+;; code let support logs identify the rejected budget without parsing
+;; localized prose.
+(struct exn:fail:epub:resource exn:fail:epub (code limit actual) #:transparent)
+(struct epub-resource-budget (archive-bytes entry-count entry-bytes expanded-bytes)
+  #:transparent
+  #:guard
+  (lambda (archive-bytes entry-count entry-bytes expanded-bytes _)
+    (for ((value (in-list (list archive-bytes entry-count
+                                entry-bytes expanded-bytes))))
+      (unless (exact-nonnegative-integer? value)
+        (raise-argument-error 'epub-resource-budget
+                              "exact-nonnegative-integer?" value)))
+    (values archive-bytes entry-count entry-bytes expanded-bytes)))
+
+;; EPUB is a ZIP container, so the compressed file size alone is not a safe
+;; memory budget.  These limits keep ordinary illustrated books well inside
+;; the supported envelope while bounding archive bombs and entry storms.
+(define default-epub-resource-budget
+  (epub-resource-budget (* 256 1024 1024) ; compressed archive: 256 MiB
+                        10000             ; central-directory entries
+                        (* 64 1024 1024)  ; one expanded entry: 64 MiB
+                        (* 512 1024 1024))) ; all expanded entries: 512 MiB
 (struct epub-book (title spine toc entries) #:transparent) ; spine: paths, toc: items, entries: name->bytes hash
 (struct epub-toc-item (title chapter level) #:transparent)
 
 (define (epub-error msg) (raise (exn:fail:epub msg (current-continuation-marks))))
 
+(define (epub-resource-error code limit actual)
+  (raise
+   (exn:fail:epub:resource
+    (format "EPUB_RESOURCE_LIMIT[~a]: limit ~a bytes/items, observed at least ~a"
+            code limit actual)
+    (current-continuation-marks)
+    code limit actual)))
+
 ;; ------------------------------------------------------------ zip access
 
-(define (read-entries bytes)
+(define (read-port/bounded port limit code
+                           (reported-limit limit) (actual-offset 0))
+  (define out (open-output-bytes))
+  (define buffer (make-bytes (min 65536 (add1 limit))))
+  (let loop ((total 0))
+    (define got (read-bytes! buffer port))
+    (cond
+      ((eof-object? got) (get-output-bytes out))
+      (else
+       (define next (+ total got))
+       (when (> next limit)
+         (epub-resource-error code reported-limit (+ actual-offset next)))
+       (write-bytes buffer out 0 got)
+       (loop next)))))
+
+(define (read-entries bytes budget)
+  (define archive-limit (epub-resource-budget-archive-bytes budget))
+  (when (> (bytes-length bytes) archive-limit)
+    (epub-resource-error 'archive-bytes archive-limit (bytes-length bytes)))
   (define entries (make-hash)) ; string name -> bytes
+  (define entry-count 0)
+  (define expanded-total 0)
   (define in (open-input-bytes bytes))
-  (unzip in
-         (lambda (name flags port (extra #f))
-           (hash-set! entries (string-trim (bytes->string/utf-8 name))
-                      (port->bytes port))))
+  (with-handlers ((exn:fail:epub? raise)
+                  (exn:fail?
+                   (lambda (_)
+                     (epub-error "EPUB_INVALID_ARCHIVE: ZIP data is malformed or unsupported"))))
+    (unzip in
+           (lambda (name flags port (extra #f))
+             (set! entry-count (add1 entry-count))
+             (define entry-count-limit
+               (epub-resource-budget-entry-count budget))
+             (when (> entry-count entry-count-limit)
+               (epub-resource-error 'entry-count entry-count-limit entry-count))
+             (define one-entry-limit
+               (epub-resource-budget-entry-bytes budget))
+             (define expanded-limit
+               (epub-resource-budget-expanded-bytes budget))
+             (define expanded-remaining (- expanded-limit expanded-total))
+             (define entry-limit (min one-entry-limit expanded-remaining))
+             (when (< entry-limit 0)
+               (epub-resource-error
+                'expanded-bytes
+                expanded-limit
+                expanded-total))
+             (define aggregate-limited? (< expanded-remaining one-entry-limit))
+             (define payload
+               (read-port/bounded
+                port entry-limit
+                (if aggregate-limited?
+                    'expanded-bytes
+                    'entry-bytes)
+                (if aggregate-limited? expanded-limit one-entry-limit)
+                (if aggregate-limited? expanded-total 0)))
+             (set! expanded-total (+ expanded-total (bytes-length payload)))
+             (hash-set! entries (string-trim (bytes->string/utf-8 name))
+                        payload))))
   entries)
 
 (define (entry-bytes book path)
@@ -134,11 +219,12 @@
 
 ;; ------------------------------------------------------------ open
 
-(define (open-epub data (fallback-title "EPUB"))
+(define (open-epub data (fallback-title "EPUB")
+                   #:budget (budget default-epub-resource-budget))
   (unless (and (bytes? data) (>= (bytes-length data) 4)
                (equal? (subbytes data 0 4) #"PK\x03\x04"))
     (epub-error "不是有效的 EPUB 文件"))
-  (define entries (read-entries data))
+  (define entries (read-entries data budget))
   (define book* (epub-book fallback-title '() '() entries))
   (define container
     (entry-bytes book* "META-INF/container.xml"))
@@ -262,7 +348,7 @@
   (unless (and (bytes? data) (>= (bytes-length data) 4)
                (equal? (subbytes data 0 4) #"PK\x03\x04"))
     (epub-error "不是有效的 EPUB 文件"))
-  (define entries (read-entries data))
+  (define entries (read-entries data default-epub-resource-budget))
   (define book* (epub-book "EPUB" '() '() entries))
   (define container
     (entry-bytes book* "META-INF/container.xml"))
@@ -290,7 +376,7 @@
   (unless (and (bytes? data) (>= (bytes-length data) 4)
                (equal? (subbytes data 0 4) #"PK\x03\x04"))
     (epub-error "不是有效的 EPUB 文件"))
-  (define entries (read-entries data))
+  (define entries (read-entries data default-epub-resource-budget))
   (define book* (epub-book "EPUB" '() '() entries))
   (define container
     (entry-bytes book* "META-INF/container.xml"))
