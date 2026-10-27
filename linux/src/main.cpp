@@ -1288,33 +1288,21 @@ void load_annotations_for_epub(EpubTab* epub) {
   }
   auto const path = epub->path();
   bool const sidecar = g_host.settings.annotation_sidecar;
-  (void)g_host.api->get_annotations_async(
+  (void)g_host.api->load_annotations_async(
       path, sidecar,
-      [epub, path, sidecar](rivet_app::Result<rivet::Bytes> result) {
+      [epub](rivet_app::Result<rivet_app::AnnotationDocument> result) {
         if (!result.succeeded()) return;
-        auto bytes = result.get();
-        // Completions run on the transport reader. Yield to GTK before
-        // enqueueing the status request so the reader can release its turn.
-        host::dispatch_ui([epub, path, sidecar,
-                           bytes = std::move(bytes)]() mutable {
-          if (g_host.epub != epub || g_host.api == nullptr) return;
-          (void)g_host.api->annotation_recovery_pending_async(
-              path, sidecar,
-              [epub, bytes = std::move(bytes)](
-                  rivet_app::Result<bool> status) mutable {
-                bool const recovered = status.succeeded() && status.get();
-                host::dispatch_ui(
-                    [epub, bytes = std::move(bytes), recovered]() mutable {
-                      if (g_host.epub != epub) return;
-                      epub->set_doc_data(pdfgist::parse_doc_data(bytes));
-                      epub->annotations_loaded = true;
-                      epub->annotation_dirty = recovered;
-                      epub->annotation_save_phase =
-                          recovered ? pdfgist::AnnotationSavePhase::Recovered
-                                    : pdfgist::AnnotationSavePhase::Saved;
-                      populate_notes();
-                    });
-              });
+        auto document = result.get();
+        host::dispatch_ui([epub, document = std::move(document)]() mutable {
+          if (g_host.epub != epub) return;
+          epub->set_doc_data(pdfgist::parse_doc_data(document.data));
+          epub->annotations_loaded = true;
+          epub->annotation_dirty = document.recovery_pending;
+          epub->annotation_save_phase =
+              document.recovery_pending
+                  ? pdfgist::AnnotationSavePhase::Recovered
+                  : pdfgist::AnnotationSavePhase::Saved;
+          populate_notes();
         });
       });
 }

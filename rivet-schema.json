@@ -61,6 +61,25 @@
     {
       "fields": [
         {
+          "name": "data",
+          "type": {
+            "kind": "scalar",
+            "name": "Bytes"
+          }
+        },
+        {
+          "name": "recovery-pending",
+          "type": {
+            "kind": "scalar",
+            "name": "Bool"
+          }
+        }
+      ],
+      "name": "AnnotationDocument"
+    },
+    {
+      "fields": [
+        {
           "name": "page",
           "type": {
             "kind": "scalar",
@@ -1147,6 +1166,29 @@
           "name": "ProviderPreset"
         },
         "kind": "list"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "pdf-path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "sidecar",
+          "type": {
+            "kind": "scalar",
+            "name": "Bool"
+          }
+        }
+      ],
+      "name": "load-annotations",
+      "result": {
+        "kind": "record",
+        "name": "AnnotationDocument"
       }
     },
     {
