@@ -328,6 +328,7 @@ EpubTab::EpubTab(PanelContext* ctx, std::string path, std::string title)
 }
 
 EpubTab::~EpubTab() {
+  if (load_thread_.joinable()) load_thread_.join();
   if (impl->message_handler_id != 0) {
     g_signal_handler_disconnect(impl->ucm, impl->message_handler_id);
     impl->message_handler_id = 0;
@@ -342,6 +343,7 @@ std::string EpubTab::chapter_text(int chapter) const {
 void EpubTab::load() {
   std::string const path = path_;
   rivet_app::API* api = ctx_->api;
+  bool const annotation_sidecar = ctx_->settings.annotation_sidecar;
   if (api == nullptr) {
     if (on_load_failed) on_load_failed("backend not ready");
     return;
@@ -350,11 +352,13 @@ void EpubTab::load() {
   // Whole-book assembly runs on a worker: the serial chapter loop blocks
   // on N RPCs, and embedded-channel requests must stay serial (mac
   // prefetchEpubText comment). Every UI touch happens on the main loop.
-  std::thread([this, alive, api, path]() {
+  load_thread_ = std::thread([this, alive, api, path, annotation_sidecar]() {
     std::string error;
     rivet_app::EpubView view;
     std::vector<std::string> sections;
     std::map<int, std::string> texts;
+    std::optional<rivet_app::AnnotationDocument> annotations;
+    std::string annotation_error;
     bool failed = false;
     try {
       view = api->epub_open(path).get();
@@ -372,6 +376,16 @@ void EpubTab::load() {
           texts[i] = api->epub_chapter_text(path, i).get();
         }
       }
+      // Linux embeds one request channel. Keep the atomic annotation load in
+      // the same serial worker as the EPUB metadata/chapter requests instead
+      // of handing the channel to a second async or blocking worker.
+      try {
+        annotations = api->load_annotations(path, annotation_sidecar).get();
+      } catch (std::exception const& exception) {
+        annotation_error = exception.what();
+      } catch (...) {
+        annotation_error = "unknown annotation recovery failure";
+      }
     } catch (std::exception const& e) {
       error = e.what();
       failed = true;
@@ -379,7 +393,8 @@ void EpubTab::load() {
       error = "unknown backend failure";
       failed = true;
     }
-    host::dispatch_ui([this, alive, view, sections, texts, error, failed]() {
+    host::dispatch_ui([this, alive, view, sections, texts, error, failed,
+                       annotations, annotation_error]() {
       if (!*alive) return;  // tab destroyed while the worker ran
       if (failed) {
         if (on_load_failed) on_load_failed(error);
@@ -404,9 +419,22 @@ void EpubTab::load() {
                                 nullptr);
       loaded_ = true;
       apply_font_scale(font_scale_);
+      annotations_loaded = true;
+      if (annotations.has_value()) {
+        set_doc_data(pdfgist::parse_doc_data(annotations->data));
+        annotation_dirty = annotations->recovery_pending;
+        annotation_save_phase = annotations->recovery_pending
+                                    ? AnnotationSavePhase::Recovered
+                                    : AnnotationSavePhase::Saved;
+        annotation_save_error.clear();
+      } else {
+        annotation_dirty = true;
+        annotation_save_phase = AnnotationSavePhase::Failed;
+        annotation_save_error = annotation_error;
+      }
       if (on_load_finished) on_load_finished(title_);
     });
-  }).detach();
+  });
 }
 
 void EpubTab::go_to_chapter(int chapter) {

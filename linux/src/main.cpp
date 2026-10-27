@@ -228,7 +228,6 @@ void populate_notes();
 void refresh_bookmark_button();
 void refresh_forms_pane();
 void load_annotations_for_tab(PdfTab* tab);
-void load_annotations_for_epub(EpubTab* epub);
 void schedule_annotation_save(PdfTab* tab);
 void store_annotations_now(PdfTab* tab);
 int epub_find_run(std::string const& query);
@@ -948,12 +947,9 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
     refresh_header_title();
     if (raw == g_host.epub) {
       raw->apply_theme(theme_is_dark() ? "dark" : "light");
-      // EpubTab assembles the whole book with a serial sequence of blocking
-      // bridge calls. Start annotation recovery only after that sequence has
-      // completed: the embedded Linux transport is single-channel, so an
-      // overlapping async request can starve either reader and leave the
-      // native sidebars half-populated.
-      load_annotations_for_epub(raw);
+      // Annotation recovery is part of EpubTab's serial load worker, so all
+      // blocking requests use one embedded-channel sequence.
+      populate_notes();
     }
   };
   raw->on_load_failed = [](std::string const& message) {
@@ -1280,53 +1276,6 @@ void load_annotations_for_tab(PdfTab* tab) {
             tab->annotation_save_error.clear();
           }
           if (g_host.active_pdf_only() == tab) populate_notes();
-        });
-  });
-}
-
-void load_annotations_for_epub(EpubTab* epub) {
-  if (g_host.api == nullptr || !g_host.ready || epub == nullptr ||
-      g_host.epub != epub) {
-    return;
-  }
-  auto const path = epub->path();
-  bool const sidecar = g_host.settings.annotation_sidecar;
-  auto* api = g_host.api.get();
-  // EpubTab's whole-book fetch has just drained the embedded channel. Keep
-  // recovery on the same proven request shape: one blocking call on a worker,
-  // followed by one UI dispatch. request_async can wait forever here on the
-  // packaged GTK runtime even though the backend has already returned (the
-  // native completion pump is also owned by the main context).
-  g_host.annotation_load_threads.emplace_back([epub, api, path, sidecar] {
-    std::optional<rivet_app::AnnotationDocument> document;
-    std::string error;
-    try {
-      document = api->load_annotations(path, sidecar).get();
-    } catch (std::exception const& exception) {
-      error = exception.what();
-    } catch (...) {
-      error = "unknown annotation recovery failure";
-    }
-    host::dispatch_ui(
-        [epub, document = std::move(document), error = std::move(error)]() mutable {
-          if (g_host.epub != epub) return;
-          if (!document.has_value()) {
-            epub->annotations_loaded = true;
-            epub->annotation_dirty = true;
-            epub->annotation_save_phase = pdfgist::AnnotationSavePhase::Failed;
-            epub->annotation_save_error = error;
-            populate_notes();
-            return;
-          }
-          epub->set_doc_data(pdfgist::parse_doc_data(document->data));
-          epub->annotations_loaded = true;
-          epub->annotation_dirty = document->recovery_pending;
-          epub->annotation_save_phase =
-              document->recovery_pending
-                  ? pdfgist::AnnotationSavePhase::Recovered
-                  : pdfgist::AnnotationSavePhase::Saved;
-          epub->annotation_save_error.clear();
-          populate_notes();
         });
   });
 }

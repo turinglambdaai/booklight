@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "annotations.hpp"
@@ -94,9 +95,10 @@ class EpubTab {
   struct Impl;
   std::unique_ptr<Impl> impl;
 
-  // Shared lifetime flag: the detached load worker and its dispatched
-  // completion hold a copy and bail out once the tab is destroyed.
+  // Shared lifetime flag: the load worker and its dispatched completion hold
+  // a copy and bail out once the tab is destroyed.
   std::shared_ptr<bool> alive_{std::make_shared<bool>(true)};
+  std::thread load_thread_;
 
   PanelContext* ctx_;
   std::string path_;
