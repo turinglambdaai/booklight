@@ -1247,7 +1247,7 @@ void load_annotations_for_tab(PdfTab* tab) {
   if (g_host.api == nullptr || !g_host.ready || tab == nullptr) return;
   auto const path = tab->path();
   bool const sidecar = g_host.settings.annotation_sidecar;
-  auto* api = g_host.api;
+  auto* api = g_host.api.get();
   g_host.annotation_load_threads.emplace_back([tab, api, path, sidecar] {
     std::optional<rivet_app::AnnotationDocument> document;
     std::string error;
@@ -1291,7 +1291,7 @@ void load_annotations_for_epub(EpubTab* epub) {
   }
   auto const path = epub->path();
   bool const sidecar = g_host.settings.annotation_sidecar;
-  auto* api = g_host.api;
+  auto* api = g_host.api.get();
   // EpubTab's whole-book fetch has just drained the embedded channel. Keep
   // recovery on the same proven request shape: one blocking call on a worker,
   // followed by one UI dispatch. request_async can wait forever here on the
