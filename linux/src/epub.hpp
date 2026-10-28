@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "annotations.hpp"
@@ -66,6 +67,11 @@ class EpubTab {
                           std::size_t index);
   std::size_t last_taken_index() const { return last_taken_index_; }
   std::function<void()> on_annotations_changed;
+  bool annotations_loaded{false};
+  bool annotation_dirty{false};
+  std::uint64_t annotation_revision{0};
+  AnnotationSavePhase annotation_save_phase{AnnotationSavePhase::Saved};
+  std::string annotation_save_error;
 
   // Chapter text from the prefetch cache ("" until loaded).
   std::string chapter_text(int chapter) const;
@@ -89,9 +95,10 @@ class EpubTab {
   struct Impl;
   std::unique_ptr<Impl> impl;
 
-  // Shared lifetime flag: the detached load worker and its dispatched
-  // completion hold a copy and bail out once the tab is destroyed.
+  // Shared lifetime flag: the load worker and its dispatched completion hold
+  // a copy and bail out once the tab is destroyed.
   std::shared_ptr<bool> alive_{std::make_shared<bool>(true)};
+  std::thread load_thread_;
 
   PanelContext* ctx_;
   std::string path_;

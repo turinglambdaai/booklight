@@ -10,12 +10,12 @@ your data stays escapeable and your sync setup stays yours.
 | Layer | Where it lives | How it syncs |
 |---|---|---|
 | The books | Your own folders (anywhere) | Your own sync drive (iCloud / OneDrive / Dropbox / 坚果云 …) |
-| Reading progress + annotations | Sidecar JSON beside each book | Rides the book through your sync drive |
+| Reading progress + annotations | Central app data by default, or sidecar JSON beside each book | Sidecars ride the book through your sync drive |
 | The shelf (collections, covers, metadata) | One `library.json` + a regenerable cover cache | Put `library.json` in your sync drive (Taskly-style single file) |
 
 None of these involve an account or a server. If you sync your book folder,
-progress and annotations follow automatically; if you also sync the shelf
-file, your collections follow too.
+progress and annotations follow when sidecar storage is enabled; if you also
+sync the shelf file, your collections follow too.
 
 ## 1. The books — your files, in place
 
@@ -24,16 +24,19 @@ the book stays where you put it, readable by every other app you own. The
 optional “Move into shelf folder” command performs an ordinary file **move**
 (not a copy) into a folder you choose.
 
-## 2. Reading state — sidecar beside each book
+## 2. Reading state — central by default, sidecar when selected
 
-Two storage shapes, both documented and stable:
+The storage locations are documented and stable:
 
-- `<book>.pdfgist.json` — annotations and bookmarks (next to the book,
-  opt-in via Settings; default keeps them in the central config dir).
+- `<config-dir>/annotations/<path-hash>.json` — default annotation and
+  bookmark store.
+- `<book>.booklight.json` — optional annotation and bookmark sidecar beside
+  the book, enabled in Settings. Legacy `<book>.pdfgist.json` sidecars remain
+  readable and migrate to the Booklight name on the next save.
 - Central `<config-dir>/` recents — last-read page and timestamp per book
   (see `settings.json` → `recent_files`), powering “continue reading”.
 
-Format of the sidecar:
+The central file and sidecar share this format:
 
 ```json
 {
@@ -50,6 +53,20 @@ Format of the sidecar:
   "bookmarks": [ { "page": 12, "label": "第 12 页", "created": 1792100000 } ]
 }
 ```
+
+### Interrupted and failed saves
+
+Before replacing either primary annotation file, Booklight atomically stages
+the complete canonical JSON under `<config-dir>/annotations/recovery/`. The
+primary is also replaced atomically, so a crash or full disk cannot truncate
+its last good version. A successful primary write removes the recovery copy.
+
+If the primary write fails (for example, a read-only sync folder), the app
+keeps the recovery copy, reports the unsaved state in the Notes pane, and
+offers **Retry save** and **Export**. Reopening the book loads that recovery
+copy when it is newer than the primary; a primary changed later by another
+tool wins instead. Central and sidecar recovery journals are separate, and
+the original PDF or EPUB bytes are never modified by annotation recovery.
 
 `rects` are in PDF page space: origin bottom-left, y up, in PDF units.
 (Reader apps that render top-left-origin must flip at paint time.)

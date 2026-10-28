@@ -383,6 +383,13 @@
 (check-equal?
  (bytes->string/utf-8 empty-annotations)
  "{\n  \"annotations\": [],\n  \"bookmarks\": []\n}")
+(define-values (no-annotation-recovery _e10b)
+  (call "annotation-recovery-pending" pdf-path #f))
+(check-false no-annotation-recovery)
+(define-values (empty-annotation-document _e10c)
+  (call "load-annotations" pdf-path #f))
+(check-equal? (first empty-annotation-document) empty-annotations)
+(check-false (second empty-annotation-document))
 
 ;; Legacy bare arrays are load-compatible but rejected on save.
 (define legacy-id (send-request "set-annotations" pdf-path #f #"[]"))

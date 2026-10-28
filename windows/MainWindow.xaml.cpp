@@ -212,6 +212,40 @@ MainWindow::MainWindow() {
     if (auto window = weak.get()) window->OpenDroppedRaw(args);
   });
 
+  Closed([weak = get_weak()](auto&&, auto&&) {
+    auto window = weak.get();
+    if (!window || !window->ready_ || !window->api_) return;
+    // A final synchronous handoff is intentional: detached debounce workers
+    // are not a durability guarantee once the window owns the last backend
+    // reference. The backend journals recovery bytes before the primary write.
+    for (auto const& tab : window->tabs_) {
+      if (!tab->doc_data_loaded && !tab->anno_dirty) continue;
+      try {
+        auto json = window->SerializeDocData(tab->doc_data);
+        rivet::Bytes bytes(json.begin(), json.end());
+        (void)window->api_
+            ->set_annotations(to_utf8(tab->path),
+                              window->settings_.annotation_sidecar,
+                              std::move(bytes))
+            .get();
+      } catch (...) {
+      }
+    }
+    if (window->epub_ &&
+        (window->epub_->doc_data_loaded || window->epub_->anno_dirty)) {
+      try {
+        auto json = window->SerializeDocData(window->epub_->doc_data);
+        rivet::Bytes bytes(json.begin(), json.end());
+        (void)window->api_
+            ->set_annotations(to_utf8(window->epub_->path),
+                              window->settings_.annotation_sidecar,
+                              std::move(bytes))
+            .get();
+      } catch (...) {
+      }
+    }
+  });
+
   find_timer_ = DispatcherQueue().CreateTimer();
   find_timer_.Interval(std::chrono::milliseconds{250});
   find_timer_.IsRepeating(false);

@@ -163,8 +163,13 @@ DocData parse_doc_data(std::vector<std::uint8_t> const& bytes) {
                                               double_member(rect, "height")});
         }
       }
+      // PDF annotations are located by page-space rectangles, while EPUB
+      // annotations intentionally have no rectangles and are located by a
+      // chapter/text-offset anchor.  Keep either valid shape when parsing the
+      // shared document; requiring rectangles here silently discarded every
+      // recovered EPUB annotation before the Notes pane could expose it.
       if (!annotation.id.empty() && annotation.page > 0 &&
-          !annotation.rects.empty()) {
+          (!annotation.rects.empty() || annotation.anchor.has_value())) {
         data.annotations.push_back(std::move(annotation));
       }
     }

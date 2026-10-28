@@ -84,6 +84,10 @@
    [view-mode : String]
    [annotation-sidecar : Bool]))
 
+(define-record AnnotationDocument
+  ([data : Bytes]
+   [recovery-pending : Bool]))
+
 (define-record StreamStart ([request-id : Int64]))
 
 (define-record TestResult
@@ -382,6 +386,26 @@
 ;; format (including page-space float rects) stays byte-compatible with v1.
 (define-rpc (get-annotations [pdf-path : String] [sidecar : Bool] : Bytes)
   (annotations:load-document-bytes pdf-path sidecar))
+
+;; New hosts load the bytes and their recovery state atomically. Keeping this
+;; as one request matters for single-channel embedded transports and also
+;; prevents an external writer from changing which copy wins between two
+;; separate reads. The older narrow RPCs remain for compatible clients.
+(define-rpc (load-annotations [pdf-path : String]
+                              [sidecar : Bool]
+                              : AnnotationDocument)
+  (AnnotationDocument
+   (annotations:load-document-bytes pdf-path sidecar)
+   (annotations:annotation-recovery-pending? pdf-path sidecar)))
+
+;; Hosts use this after loading to distinguish an ordinary stored document
+;; from an app-owned recovery draft.  The bytes still come from
+;; get-annotations so the established data format and old clients remain
+;; compatible; this narrow status RPC only drives visible retry/export UI.
+(define-rpc (annotation-recovery-pending [pdf-path : String]
+                                         [sidecar : Bool]
+                                         : Bool)
+  (annotations:annotation-recovery-pending? pdf-path sidecar))
 
 (define-rpc (set-annotations [pdf-path : String]
                              [sidecar : Bool]

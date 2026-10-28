@@ -1,9 +1,34 @@
 import SwiftUI
 import AppKit
 
+@MainActor
+final class BooklightAppDelegate: NSObject, NSApplicationDelegate {
+    weak var appModel: AppModel?
+    private var terminationInFlight = false
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let appModel else { return .terminateNow }
+        if terminationInFlight { return .terminateLater }
+        terminationInFlight = true
+        Task { @MainActor in
+            await appModel.flushAnnotationsBeforeTermination()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+}
+
 @main
+@MainActor
 struct PDFGistApp: App {
-    @StateObject private var app = AppModel()
+    @NSApplicationDelegateAdaptor(BooklightAppDelegate.self) private var delegate
+    @StateObject private var app: AppModel
+
+    init() {
+        let model = AppModel()
+        _app = StateObject(wrappedValue: model)
+        delegate.appModel = model
+    }
 
     var body: some Scene {
         // One document per window, Preview-style: native window tabs

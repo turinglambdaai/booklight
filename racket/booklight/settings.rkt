@@ -79,7 +79,14 @@
          (build-path (find-system-path 'home-dir)
                      "AppData" "Roaming" app-identifier))]
     [else
-     (build-path (find-system-path 'home-dir) ".config" app-identifier)]))
+     ;; Match GLib's g_get_user_config_dir, which the GTK host uses for its
+     ;; native preferences. Respecting XDG_CONFIG_HOME also keeps packaged and
+     ;; sandboxed launches inside the profile chosen by the caller instead of
+     ;; silently splitting Booklight state across two configuration roots.
+     (define xdg-config-home (getenv "XDG_CONFIG_HOME"))
+     (if (and xdg-config-home (non-empty-string? xdg-config-home))
+         (build-path xdg-config-home app-identifier)
+         (build-path (find-system-path 'home-dir) ".config" app-identifier))]))
 
 (define current-config-dir (make-parameter (default-config-dir)))
 

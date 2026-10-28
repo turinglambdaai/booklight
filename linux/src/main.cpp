@@ -157,6 +157,9 @@ struct Host {
   // backend boot handshake (mirrors the scaffold)
   std::thread startup_thread;
   std::thread bootstrap_thread;  // joined on shutdown (holds a raw api ptr)
+  // Blocking annotation loads use the embedded channel from workers. Keep
+  // their lifetimes explicit so shutdown never destroys api/backend first.
+  std::vector<std::thread> annotation_load_threads;
   std::mutex startup_mutex;
   std::unique_ptr<rivet::linux_runtime::Backend> startup_backend;
   std::string startup_error;
@@ -894,18 +897,6 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
       std::make_unique<EpubTab>(&g_host.panel_ctx, path, path_title(path));
   EpubTab* raw = epub.release();
   g_host.epub = raw;
-  // Annotations share the PDF store (same JSON shape; page = chapter).
-  if (g_host.api != nullptr && g_host.ready) {
-    g_host.api->get_annotations_async(
-        path, g_host.settings.annotation_sidecar,
-        [raw](rivet_app::Result<rivet::Bytes> result) {
-          if (!result.succeeded()) return;
-          host::dispatch_ui([raw, bytes = result.get()]() mutable {
-            if (g_host.epub != raw) return;  // tab closed meanwhile
-            raw->set_doc_data(pdfgist::parse_doc_data(bytes));
-          });
-        });
-  }
   // Persisted typography rides in; EpubTab::load() re-applies it to the
   // page once the web view is up.
   g_host.epub_font_scale =
@@ -956,6 +947,9 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
     refresh_header_title();
     if (raw == g_host.epub) {
       raw->apply_theme(theme_is_dark() ? "dark" : "light");
+      // Annotation recovery is part of EpubTab's serial load worker, so all
+      // blocking requests use one embedded-channel sequence.
+      populate_notes();
     }
   };
   raw->on_load_failed = [](std::string const& message) {
@@ -1198,12 +1192,38 @@ void store_annotations_now(PdfTab* tab) {
     tab->annotation_save_source = 0;
   }
   auto bytes = encode_doc_data(tab->doc_data());
+  auto* identity = tab;
+  auto const revision = tab->annotation_revision;
+  tab->annotation_save_phase = pdfgist::AnnotationSavePhase::Pending;
   (void)g_host.api->set_annotations_async(
       tab->path(), g_host.settings.annotation_sidecar, std::move(bytes),
-      [](rivet_app::Result<void>&&) {});
+      [identity, revision](rivet_app::Result<void> result) {
+        std::string const error = result.succeeded()
+                                      ? std::string{}
+                                      : AiPanel::describe_error(result.error);
+        host::dispatch_ui([identity, revision, error] {
+          auto const it = std::find_if(
+              g_host.tabs.begin(), g_host.tabs.end(),
+              [identity](auto const& candidate) { return candidate.get() == identity; });
+          if (it == g_host.tabs.end()) return;
+          auto* live = it->get();
+          if (live->annotation_revision != revision) return;
+          live->annotation_dirty = !error.empty();
+          live->annotation_save_phase =
+              error.empty() ? pdfgist::AnnotationSavePhase::Saved
+                            : pdfgist::AnnotationSavePhase::Failed;
+          live->annotation_save_error = error;
+          if (g_host.active_pdf_only() == live) populate_notes();
+        });
+      });
 }
 
 void schedule_annotation_save(PdfTab* tab) {
+  tab->annotation_dirty = true;
+  ++tab->annotation_revision;
+  tab->annotation_save_phase = pdfgist::AnnotationSavePhase::Pending;
+  tab->annotation_save_error.clear();
+  populate_notes();
   if (tab->annotation_save_source != 0) {
     g_source_remove(tab->annotation_save_source);
   }
@@ -1221,15 +1241,43 @@ void schedule_annotation_save(PdfTab* tab) {
 
 void load_annotations_for_tab(PdfTab* tab) {
   if (g_host.api == nullptr || !g_host.ready || tab == nullptr) return;
-  (void)g_host.api->get_annotations_async(
-      tab->path(), g_host.settings.annotation_sidecar,
-      [tab](rivet_app::Result<rivet::Bytes> result) {
-        host::dispatch_ui([tab, result]() mutable {
-          if (!result.succeeded()) return;
-          DocData data = pdfgist::parse_doc_data(result.get());
-          tab->set_doc_data(std::move(data));
+  auto const path = tab->path();
+  bool const sidecar = g_host.settings.annotation_sidecar;
+  auto* api = g_host.api.get();
+  g_host.annotation_load_threads.emplace_back([tab, api, path, sidecar] {
+    std::optional<rivet_app::AnnotationDocument> document;
+    std::string error;
+    try {
+      document = api->load_annotations(path, sidecar).get();
+    } catch (std::exception const& exception) {
+      error = exception.what();
+    } catch (...) {
+      error = "unknown annotation recovery failure";
+    }
+    host::dispatch_ui(
+        [tab, document = std::move(document), error = std::move(error)]() mutable {
+          auto const live = std::find_if(
+              g_host.tabs.begin(), g_host.tabs.end(),
+              [tab](auto const& candidate) { return candidate.get() == tab; });
+          if (live == g_host.tabs.end()) return;
+          if (!document.has_value()) {
+            tab->annotations_loaded = true;
+            tab->annotation_dirty = true;
+            tab->annotation_save_phase = pdfgist::AnnotationSavePhase::Failed;
+            tab->annotation_save_error = error;
+          } else {
+            tab->set_doc_data(pdfgist::parse_doc_data(document->data));
+            tab->annotations_loaded = true;
+            tab->annotation_dirty = document->recovery_pending;
+            tab->annotation_save_phase =
+                document->recovery_pending
+                    ? pdfgist::AnnotationSavePhase::Recovered
+                    : pdfgist::AnnotationSavePhase::Saved;
+            tab->annotation_save_error.clear();
+          }
+          if (g_host.active_pdf_only() == tab) populate_notes();
         });
-      });
+  });
 }
 
 // ---- one-step undo (taskly banner parity) ---------------------------------
@@ -1266,10 +1314,33 @@ void notes_undo_restore() {
 void schedule_epub_annotation_save() {
   if (g_host.api == nullptr || !g_host.ready) return;
   if (g_host.epub == nullptr) return;
+  auto* identity = g_host.epub;
+  identity->annotation_dirty = true;
+  ++identity->annotation_revision;
+  auto const revision = identity->annotation_revision;
+  identity->annotation_save_phase = pdfgist::AnnotationSavePhase::Pending;
+  identity->annotation_save_error.clear();
   auto bytes = pdfgist::encode_doc_data(g_host.epub->doc_data());
   (void)g_host.api->set_annotations_async(
       g_host.epub->path(), g_host.settings.annotation_sidecar,
-      std::move(bytes), [](rivet_app::Result<void>&&) {});
+      std::move(bytes), [identity, revision](rivet_app::Result<void> result) {
+        std::string const error = result.succeeded()
+                                      ? std::string{}
+                                      : AiPanel::describe_error(result.error);
+        host::dispatch_ui([identity, revision, error] {
+          if (g_host.epub != identity ||
+              identity->annotation_revision != revision) {
+            return;
+          }
+          identity->annotation_dirty = !error.empty();
+          identity->annotation_save_phase =
+              error.empty() ? pdfgist::AnnotationSavePhase::Saved
+                            : pdfgist::AnnotationSavePhase::Failed;
+          identity->annotation_save_error = error;
+          populate_notes();
+        });
+      });
+  populate_notes();
 }
 
 void notes_undo_hide();
@@ -1353,11 +1424,11 @@ void populate_notes() {
   if (list == nullptr) return;
   gtk_list_box_remove_all(list);
   auto* tab = g_host.active_pdf_only();
+  bool const epub_now = g_host.epub_active() && g_host.epub != nullptr;
   if (g_host.notes_export_button != nullptr) {
     gtk_widget_set_sensitive(g_host.notes_export_button,
-                             tab != nullptr);
+                             tab != nullptr || epub_now);
   }
-  bool const epub_now = g_host.epub_active() && g_host.epub != nullptr;
   if (!epub_now && tab != g_host.undo_tab) notes_undo_hide();
   if (epub_now && g_host.epub != g_host.epub_undo_tab) {
     g_host.epub_undo_valid = false;
@@ -1368,6 +1439,58 @@ void populate_notes() {
         g_host.notes_undo_bar,
         (tab != nullptr && g_host.undo_valid && tab == g_host.undo_tab) ||
             (epub_now && g_host.epub_undo_valid));
+  }
+  auto append_save_state = [list](pdfgist::AnnotationSavePhase phase,
+                                  std::string const& error) {
+    if (phase == pdfgist::AnnotationSavePhase::Saved) return;
+    auto* row = gtk_list_box_row_new();
+    auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_margin_start(box, 8);
+    gtk_widget_set_margin_end(box, 8);
+    gtk_widget_set_margin_top(box, 8);
+    gtk_widget_add_css_class(box, "card");
+    std::string message;
+    if (phase == pdfgist::AnnotationSavePhase::Pending) {
+      message = Tr("ui.notes.save-pending");
+    } else if (phase == pdfgist::AnnotationSavePhase::Recovered) {
+      message = Tr("ui.notes.recovery-pending");
+    } else {
+      message = Trf("ui.notes.save-failed", error);
+    }
+    auto* label = gtk_label_new(message.c_str());
+    gtk_label_set_wrap(GTK_LABEL(label), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+    gtk_widget_add_css_class(label, "caption");
+    gtk_box_append(GTK_BOX(box), label);
+    if (phase == pdfgist::AnnotationSavePhase::Recovered ||
+        phase == pdfgist::AnnotationSavePhase::Failed) {
+      auto* actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+      auto* retry = gtk_button_new_with_label(Tr("ui.notes.retry-save").c_str());
+      auto* export_button =
+          gtk_button_new_with_label(Tr("ui.notes.export").c_str());
+      hook(retry, "clicked", +[](GtkButton*, gpointer) {
+        if (g_host.epub_active() && g_host.epub != nullptr) {
+          schedule_epub_annotation_save();
+        } else if (auto* active = g_host.active_pdf_only(); active != nullptr) {
+          active->annotation_dirty = true;
+          store_annotations_now(active);
+        }
+      }, nullptr);
+      hook(export_button, "clicked",
+           +[](GtkButton*, gpointer) { export_annotations_ui(); }, nullptr);
+      gtk_box_append(GTK_BOX(actions), retry);
+      gtk_box_append(GTK_BOX(actions), export_button);
+      gtk_box_append(GTK_BOX(box), actions);
+    }
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
+    gtk_list_box_append(list, row);
+  };
+  if (epub_now) {
+    append_save_state(g_host.epub->annotation_save_phase,
+                      g_host.epub->annotation_save_error);
+  } else if (tab != nullptr) {
+    append_save_state(tab->annotation_save_phase,
+                      tab->annotation_save_error);
   }
   if (epub_now) {
     // EPUB annotations: annotate-the-selection row + chapter-labeled cards.
@@ -4129,14 +4252,46 @@ void on_shutdown(GApplication*, gpointer) {
   if (g_host.bootstrap_thread.joinable()) {
     g_host.bootstrap_thread.join();
   }
+  for (auto& thread : g_host.annotation_load_threads) {
+    if (thread.joinable()) thread.join();
+  }
+  g_host.annotation_load_threads.clear();
   std::unique_ptr<rivet::linux_runtime::Backend> startup_backend;
   {
     std::lock_guard lock(g_host.startup_mutex);
     startup_backend = std::move(g_host.startup_backend);
   }
   if (startup_backend != nullptr) startup_backend->stop();
-  // Flush pending annotation saves while backend + api are still alive.
-  for (auto& tab : g_host.tabs) store_annotations_now(tab.get());
+  // Flush pending annotation saves synchronously while backend + api are
+  // still alive. An async request followed immediately by backend->stop()
+  // can report success to the UI while never reaching the recovery journal.
+  if (g_host.api != nullptr && g_host.ready) {
+    for (auto& tab : g_host.tabs) {
+      if (!tab->annotations_loaded && !tab->annotation_dirty) continue;
+      try {
+        auto bytes = pdfgist::encode_doc_data(tab->doc_data());
+        (void)g_host.api
+            ->set_annotations(tab->path(), g_host.settings.annotation_sidecar,
+                              std::move(bytes))
+            .get();
+      } catch (...) {
+        // The normal save callback already exposes failure. Shutdown cannot
+        // keep UI alive, but the backend stages its recovery draft first.
+      }
+    }
+    if (g_host.epub != nullptr &&
+        (g_host.epub->annotations_loaded || g_host.epub->annotation_dirty)) {
+      try {
+        auto bytes = pdfgist::encode_doc_data(g_host.epub->doc_data());
+        (void)g_host.api
+            ->set_annotations(g_host.epub->path(),
+                              g_host.settings.annotation_sidecar,
+                              std::move(bytes))
+            .get();
+      } catch (...) {
+      }
+    }
+  }
   if (g_host.backend != nullptr) g_host.backend->stop();
   if (g_host.epub != nullptr) {
     g_host.epub->destroy();

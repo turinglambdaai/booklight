@@ -39,18 +39,19 @@ def press(node):
         extents.y + extents.height // 2,
         "b1c",
     )
-def click(node):
-    # GtkStackSwitcher page tabs sometimes report a successful AT-SPI action
-    # without changing GtkStack's visible child.  A click through the same
-    # accessible component bounds exercises the actual native control.
-    extents = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
-    if extents.width <= 0 or extents.height <= 0:
-        raise AssertionError(f"AT-SPI exposes no clickable bounds for {node.name!r}")
-    pyatspi.Registry.generateMouseEvent(
-        extents.x + extents.width // 2,
-        extents.y + extents.height // 2,
-        "b1c",
-    )
+def select_page_tab(node):
+    # GtkStackSwitcher exposes the semantic AT-SPI Selection interface on its
+    # page-tab-list parent. Selecting the child is stable on headless Wayland
+    # and verifies the same native accessibility contract used by assistive
+    # technology, without relying on synthetic pointer delivery.
+    parent = node.parent
+    selection = parent.querySelection()
+    for index, child in enumerate(children(parent)):
+        if child == node or ((child.name or "") == (node.name or "") and role(child) == "page tab"):
+            if not selection.selectChild(index):
+                raise AssertionError(f"AT-SPI failed to select page tab {node.name!r}")
+            return
+    raise AssertionError(f"page tab {node.name!r} is detached from its tab list")
 def wait_for(description, probe, timeout=90.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -80,10 +81,16 @@ def main():
         # the sidebar's GtkStackSwitcher tab.  Select the semantic page tab so
         # the assertion exercises the persistent native TOC surface.
         outline = wait_for("native EPUB outline page", lambda: next((node for node in walk(window) if role(node) == "page tab" and (node.name or "") == "Outline"), None))
-        click(outline)
+        select_page_tab(outline)
         wait_for("EPUB table of contents parsed by the embedded backend", lambda: contains(window, "First Chapter"))
+        notes = wait_for("native Notes page", lambda: next((node for node in walk(window) if role(node) == "page tab" and (node.name or "") == "Notes"), None))
+        select_page_tab(notes)
+        wait_for("recovered annotation status", lambda: contains(window, "Recovered unsaved annotations"))
+        wait_for("retry action", lambda: contains(window, "Retry Save"))
+        wait_for("export action", lambda: contains(window, "Export Annotations"))
+        wait_for("recovery fixture note", lambda: contains(window, "Recovered fixture note"))
         (args.output / "accessibility.json").write_text(json.dumps(snapshot(application), ensure_ascii=False, indent=2), encoding="utf-8")
-        (args.output / "interaction-trace.json").write_text(json.dumps({"platform":"linux","actions":["launch:sample.epub","press:Outline"],"assertions":["packaged GTK4 frame activated on native Wayland","sample EPUB crossed RVT1 into the embedded backend","native accessibility tree contains The Sample Book","native accessibility tree contains First Chapter"]}, indent=2), encoding="utf-8")
+        (args.output / "interaction-trace.json").write_text(json.dumps({"platform":"linux","actions":["launch:sample.epub","select:Outline","select:Notes"],"assertions":["packaged GTK4 frame activated on native Wayland","sample EPUB crossed RVT1 into the embedded backend","native accessibility tree contains The Sample Book","native accessibility tree contains First Chapter","pending recovery crosses RVT1 on reopen","native Notes pane exposes recovered status and Retry Save","recovered annotation remains visible and exportable"]}, indent=2), encoding="utf-8")
     except Exception:
         if application is not None: (args.output / "accessibility-failure.json").write_text(json.dumps(snapshot(application), ensure_ascii=False, indent=2), encoding="utf-8")
         raise

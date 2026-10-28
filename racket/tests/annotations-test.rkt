@@ -38,6 +38,9 @@
                    (string-append (fnv1a64-hex "/docs/paper.pdf") ".json"))))
      (check-equal? (path->string (annotations-dir-path))
                    (path->string (build-path temp-root "annotations")))
+     (check-not-equal?
+      (annotation-recovery-path "/docs/paper.pdf" #f)
+      (annotation-recovery-path "/docs/paper.pdf" #t))
 
      ;; ---- missing file -> empty document ----
      (check-equal? (load-document-bytes "/docs/paper.pdf" #f)
@@ -154,6 +157,46 @@
      (define reread (load-document-bytes sidecar-pdf #t))
      (check-true (string-contains? (bytes->string/utf-8 reread) "\"page\": 3"))
      (check-false (string-contains? (bytes->string/utf-8 reread) "\"id\":\"x\"")))
+
+     ;; A rejected primary write leaves an atomic app-owned recovery draft.
+     ;; Reopening returns that last acknowledged edit, and a later retry moves
+     ;; the same bytes to the requested sidecar before clearing the draft.
+     (define blocked-parent (build-path temp-root "blocked-parent"))
+     (call-with-output-file blocked-parent
+       (lambda (out) (display "not a directory" out)))
+     (define blocked-pdf
+       (path->string (build-path blocked-parent "blocked.pdf")))
+     (define blocked-sidecar
+       (string->path (string-append blocked-pdf ".booklight.json")))
+     (define recoverable
+       (string->bytes/utf-8
+        "{\"annotations\":[{\"id\":\"recover-me\",\"page\":1,\"rects\":[]}]}"))
+     (check-exn
+      (lambda (e) (regexp-match? #rx"保存批注失败" (exn-message e)))
+      (lambda () (store-document-bytes! blocked-pdf #t recoverable)))
+     (check-true (annotation-recovery-pending? blocked-pdf #t))
+     (check-true
+      (string-contains?
+       (bytes->string/utf-8 (load-document-bytes blocked-pdf #t))
+       "recover-me"))
+     (delete-file blocked-parent)
+     (make-directory blocked-parent)
+     (store-document-bytes! blocked-pdf #t recoverable)
+     (check-false (annotation-recovery-pending? blocked-pdf #t))
+     (check-true (file-exists? blocked-sidecar))
+
+     ;; A newer primary written outside Booklight wins over a stale recovery
+     ;; draft and does not keep the UI in a false recovered-unsaved state.
+     (define stale-recovery (annotation-recovery-path blocked-pdf #t))
+     (call-with-output-file stale-recovery
+       (lambda (out) (display "{\"annotations\":[{\"id\":\"stale\"}]}" out)))
+     (file-or-directory-modify-seconds stale-recovery 10)
+     (file-or-directory-modify-seconds blocked-sidecar 20)
+     (check-false (annotation-recovery-pending? blocked-pdf #t))
+     (check-false
+      (string-contains?
+       (bytes->string/utf-8 (load-document-bytes blocked-pdf #t))
+       "stale"))
 
      ;; ---- EPUB anchor field ----
      ;; anchored annotations round-trip the chapter+offsets anchor; PDF

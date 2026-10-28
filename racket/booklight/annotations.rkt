@@ -27,6 +27,8 @@
          sidecar-storage-path
          legacy-sidecar-path
          annotations-dir-path
+         annotation-recovery-path
+         annotation-recovery-pending?
          empty-document
          legacy-array?
          load-document-bytes
@@ -56,6 +58,38 @@
     (raise-argument-error 'annotation-storage-path "string?" pdf-path))
   (build-path (annotations-dir-path)
               (string-append (fnv1a64-hex pdf-path) ".json")))
+
+;; A recovery copy lives under the app-owned config directory even when the
+;; user selected a sidecar beside the document.  The mode suffix matters: a
+;; central save and a sidecar save for the same book are distinct promises and
+;; must never consume each other's pending draft.
+(define (annotation-recovery-path pdf-path sidecar?)
+  (build-path (annotations-dir-path)
+              "recovery"
+              (string-append (fnv1a64-hex pdf-path)
+                             (if sidecar? "-sidecar.json" "-central.json"))))
+
+(define (document-storage-read-path pdf-path sidecar?)
+  (if sidecar?
+      (or (and (file-exists? (sidecar-storage-path pdf-path))
+               (sidecar-storage-path pdf-path))
+          (let ((legacy (legacy-sidecar-path pdf-path)))
+            (and legacy (file-exists? legacy) legacy))
+          (sidecar-storage-path pdf-path))
+      (annotation-storage-path pdf-path)))
+
+;; A recovery file is pending only while it is the copy load would select.
+;; An external tool may have written a newer primary after a failed save; in
+;; that case the recovery journal is stale and must not produce a false alarm.
+(define (recovery-selected? stored-file recovery-file)
+  (and (file-exists? recovery-file)
+       (or (not (file-exists? stored-file))
+           (>= (file-or-directory-modify-seconds recovery-file)
+               (file-or-directory-modify-seconds stored-file)))))
+
+(define (annotation-recovery-pending? pdf-path sidecar?)
+  (recovery-selected? (document-storage-read-path pdf-path sidecar?)
+                      (annotation-recovery-path pdf-path sidecar?)))
 
 ;; ---- model defaults (serde #[serde(default)] on the v1 structs) ----
 ;;
@@ -175,14 +209,17 @@
 ;; Returns normalized pretty JSON bytes; missing files yield an empty
 ;; document, exactly like load_document in annotations.rs.
 (define (load-document-bytes pdf-path sidecar?)
+  (define stored-file (document-storage-read-path pdf-path sidecar?))
+  (define recovery-file (annotation-recovery-path pdf-path sidecar?))
+  ;; A pending recovery draft is the last acknowledged edit. Prefer it to the
+  ;; older primary copy; the host surfaces the pending state and retries the
+  ;; normal save explicitly.  If an external tool produced a newer primary,
+  ;; keep that newer file instead of resurrecting a stale draft.
   (define file
-    (if sidecar?
-        (or (and (file-exists? (sidecar-storage-path pdf-path))
-                 (sidecar-storage-path pdf-path))
-            (let ((legacy (legacy-sidecar-path pdf-path)))
-              (and legacy (file-exists? legacy) legacy))
-            (sidecar-storage-path pdf-path))
-        (annotation-storage-path pdf-path)))
+    (cond
+      [(recovery-selected? stored-file recovery-file)
+       recovery-file]
+      [else stored-file]))
   (if (not (file-exists? file))
       (json-value->bytes (empty-document))
       (let ()
@@ -198,6 +235,15 @@
 
 ;; Validates the shape, applies defaults, and stores normalized pretty JSON
 ;; (what the host gets back from load is exactly what is on disk).
+(define (atomic-write-bytes! file data)
+  (define parent (path-only file))
+  (when parent (make-directory* parent))
+  (call-with-atomic-output-file
+   file
+   (lambda (out _temporary-path)
+     (write-bytes data out)
+     (flush-output out))))
+
 (define (store-document-bytes! pdf-path sidecar? data)
   (unless (bytes? data)
     (raise-argument-error 'store-document-bytes! "bytes?" data))
@@ -219,16 +265,21 @@
     (if sidecar?
         (sidecar-storage-path pdf-path)
         (annotation-storage-path pdf-path)))
+  (define normalized-bytes (json-value->bytes normalized))
+  (define recovery-file (annotation-recovery-path pdf-path sidecar?))
   (with-handlers
       ([exn:fail?
         (lambda (e)
           (raise (exn:fail (tf "backend.error.save-annotations" (exn-message e))
                            (current-continuation-marks))))])
-    (unless sidecar?
-      (make-directory* (annotations-dir-path)))
-    (call-with-output-file file
-      (lambda (out) (write-bytes (json-value->bytes normalized) out))
-      #:exists 'replace))
+    ;; Stage the complete canonical document before touching the primary. If
+    ;; the sidecar is read-only, the RPC can fail honestly while the edit still
+    ;; survives a close/reopen cycle. Atomic replacement also prevents a crash
+    ;; or full disk from truncating the last good primary file.
+    (atomic-write-bytes! recovery-file normalized-bytes)
+    (atomic-write-bytes! file normalized-bytes)
+    (with-handlers ([exn:fail:filesystem? void])
+      (delete-file recovery-file)))
   (void))
 
 ;; ---- markdown digest (the reader keeps it beside the book) ----

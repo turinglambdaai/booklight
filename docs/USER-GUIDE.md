@@ -24,13 +24,15 @@ Use [official Releases](https://github.com/turinglambdaai/booklight/releases), s
 
 Back up original books and Booklight settings/annotation sidecars together. A library backup alone does not contain the referenced books. PDF edits can change document bytes; preserve an untouched original and reopen exported files in an independent reader.
 
+The Notes pane reports annotation saves that are still in progress or failed. If a save fails, Booklight keeps an app-owned recovery copy: use **Retry save** after fixing the destination, or **Export** to preserve the current notes elsewhere. On the next open, **Recovered — save pending** means the recovery copy was loaded and still needs to reach the selected central or sidecar location. A successful retry clears that state. This recovery never changes the original PDF or EPUB.
+
 ## Network, keys and privacy
 
 Reading is local. AI requests send selected text and conversation context to your chosen provider. Review the send scope and provider policy before processing confidential files; BYOK usage is billed by that provider.
 
 ## Known limits
 
-Save/reopen/export, damaged-file recovery and AI cancellation/secret storage remain release qualification work (#20). A new multi-document research workbench is not delivered.
+Damaged-book recovery and AI cancellation/secret storage remain release qualification work (#20). Annotation persistence recovery is implemented for the next release but remains subject to native-platform acceptance before release. A new multi-document research workbench is not delivered.
 
 ## Updates and removal
 

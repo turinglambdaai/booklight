@@ -255,6 +255,7 @@ struct EpubNotesPane: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
+                AnnotationSaveBanner(reader: reader, onExport: onExport)
                 if let selection = epub.pendingSelection,
                    selection.text.count > 1 {
                     VStack(alignment: .leading, spacing: 6) {
@@ -681,6 +682,7 @@ struct NotesPane: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
+                AnnotationSaveBanner(reader: reader, onExport: onExport)
                 if reader.pendingUndo != nil {
                     HStack(spacing: 8) {
                         Text(L10n.t("ui.notes.deleted"))
@@ -771,6 +773,58 @@ struct NotesPane: View {
             .contentShape(Rectangle())
             .onTapGesture { tab.goToPage(bookmark.page) }
         }
+    }
+}
+
+/// Quiet while saved; visible in the Notes pane while a write is pending or
+/// failed. Failed/recovered edits stay exportable and get an explicit retry,
+/// without presenting a modal alert for every debounce attempt.
+struct AnnotationSaveBanner: View {
+    @ObservedObject var reader: ReaderModel
+    let onExport: () -> Void
+
+    var body: some View {
+        switch reader.annotationPersistence {
+        case .saved:
+            EmptyView()
+        case .pending:
+            statusCard(L10n.t("ui.notes.save-pending"), error: false)
+        case .recovered:
+            recoveryCard(L10n.t("ui.notes.recovery-pending"))
+        case .failed(let message):
+            recoveryCard(L10n.t("ui.notes.save-failed", message))
+        }
+    }
+
+    private func statusCard(_ message: String, error: Bool) -> some View {
+        Text(message)
+            .font(.system(size: 11))
+            .foregroundStyle(error ? Theme.danger : Theme.textDim)
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(error ? Theme.danger.opacity(0.35) : Theme.border))
+    }
+
+    private func recoveryCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.danger)
+            HStack(spacing: 12) {
+                Button(L10n.t("ui.notes.retry-save")) {
+                    reader.retryAnnotationSave()
+                }
+                Button(L10n.t("ui.notes.export"), action: onExport)
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Theme.accent)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.danger.opacity(0.35)))
     }
 }
 

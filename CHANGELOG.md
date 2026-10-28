@@ -3,6 +3,23 @@
 All notable changes to Booklight are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is semver.
 
+## [Unreleased]
+
+### Added
+
+- Recoverable annotation persistence on macOS, Windows and Linux. Booklight
+  now stages an atomic app-owned recovery copy before replacing the selected
+  central or sidecar store, restores a newer pending copy on reopen, and
+  exposes saving, recovered and failed states in the native Notes pane with
+  explicit retry and export actions.
+
+### Changed
+
+- Annotation save failures are no longer treated as success, and application
+  shutdown flushes live PDF and EPUB annotation documents before the backend
+  stops. Sidecars use the documented `.booklight.json` name while legacy
+  `.pdfgist.json` files remain readable.
+
 ## [0.8.0] - 2026-10-22
 
 ### Added

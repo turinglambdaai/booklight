@@ -35,6 +35,28 @@ function Contains-Text {
     return $false
 }
 
+function Invoke-NamedControl {
+    param($Root, [string[]]$Names)
+    $nodes = $Root.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition)
+    for ($index = 0; $index -lt $nodes.Count; $index++) {
+        $node = $nodes[$index]
+        if ($Names -notcontains $node.Current.Name) { continue }
+        try {
+            $pattern = $node.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+            ([System.Windows.Automation.InvokePattern]$pattern).Invoke()
+            return $true
+        } catch {
+            try {
+                $pattern = $node.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
+                ([System.Windows.Automation.TogglePattern]$pattern).Toggle()
+                return $true
+            } catch { }
+        }
+    }
+    return $false
+}
+
 function Save-Snapshot {
     param($Root, [string]$Path)
     $nodes = $Root.FindAll([System.Windows.Automation.TreeScope]::Descendants,
@@ -55,6 +77,9 @@ try {
     $env:APPDATA = $appData
     $env:LOCALAPPDATA = $localData
     $env:BOOKLIGHT_OPEN = $fixture
+    $configDir = Join-Path $appData 'site.jrtx.booklight'
+    & racket (Join-Path $repo 'scripts\acceptance\seed-annotation-recovery.rkt') $configDir $fixture
+    if ($LASTEXITCODE -ne 0) { throw 'failed to seed annotation recovery fixture' }
     $process = Start-Process -FilePath $executable.FullName -PassThru `
         -WorkingDirectory $repo `
         -RedirectStandardOutput (Join-Path $output 'application.stdout.log') `
@@ -68,6 +93,18 @@ try {
     try {
         [void](Wait-Until 'EPUB title parsed by the embedded backend' { Contains-Text $window 'The Sample Book' })
         [void](Wait-Until 'EPUB table of contents parsed by the embedded backend' { Contains-Text $window 'First Chapter' })
+        [void](Wait-Until 'native annotations control' { Invoke-NamedControl $window @('Annotations','批注') })
+        [void](Wait-Until 'recovered annotation status' {
+            (Contains-Text $window 'Recovered unsaved annotations') -or
+            (Contains-Text $window '已恢复尚未写入目标位置的批注')
+        })
+        [void](Wait-Until 'retry action' {
+            (Contains-Text $window 'Retry Save') -or (Contains-Text $window '重试保存')
+        })
+        [void](Wait-Until 'export action' {
+            (Contains-Text $window 'Export Annotations') -or (Contains-Text $window '导出批注')
+        })
+        [void](Wait-Until 'recovery fixture note' { Contains-Text $window 'Recovered fixture note' })
     } catch {
         Save-Snapshot $window (Join-Path $output 'accessibility-failure.json')
         throw
@@ -76,8 +113,8 @@ try {
     [ordered]@{
         platform = 'windows'
         artifact = $executable.FullName
-        actions = @('launch:sample.epub')
-        assertions = @('packaged WinUI window activated','sample EPUB crossed RVT1 into the embedded backend','native accessibility tree contains The Sample Book','native accessibility tree contains First Chapter')
+        actions = @('launch:sample.epub','press:Annotations')
+        assertions = @('packaged WinUI window activated','sample EPUB crossed RVT1 into the embedded backend','native accessibility tree contains The Sample Book','native accessibility tree contains First Chapter','pending recovery crosses RVT1 on reopen','native Notes pane exposes recovered status and Retry Save','recovered annotation remains visible and exportable')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 
     $pattern = $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern)

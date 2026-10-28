@@ -324,6 +324,7 @@ final class AppModel: ObservableObject {
 
     /// Live reader windows — display-mode settings apply across all of them.
     private var liveReaders: [Weak<ReaderModel>] = []
+    private var closingAnnotationFlushes: [UUID: Task<Void, Never>] = [:]
 
     /// Stream routing: RVT1 events carry only a request id; the registry
     /// points at the card a reader window created for it. Cards are owned by
@@ -407,6 +408,24 @@ final class AppModel: ObservableObject {
     func unregister(_ reader: ReaderModel) {
         liveReaders.removeAll { $0.value === reader }
         if activeReader === reader { activeReader = nil }
+        // Keep the reader alive until its close-time annotation handoff has
+        // reached the backend. The task is retained so application
+        // termination can await it instead of racing a closed window.
+        let id = UUID()
+        let task = Task { @MainActor [weak self, reader] in
+            await reader.flushAnnotationsBeforeTermination()
+            self?.closingAnnotationFlushes.removeValue(forKey: id)
+        }
+        closingAnnotationFlushes[id] = task
+    }
+
+    func flushAnnotationsBeforeTermination() async {
+        let readers = liveReaders.compactMap { $0.value }
+        for reader in readers {
+            await reader.flushAnnotationsBeforeTermination()
+        }
+        let closing = Array(closingAnnotationFlushes.values)
+        for task in closing { await task.value }
     }
 
     func applyDisplayModeToAll() {

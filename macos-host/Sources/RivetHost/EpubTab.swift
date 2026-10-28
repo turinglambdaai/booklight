@@ -47,6 +47,7 @@ final class EpubTab: ObservableObject, Identifiable {
     /// chapter ordinal; EPUB annotations carry the chapter/offset anchor).
     @Published var docData = DocData.empty
     var annoTask: Task<Void, Never>?
+    var annotationsLoaded = false
     /// Marks are injected after the page finished loading.
     var marksApplied = false
 
@@ -175,19 +176,11 @@ final class EpubTab: ObservableObject, Identifiable {
     // MARK: annotations (same JSON store as PDFs; page = chapter ordinal)
 
     func queueAnnotationSave() {
-        annoTask?.cancel()
-        annoTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            guard !Task.isCancelled else { return }
-            await self?.storeAnnotationData()
-        }
+        reader?.queueEpubAnnotationSave(self)
     }
 
     func storeAnnotationData() async {
-        guard let reader, let app = reader.app, let api = app.api else { return }
-        guard let data = try? JSONEncoder().encode(docData) else { return }
-        try? await api.set_annotations(
-            pdf_path: path, sidecar: app.settings.annotation_sidecar, data: data)
+        await reader?.storeEpubAnnotationData(self)
     }
 
     func loadAnnotations(api: RivetAPI, sidecar: Bool) {
@@ -197,7 +190,11 @@ final class EpubTab: ObservableObject, Identifiable {
                 pdf_path: path, sidecar: sidecar),
                let decoded = try? JSONDecoder().decode(DocData.self, from: data) {
                 self.docData = decoded
+                self.annotationsLoaded = true
                 self.applyAnnotationsScript()
+                let recovered = (try? await api.annotation_recovery_pending(
+                    pdf_path: path, sidecar: sidecar)) ?? false
+                self.reader?.annotationLoadFinished(recovered: recovered)
             }
         }
     }

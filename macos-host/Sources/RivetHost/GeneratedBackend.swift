@@ -38,6 +38,15 @@ public enum RivetTypes {
         case es = "es"
     }
 
+    public struct AnnotationDocument: Sendable {
+        public let data: Data
+        public let recovery_pending: Bool
+        public init(data: Data, recovery_pending: Bool) {
+            self.data = data
+            self.recovery_pending = recovery_pending
+        }
+    }
+
     public struct EditTextBox: Sendable {
         public let page: Int64
         public let x_ratio_milli: Int64
@@ -216,11 +225,11 @@ public enum RivetTypes {
 }
 
 private func encode_String(_ v: String) -> RivetValue { .string(v) }
+private func encode_Bool(_ v: Bool) -> RivetValue { .bool(v) }
 private func encode__List_String_(_ v: [String]) -> RivetValue { .list(v.map(encode_String)) }
 private func encode__List_List_String_(_ v: [[String]]) -> RivetValue { .list(v.map(encode__List_String_)) }
 private func encode_Int64(_ v: Int64) -> RivetValue { .int64(v) }
 private func encode_StreamStart(_ v: RivetTypes.StreamStart) -> RivetValue { .list([encode_Int64(v.request_id)]) }
-private func encode_Bool(_ v: Bool) -> RivetValue { .bool(v) }
 private func encode_Bytes(_ v: Data) -> RivetValue { .bytes(v) }
 private func encode_EditTextBox(_ v: RivetTypes.EditTextBox) -> RivetValue { .list([encode_Int64(v.page), encode_Int64(v.x_ratio_milli), encode_Int64(v.y_ratio_milli), encode_String(v.text), encode_Int64(v.size)]) }
 private func encode__List_EditTextBox_(_ v: [RivetTypes.EditTextBox]) -> RivetValue { .list(v.map(encode_EditTextBox)) }
@@ -238,6 +247,7 @@ private func encode_SettingsView(_ v: RivetTypes.SettingsView) -> RivetValue { .
 private func encode_Void(_ v: Void) -> RivetValue { .null }
 private func encode_ProviderPreset(_ v: RivetTypes.ProviderPreset) -> RivetValue { .list([encode_String(v.id), encode_String(v.label), encode_String(v.base_url), encode_String(v.default_model), encode_Bool(v.needs_key)]) }
 private func encode__List_ProviderPreset_(_ v: [RivetTypes.ProviderPreset]) -> RivetValue { .list(v.map(encode_ProviderPreset)) }
+private func encode_AnnotationDocument(_ v: RivetTypes.AnnotationDocument) -> RivetValue { .list([encode_Bytes(v.data), encode_Bool(v.recovery_pending)]) }
 private func encode_SettingsUpdate(_ v: RivetTypes.SettingsUpdate) -> RivetValue { .list([encode_String(v.provider), encode_String(v.base_url), encode_String(v.model), encode_TargetLanguage(v.target_language), encode_String(v.view_mode), encode_Bool(v.annotation_sidecar)]) }
 private func encode_SummarizeMode(_ v: RivetTypes.SummarizeMode) -> RivetValue { .string(v.rawValue) }
 private func encode__Optional_String_(_ v: String?) -> RivetValue { v.map(encode_String) ?? .null }
@@ -248,11 +258,11 @@ private func encode_StreamDone(_ v: RivetTypes.StreamDone) -> RivetValue { .list
 private func encode_StreamError(_ v: RivetTypes.StreamError) -> RivetValue { .list([encode_Int64(v.request_id), encode_String(v.message)]) }
 
 private func decode_String(_ v: RivetValue) throws -> String { guard case .string(let x) = v else { throw RivetGeneratedError.typeMismatch("String") }; return x }
+private func decode_Bool(_ v: RivetValue) throws -> Bool { guard case .bool(let x) = v else { throw RivetGeneratedError.typeMismatch("Bool") }; return x }
 private func decode__List_String_(_ v: RivetValue) throws -> [String] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List String)") }; return try xs.map(decode_String) }
 private func decode__List_List_String_(_ v: RivetValue) throws -> [[String]] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List (List String))") }; return try xs.map(decode__List_String_) }
 private func decode_Int64(_ v: RivetValue) throws -> Int64 { guard case .int64(let x) = v else { throw RivetGeneratedError.typeMismatch("Int64") }; return x }
 private func decode_StreamStart(_ v: RivetValue) throws -> RivetTypes.StreamStart { guard case .list(let xs) = v, xs.count == 1 else { throw RivetGeneratedError.typeMismatch("StreamStart") }; return RivetTypes.StreamStart(request_id: try decode_Int64(xs[0])) }
-private func decode_Bool(_ v: RivetValue) throws -> Bool { guard case .bool(let x) = v else { throw RivetGeneratedError.typeMismatch("Bool") }; return x }
 private func decode_Bytes(_ v: RivetValue) throws -> Data { guard case .bytes(let x) = v else { throw RivetGeneratedError.typeMismatch("Bytes") }; return x }
 private func decode_EditTextBox(_ v: RivetValue) throws -> RivetTypes.EditTextBox { guard case .list(let xs) = v, xs.count == 5 else { throw RivetGeneratedError.typeMismatch("EditTextBox") }; return RivetTypes.EditTextBox(page: try decode_Int64(xs[0]), x_ratio_milli: try decode_Int64(xs[1]), y_ratio_milli: try decode_Int64(xs[2]), text: try decode_String(xs[3]), size: try decode_Int64(xs[4])) }
 private func decode__List_EditTextBox_(_ v: RivetValue) throws -> [RivetTypes.EditTextBox] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List EditTextBox)") }; return try xs.map(decode_EditTextBox) }
@@ -270,6 +280,7 @@ private func decode_SettingsView(_ v: RivetValue) throws -> RivetTypes.SettingsV
 private func decode_Void(_ v: RivetValue) throws -> Void { guard case .null = v else { throw RivetGeneratedError.typeMismatch("Void") } }
 private func decode_ProviderPreset(_ v: RivetValue) throws -> RivetTypes.ProviderPreset { guard case .list(let xs) = v, xs.count == 5 else { throw RivetGeneratedError.typeMismatch("ProviderPreset") }; return RivetTypes.ProviderPreset(id: try decode_String(xs[0]), label: try decode_String(xs[1]), base_url: try decode_String(xs[2]), default_model: try decode_String(xs[3]), needs_key: try decode_Bool(xs[4])) }
 private func decode__List_ProviderPreset_(_ v: RivetValue) throws -> [RivetTypes.ProviderPreset] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List ProviderPreset)") }; return try xs.map(decode_ProviderPreset) }
+private func decode_AnnotationDocument(_ v: RivetValue) throws -> RivetTypes.AnnotationDocument { guard case .list(let xs) = v, xs.count == 2 else { throw RivetGeneratedError.typeMismatch("AnnotationDocument") }; return RivetTypes.AnnotationDocument(data: try decode_Bytes(xs[0]), recovery_pending: try decode_Bool(xs[1])) }
 private func decode_SettingsUpdate(_ v: RivetValue) throws -> RivetTypes.SettingsUpdate { guard case .list(let xs) = v, xs.count == 6 else { throw RivetGeneratedError.typeMismatch("SettingsUpdate") }; return RivetTypes.SettingsUpdate(provider: try decode_String(xs[0]), base_url: try decode_String(xs[1]), model: try decode_String(xs[2]), target_language: try decode_TargetLanguage(xs[3]), view_mode: try decode_String(xs[4]), annotation_sidecar: try decode_Bool(xs[5])) }
 private func decode_SummarizeMode(_ v: RivetValue) throws -> RivetTypes.SummarizeMode { guard case .string(let x) = v, let result = RivetTypes.SummarizeMode(rawValue: x) else { throw RivetGeneratedError.typeMismatch("SummarizeMode") }; return result }
 private func decode__Optional_String_(_ v: RivetValue) throws -> String? { if case .null = v { return nil }; return try decode_String(v) }
@@ -298,6 +309,10 @@ public struct RivetAPI: Sendable {
     public let client: RivetClient
     public init(client: RivetClient) { self.client = client }
 
+    public func annotation_recovery_pending(pdf_path: String, sidecar: Bool) async throws -> Bool {
+        let rivetResult = try await client.call("annotation-recovery-pending", arguments: [encode_String(pdf_path), encode_Bool(sidecar)])
+        return try decode_Bool(rivetResult)
+    }
     public func chat(context_text: String, context_label: String, history: [[String]], user_message: String) async throws -> RivetTypes.StreamStart {
         let rivetResult = try await client.call("chat", arguments: [encode_String(context_text), encode_String(context_label), encode__List_List_String_(history), encode_String(user_message)])
         return try decode_StreamStart(rivetResult)
@@ -405,6 +420,10 @@ public struct RivetAPI: Sendable {
     public func list_presets() async throws -> [RivetTypes.ProviderPreset] {
         let rivetResult = try await client.call("list-presets", arguments: [])
         return try decode__List_ProviderPreset_(rivetResult)
+    }
+    public func load_annotations(pdf_path: String, sidecar: Bool) async throws -> RivetTypes.AnnotationDocument {
+        let rivetResult = try await client.call("load-annotations", arguments: [encode_String(pdf_path), encode_Bool(sidecar)])
+        return try decode_AnnotationDocument(rivetResult)
     }
     public func save_api_key(key: String) async throws -> Void {
         let rivetResult = try await client.call("save-api-key", arguments: [encode_String(key)])

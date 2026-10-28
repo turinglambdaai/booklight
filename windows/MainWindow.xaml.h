@@ -71,6 +71,8 @@ struct DocData {
   std::vector<StoredBookmark> bookmarks;
 };
 
+enum class AnnotationSavePhase { Saved, Pending, Recovered, Failed };
+
 // ---- reading tab ---------------------------------------------------------------
 
 struct PdfTab {
@@ -118,6 +120,9 @@ struct PdfTab {
   DocData doc_data;
   bool doc_data_loaded = false;
   bool anno_dirty = false;
+  std::uint64_t anno_revision = 0;
+  AnnotationSavePhase anno_save_phase = AnnotationSavePhase::Saved;
+  std::wstring anno_save_error;
 
   // rubber-band selection state (top-left points)
   bool selecting = false;
@@ -155,8 +160,12 @@ struct EpubBook {
   DocData doc_data;
   bool doc_data_loaded = false;
   bool anno_dirty = false;
+  std::uint64_t anno_revision = 0;
+  AnnotationSavePhase anno_save_phase = AnnotationSavePhase::Saved;
+  std::wstring anno_save_error;
   std::string doc_data_bytes;   // fetched on the worker thread, parsed on UI
   bool annotations_pending = false;
+  bool annotations_recovered = false;
   std::optional<StoredAnnotation> undo_annotation;
   std::size_t undo_index = 0;
   int highlight_page = -1;  // page carrying the active find highlight
@@ -375,6 +384,9 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ToggleBookmark();
   void UpdateBookmarkToggle();
   void BuildNotesPane(winrt::Microsoft::UI::Xaml::Controls::StackPanel const& content);
+  void AppendAnnotationSaveBanner(
+      winrt::Microsoft::UI::Xaml::Controls::StackPanel const& content,
+      AnnotationSavePhase phase, std::wstring const& error);
   void DrawStoredOverlays(PdfTab::Cell& cell, PdfTab const& tab);
   std::string SerializeDocData(DocData const& data);
   bool ParseDocData(std::string const& json, DocData* out);
