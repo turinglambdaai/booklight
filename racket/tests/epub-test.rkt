@@ -2,7 +2,8 @@
 ;; the committed fixture racket/tests/fixtures/sample.epub.
 #lang racket/base
 
-(require rackunit
+(require file/zip
+         rackunit
          racket/file
          racket/runtime-path
          racket/string
@@ -10,6 +11,28 @@
 
 (define-runtime-path fixture-path "fixtures/sample.epub")
 (define data (file->bytes fixture-path))
+
+(define (make-zip-bytes entries)
+  (define out (open-output-bytes))
+  (zip->output
+   (for/list ((entry (in-list entries)))
+     (define name (car entry))
+     (define payload (cdr entry))
+     (zip-entry 'file name payload (bytes-length payload) #hash() 9))
+   out
+   #:timestamp 315532800)
+  (get-output-bytes out))
+
+(define (check-resource-limit thunk code limit minimum-actual)
+  (check-exn
+   (lambda (e)
+     (and (exn:fail:epub:resource? e)
+          (eq? (exn:fail:epub:resource-code e) code)
+          (= (exn:fail:epub:resource-limit e) limit)
+          (>= (exn:fail:epub:resource-actual e) minimum-actual)
+          (string-prefix? (exn-message e)
+                          (format "EPUB_RESOURCE_LIMIT[~a]:" code))))
+   thunk))
 
 (test-case "open: title, spine order, TOC with nesting"
   (define book (open-epub data))
@@ -21,6 +44,65 @@
   (check-equal? (epub-toc-item-title (car toc)) "First Chapter")
   (check-equal? (epub-toc-item-chapter (car toc)) 1)
   (check-equal? (epub-toc-item-level (caddr toc)) 1))
+
+(test-case "default resource budget leaves the normal fixture supported"
+  (check-equal? (epub-resource-budget-archive-bytes default-epub-resource-budget)
+                (* 256 1024 1024))
+  (check-equal? (epub-resource-budget-entry-count default-epub-resource-budget)
+                10000)
+  (check-equal? (epub-resource-budget-entry-bytes default-epub-resource-budget)
+                (* 64 1024 1024))
+  (check-equal? (epub-resource-budget-expanded-bytes default-epub-resource-budget)
+                (* 512 1024 1024))
+  (check-equal? (epub-book-title (open-epub data)) "The Sample Book"))
+
+(test-case "resource budget rejects an oversized compressed archive before unzip"
+  (define limit (sub1 (bytes-length data)))
+  (check-resource-limit
+   (lambda ()
+     (open-epub data #:budget (epub-resource-budget limit 100 1024 4096)))
+   'archive-bytes limit (bytes-length data)))
+
+(test-case "resource budget rejects a ZIP entry storm"
+  (define archive
+    (make-zip-bytes (list (cons "one" #"1")
+                          (cons "two" #"2"))))
+  (check-resource-limit
+   (lambda ()
+     (open-epub archive #:budget
+                (epub-resource-budget (bytes-length archive) 1 1024 4096)))
+   'entry-count 1 2))
+
+(test-case "resource budget rejects one highly expanded entry"
+  ;; Repeated bytes compress to a tiny archive, exercising the expanded-entry
+  ;; path rather than the compressed archive limit.
+  (define payload (make-bytes 4096 65))
+  (define archive (make-zip-bytes (list (cons "bomb.bin" payload))))
+  (check-true (< (bytes-length archive) (bytes-length payload)))
+  (check-resource-limit
+   (lambda ()
+     (open-epub archive #:budget
+                (epub-resource-budget (bytes-length archive) 10 1024 8192)))
+   'entry-bytes 1024 1025))
+
+(test-case "resource budget rejects aggregate expansion across entries"
+  (define archive
+    (make-zip-bytes (list (cons "one.bin" (make-bytes 700 65))
+                          (cons "two.bin" (make-bytes 700 66)))))
+  (check-resource-limit
+   (lambda ()
+     (open-epub archive #:budget
+                (epub-resource-budget (bytes-length archive) 10 1024 1000)))
+   'expanded-bytes 1000 1001))
+
+(test-case "malformed ZIPs use a stable domain error"
+  (check-exn
+   (lambda (e)
+     (and (exn:fail:epub? e)
+          (not (exn:fail:epub:resource? e))
+          (string=? (exn-message e)
+                    "EPUB_INVALID_ARCHIVE: ZIP data is malformed or unsupported")))
+   (lambda () (open-epub #"PK\x03\x04truncated"))))
 
 (test-case "metadata: dc:creator becomes shelf author"
   (check-equal? (epub-author data) "Tester"))
