@@ -192,6 +192,10 @@ void MainWindow::ReloadTabDocument(std::shared_ptr<PdfTab> tab,
     return;
   }
   tab->doc = std::move(doc);
+  tab->pdf_edits_pending = true;  // only an explicit export persists edits
+  if (auto label = tab->tab_item.Header().try_as<muxc::TextBlock>()) {
+    label.Text(tab->title + L" •");
+  }
   tab->page_count = tab->doc->PageCount();
   tab->current_page = 1;
   ClearSelection(*tab);
