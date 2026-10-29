@@ -105,7 +105,7 @@ struct WindowAccessor: NSViewRepresentable {
                     self.parent.reader.closeDocument()
                     self.parent.app.unregister(self.parent.reader)
                     // Books semantics: closing the last book returns to the
-                    // shelf — the app never idles as a bare Dock icon.
+                    // welcome view — the app never idles as a bare Dock icon.
                     let anyRemaining = NSApp.windows.contains {
                         $0.isVisible && $0 !== window
                             && $0.tabbingIdentifier == "site.jrtx.booklight.reader"
@@ -147,14 +147,14 @@ struct ReaderWindowView: View {
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .automatic
     @State private var isKeyWindow = false
 
-    /// Library-first: a window without a document IS the shelf; a window
+    /// File-first: a window without a document shows a small open-file view; a window
     /// with one is a reader. Shared window plumbing wraps both modes.
     var body: some View {
         Group {
             if reader.hasDocument {
                 readerChrome
             } else {
-                LibraryView()
+                FileWelcomeView()
             }
         }
         .background(WindowAccessor(reader: reader, app: app))
@@ -236,13 +236,9 @@ struct ReaderWindowView: View {
         let dropped = urls
             .filter { ["pdf", "epub"].contains($0.pathExtension.lowercased()) }
         guard !dropped.isEmpty else { return }
-        if !reader.hasDocument {
-            // The shelf takes the drop: import all, open none.
-            app.importBooks(dropped)
-        } else {
-            // Reading window: dropped books open in new windows.
-            for url in dropped { app.openWindow?(url.path) }
-        }
+        // Dropping a file always opens it in its original location. No
+        // import phase, book catalog or generated cover is involved.
+        for url in dropped { app.openWindow?(url.path) }
     }
 
     private var backendBanner: some View {
