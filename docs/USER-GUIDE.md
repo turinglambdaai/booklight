@@ -16,13 +16,15 @@ Use [official Releases](https://github.com/turlamai/booklight/releases), select 
 
 ## Your first successful session
 
-1. Open a copy of a small PDF or EPUB. Import references the file in place rather than making a second book copy.
+1. Open a small PDF or EPUB directly from its existing folder (File > Open or drag and drop). For initial tests, choose a disposable sample. There is no library import.
 2. Add an annotation, close and reopen the book, and confirm it persists before working on valuable material.
-3. Try page editing or export only on a duplicate. Relink moved books instead of assuming the library copied them.
+3. Try page editing and export on test files. Use an explicit destination and reopen the exported document; moving a source file outside the app changes its path, not a Booklight catalog.
 
-## Data, backup and recovery
+## Files, backup and recovery
 
-Back up original books and Booklight settings/annotation sidecars together. A library backup alone does not contain the referenced books. PDF edits can change document bytes; preserve an untouched original and reopen exported files in an independent reader.
+New installations prefer `<document>.booklight.json` annotations beside the source; existing profiles keep their configured storage location. Recent paths and resume page live in a small app settings file. Old `library.json` and cover data are left untouched but are no longer used. Reading does not duplicate the source file.
+
+Back up original PDF/EPUB files and Booklight settings/annotation sidecars together. There is no managed book library, reading goal or reading-time database. PDF edits can change document bytes; preserve an untouched original and reopen exported files in an independent reader.
 
 The Notes pane reports annotation saves that are still in progress or failed. If a save fails, Booklight keeps an app-owned recovery copy: use **Retry save** after fixing the destination, or **Export** to preserve the current notes elsewhere. On the next open, **Recovered — save pending** means the recovery copy was loaded and still needs to reach the selected central or sidecar location. A successful retry clears that state. This recovery never changes the original PDF or EPUB.
 
