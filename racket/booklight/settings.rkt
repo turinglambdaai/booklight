@@ -254,7 +254,10 @@
    (string-or (settings-view-mode fallback)
               (hash-ref value 'view_mode #f))
    (bool-or (settings-annotation-sidecar fallback)
-            (hash-ref value 'annotation_sidecar (settings-annotation-sidecar fallback)))
+            ;; Existing settings.json files with no sidecar key came from an era
+            ;; where central annotations were the default. Preserve that
+            ;; history; only truly fresh profiles default to sidecars.
+            (hash-ref value 'annotation_sidecar #f))
    (let ((theme (string-or default-reading-theme
                            (hash-ref value 'reading_theme #f))))
      (if (member theme valid-reading-themes)
