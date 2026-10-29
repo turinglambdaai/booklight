@@ -77,8 +77,11 @@ std::shared_ptr<PdfDocument> PdfDocument::open_memory(
     return nullptr;
   }
   auto doc = std::shared_ptr<PdfDocument>(new PdfDocument());
-  doc->impl_ =
-      pdfium::Document::open_memory(bytes.data(), bytes.size(), "");
+  // Preserve the borrowed backing buffer for the lifetime of PDFium's
+  // FPDF_DOCUMENT. A temporary vector would become a dangling pointer.
+  doc->memory_bytes_ = std::move(bytes);
+  doc->impl_ = pdfium::Document::open_memory(
+      doc->memory_bytes_.data(), doc->memory_bytes_.size(), "");
   if (doc->impl_ == nullptr) return nullptr;
   doc->page_count_ = doc->impl_->page_count();
   doc->last_error_ = doc->impl_->last_error();
