@@ -51,7 +51,7 @@
         "  \"target_language\": \"中文\",\n"
         "  \"recent_files\": [],\n"
         "  \"view_mode\": \"single\",\n"
-        "  \"annotation_sidecar\": false,\n"
+        "  \"annotation_sidecar\": true,\n"
         "  \"reading_theme\": \"system\",\n"
         "  \"reading_font_scale\": 1.0"
         "\n}")))
