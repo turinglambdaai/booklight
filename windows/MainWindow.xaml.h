@@ -229,6 +229,8 @@ struct MainWindow : MainWindowT<MainWindow> {
                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void ToolsWatermark_Click(winrt::Windows::Foundation::IInspectable const&,
                             winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void ToolsSavePdf_Click(winrt::Windows::Foundation::IInspectable const&,
+                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void ToolsExportPage_Click(winrt::Windows::Foundation::IInspectable const&,
                              winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void ToolsExportText_Click(winrt::Windows::Foundation::IInspectable const&,
