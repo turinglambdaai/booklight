@@ -204,8 +204,19 @@
 
 ;; ---- RPC surface ----
 
+;; An existing catalog belongs to the user. A file-first startup must not
+;; import it, overwrite it or silently create a new catalog from recents.
+(define retired-library-path (build-path temp-config "library.json"))
+(define retired-library-bytes #"{\"format\":1,\"books\":[{\"path\":\"/old.pdf\"}]}")
+(call-with-output-file retired-library-path
+  (lambda (out) (write-bytes retired-library-bytes out))
+  #:exists 'truncate)
+
 (define-values (init-result _) (call "initialize"))
 (check-true (void? init-result))
+(check-equal? (file->bytes retired-library-path) retired-library-bytes)
+(delete-file retired-library-path)
+(check-false (directory-exists? (build-path temp-config "covers")))
 
 ;; Presets are the v1 types.ts table, zh labels, needs-key policy.
 (define-values (presets preset-events) (call "list-presets"))
@@ -235,7 +246,7 @@
 (check-equal? (list-ref initial-settings 2) "deepseek-chat")
 (check-equal? (list-ref initial-settings 3) "zh")
 (check-equal? (list-ref initial-settings 4) "single")
-(check-false (list-ref initial-settings 5))
+(check-true (list-ref initial-settings 5))
 (check-equal? (list-ref initial-settings 6) "system")
 (check-equal? (list-ref initial-settings 7) 1000)
 (check-false (list-ref initial-settings 8))
@@ -328,6 +339,7 @@
 (check-equal? (list-ref epub-shelf-entry 0) epub-path)
 (check-equal? (list-ref epub-shelf-entry 6) "")
 (check-false (file-exists? (build-path temp-config "library.json")))
+(check-false (directory-exists? (build-path temp-config "covers")))
 (define-values (empty-shelf _e15-read) (call "get-library"))
 (check-equal? empty-shelf '())
 
