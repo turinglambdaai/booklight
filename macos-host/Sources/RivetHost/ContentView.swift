@@ -122,6 +122,9 @@ struct WindowAccessor: NSViewRepresentable {
             // SwiftUI's navigationTitle owns window.title; this only keeps
             // the proxy icon (drag to Finder/Dock) in step with the document.
             guard let window else { return }
+            // Use macOS' native titlebar edited dot. This tracks page edits,
+            // which are distinct from annotation sidecar save status.
+            window.isDocumentEdited = parent.reader.pdfEditsPending
             if let path = parent.reader.documentPath {
                 let url = URL(fileURLWithPath: path)
                 if window.representedURL != url {
