@@ -2339,6 +2339,7 @@ void page_merge_pick() {
   gtk_file_filter_set_name(filter, Tr("ui.filter.pdf").c_str());
   gtk_file_filter_add_mime_type(filter, "application/pdf");
   gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(chooser), filter);
+  gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(chooser), TRUE);
   hook(
       chooser, "response",
       +[](GtkNativeDialog* native, int response, gpointer) {
@@ -3369,16 +3370,22 @@ void pick_and_open() {
       chooser, "response",
       +[](GtkNativeDialog* native, int response, gpointer) {
         if (response == GTK_RESPONSE_ACCEPT) {
-          if (GFile* file = gtk_file_chooser_get_file(
-                  GTK_FILE_CHOOSER(native));
-              file != nullptr) {
-            gchar* path = g_file_get_path(file);
-            g_object_unref(file);
-            if (path != nullptr) {
-              std::string const p = path;
-              g_free(path);
-              open_path(p);
+          // The GTK portal returns a list of originals; each opens in its
+          // own native tab. There is no import, staging folder or catalog.
+          GListModel* files = gtk_file_chooser_get_files(
+              GTK_FILE_CHOOSER(native));
+          if (files != nullptr) {
+            for (guint i = 0; i < g_list_model_get_n_items(files); ++i) {
+              auto* file = G_FILE(g_list_model_get_item(files, i));
+              if (file == nullptr) continue;
+              gchar* path = g_file_get_path(file);
+              g_object_unref(file);
+              if (path != nullptr) {
+                open_path(path);
+                g_free(path);
+              }
             }
+            g_object_unref(files);
           }
         }
         g_object_unref(native);
