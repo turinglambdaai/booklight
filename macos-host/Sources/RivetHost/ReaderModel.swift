@@ -246,6 +246,7 @@ final class ReaderModel: ObservableObject {
     /// occupied window is either showing the same file (jump to the resume
     /// page) or the caller should have opened a new window instead.
     func openPath(_ path: String, resumePage: Int? = nil) async {
+        await app?.waitForBootstrap()
         if path.lowercased().hasSuffix(".epub") {
             await openEpub(path, resumeChapter: resumePage ?? app?.recentPage(path) ?? 1)
             return
@@ -285,6 +286,7 @@ final class ReaderModel: ObservableObject {
     // MARK: EPUB (one book per window)
 
     func openEpub(_ path: String, resumeChapter: Int = 1) async {
+        await app?.waitForBootstrap()
         if let existing = epub, existing.path == path {
             epubActive = true
             if resumeChapter > 1 { existing.goToChapter(resumeChapter) }
