@@ -85,6 +85,7 @@
                     <MenuFlyout Placement="Bottom">
                         <MenuFlyoutItem x:Name="ToolsWatermarkItem" Click="ToolsWatermark_Click" />
                         <MenuFlyoutItem x:Name="ToolsExportPageItem" Click="ToolsExportPage_Click" />
+                        <MenuFlyoutItem x:Name="ToolsSavePdfItem" Click="ToolsSavePdf_Click" />
                         <MenuFlyoutItem x:Name="ToolsExportTextItem" Click="ToolsExportText_Click" />
                     </MenuFlyout>
                 </Button.Flyout>
