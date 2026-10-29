@@ -13,6 +13,17 @@
 
 `settings.json` still uses the existing per-user config-directory convention. The `recent_files` section records the original path, title, last page, scroll ratio and last-open timestamp for resume. It does **not** store reading durations, goals, streaks or library membership.
 
+## Existing PDFGist profiles (zero-copy compatibility)
+
+If `site.jrtx.booklight` has **not** been created but an older sibling
+`site.jrtx.pdfgist` profile exists, Booklight reads and writes that older
+settings/central-annotation directory **in place**. No copy, move, rename or
+deletion occurs. If both directories exist, the Booklight profile takes
+precedence; back up both before any manual reconciliation. An explicitly
+stored `annotation_sidecar: false` remains central, and a legacy settings
+file without that key also remains central. New installations without a
+settings file use sidecars by default.
+
 ## Annotations
 
 Central and sidecar stores use the existing JSON form:
