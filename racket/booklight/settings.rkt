@@ -318,9 +318,14 @@
                            (current-continuation-marks))))])
     (make-directory* (current-config-dir))
     (define data (json-value->bytes (settings->storage settings)))
-    (call-with-output-file path
-      (lambda (out) (write-bytes data out))
-      #:exists 'replace))
+    ;; Stage the complete new preferences file and atomically rename it.
+    ;; In particular, updating the last-open page must not truncate the
+    ;; provider settings or recents if the process crashes during a write.
+    (call-with-atomic-output-file
+     path
+     (lambda (out _temporary-path)
+       (write-bytes data out)
+       (flush-output out))))
   (void))
 
 ;; Read-modify-write under an in-process lock; callers sharing this module
