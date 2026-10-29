@@ -4,7 +4,7 @@
 
 **English** · [中文](README.zh-CN.md)
 
-[![release](https://img.shields.io/github/v/release/turinglambdaai/booklight)](https://github.com/turinglambdaai/booklight/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turinglambdaai/booklight/actions/workflows/ci.yml/badge.svg)](https://github.com/turinglambdaai/booklight/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![release](https://img.shields.io/github/v/release/turinglambdaai/booklight)](https://github.com/turlamai/booklight/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turlamai/booklight/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/booklight/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 Apple built the best reading experience and then locked it to its devices.
 Booklight is that calm, for every desktop: a shelf you own, reading that
@@ -62,7 +62,7 @@ you click through — on all three platforms. Contract:
 
 One Racket domain core (`racket/booklight/` + `app/backend.rkt`) owns all
 business logic — the shelf, AI streaming, PDF page surgery, annotation
-storage, settings — and exposes it over [Rivet](https://github.com/turinglambdaai/rivet)'s
+storage, settings — and exposes it over [Rivet](https://github.com/turlamai/rivet)'s
 typed RPC (RVT1). First-party hosts render and interact only:
 
 | Host | Stack | Directory |
@@ -78,7 +78,7 @@ PDF libraries. Where your data lives and how it syncs:
 
 ## Building from source
 
-Prerequisites: [Racket](https://racket-lang.org) CS 9.x with [Rivet](https://github.com/turinglambdaai/rivet) linked,
+Prerequisites: [Racket](https://racket-lang.org) CS 9.x with [Rivet](https://github.com/turlamai/rivet) linked,
 plus the Swift / WinRT / GTK toolchain for your platform. The Windows and
 Linux hosts render PDF through [PDFium](https://pdfium.googlesource.com/pdfium/)
 (BSD-3): the build fetches pinned, SHA-256-verified binaries at build time —

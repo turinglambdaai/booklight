@@ -4,7 +4,7 @@
 
 [English](README.md) · **中文**
 
-[![release](https://img.shields.io/github/v/release/turinglambdaai/booklight)](https://github.com/turinglambdaai/booklight/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turinglambdaai/booklight/actions/workflows/ci.yml/badge.svg)](https://github.com/turinglambdaai/booklight/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![release](https://img.shields.io/github/v/release/turinglambdaai/booklight)](https://github.com/turlamai/booklight/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turlamai/booklight/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/booklight/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 苹果做出了最好的阅读体验，然后把它锁进了自己的设备。Booklight 把这份安静带给每个桌面：一个属于你的书架、不打扰的阅读、随叫随到的 AI——书是你的文件，模型是你的模型，花销是你的花销。任何东西都不会被复制进应用私有库，除了你主动发给自家服务商的请求，没有任何数据离开你的机器。
 
@@ -46,7 +46,7 @@ Ed25519 签名校验的自更新（签名清单 + SHA-256 下载校验）；至�
 
 ## 架构
 
-一份 Racket 领域核心（`racket/booklight/` + `app/backend.rkt`）承载全部业务逻辑——书架、AI 流式、PDF 页面手术、批注存储、设置——经 [Rivet](https://github.com/turinglambdaai/rivet) 的类型化 RPC（RVT1）暴露；各平台第一方原生宿主只做渲染与交互：
+一份 Racket 领域核心（`racket/booklight/` + `app/backend.rkt`）承载全部业务逻辑——书架、AI 流式、PDF 页面手术、批注存储、设置——经 [Rivet](https://github.com/turlamai/rivet) 的类型化 RPC（RVT1）暴露；各平台第一方原生宿主只做渲染与交互：
 
 | 平台宿主 | 技术栈 | 目录 |
 |---|---|---|
@@ -58,7 +58,7 @@ PDF 页级操作由领域核心自研的最小读写器（`racket/booklight/pdfd
 
 ## 从源码构建
 
-前置：[Racket](https://racket-lang.org) CS 9.x（以 link 方式装好 [Rivet](https://github.com/turinglambdaai/rivet)）+ 你所在平台的 Swift / WinRT / GTK 工具链。Windows 与 Linux 宿主经 [PDFium](https://pdfium.googlesource.com/pdfium/)（BSD-3）渲染：构建时拉取固定版本并做 SHA-256 校验的预编译产物——仓库不提交任何二进制。
+前置：[Racket](https://racket-lang.org) CS 9.x（以 link 方式装好 [Rivet](https://github.com/turlamai/rivet)）+ 你所在平台的 Swift / WinRT / GTK 工具链。Windows 与 Linux 宿主经 [PDFium](https://pdfium.googlesource.com/pdfium/)（BSD-3）渲染：构建时拉取固定版本并做 SHA-256 校验的预编译产物——仓库不提交任何二进制。
 
 ```bash
 raco rivet doctor --json   # 工具链自检
