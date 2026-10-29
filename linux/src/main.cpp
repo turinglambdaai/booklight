@@ -376,12 +376,9 @@ void save_reading_font_scale(double scale) {
 // ---------------------------------------------------------------------------
 
 void refresh_header_title() {
-  // Shelf surface (launch state): the title follows the sidebar selection
-  // (mac navigationTitle parity).
+  // The empty-window welcome is not a bookshelf or collection scope.
   if (g_host.shelf_visible) {
-    gtk_label_set_text(g_host.title_label,
-                       "Booklight"
-                           .c_str());
+    gtk_label_set_text(g_host.title_label, "Booklight");
     gtk_label_set_text(g_host.subtitle_label, "");
     return;
   }
