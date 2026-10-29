@@ -848,9 +848,8 @@ void MainWindow::PickAndOpen() {
             paths.push_back(std::wstring(files.GetAt(i).Path()));
           }
           if (auto window = weak.get()) {
-            // Reading-first open: everything lands on the shelf, the first
-            // book opens for reading right away (mac pickAndOpen parity).
-            window->OpenPath(paths[0]);
+            // File-first: open every selected source file, no catalog.
+            for (auto const& path : paths) window->OpenPath(path);
           }
         } catch (...) {
         }
@@ -877,14 +876,8 @@ void MainWindow::OpenDroppedRaw(mux::DragEventArgs const& args) {
                   books.push_back(path);
                 }
               }
-              if (books.empty()) return;
-              if (window->tabs_.empty() && window->epub_ == nullptr) {
-                // Shelf drop: import everything, open the first for reading.
-                window->OpenPath(books[0]);
-              } else {
-                // Reader drop: a tab, whose open grows the shelf.
-                window->OpenPath(books[0]);
-              }
+              // Dropped documents are opened in place, never imported.
+              for (auto const& path : books) window->OpenPath(path);
             }
           } catch (...) {
           }
