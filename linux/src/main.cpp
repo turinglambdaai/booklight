@@ -536,16 +536,21 @@ void update_recents_debounced(std::string const& path, int page) {
         (void)g_host.api->update_recents_async(
             ctx->path, ctx->page, ratio,
             [](rivet_app::Result<void> result) {
-              if (!result.succeeded() || g_host.api == nullptr) return;
-              (void)g_host.api->get_recents_async(
-                  [](rivet_app::Result<std::vector<rivet_app::RecentEntry>> result) {
-                    if (!result.succeeded()) return;
-                    auto recents = std::move(result.value.value());
-                    host::dispatch_ui([recents = std::move(recents)]() mutable {
-                      g_host.recents = std::move(recents);
-                      refresh_recents_menu();
+              if (!result.succeeded()) return;
+              // The async completion is not on the GTK thread. Marshal
+              // access to host state/API through the native main loop.
+              host::dispatch_ui([] {
+                if (!g_host.ready || g_host.api == nullptr) return;
+                (void)g_host.api->get_recents_async(
+                    [](rivet_app::Result<std::vector<rivet_app::RecentEntry>> result) {
+                      if (!result.succeeded()) return;
+                      auto recents = std::move(result.value.value());
+                      host::dispatch_ui([recents = std::move(recents)]() mutable {
+                        g_host.recents = std::move(recents);
+                        refresh_recents_menu();
+                      });
                     });
-                  });
+              });
             });
         return G_SOURCE_REMOVE;
       },
