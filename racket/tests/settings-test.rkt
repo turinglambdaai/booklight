@@ -30,7 +30,7 @@
      (check-equal? (settings-target-language defaults) "中文")
      (check-equal? (settings-recent-files defaults) '())
      (check-equal? (settings-view-mode defaults) "single")
-     (check-false (settings-annotation-sidecar defaults))
+     (check-true (settings-annotation-sidecar defaults))
      (check-equal? (settings-reading-theme defaults) "system")
      (check-equal? (settings-reading-font-scale defaults) 1.0)
 
