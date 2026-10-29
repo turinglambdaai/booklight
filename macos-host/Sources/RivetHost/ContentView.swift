@@ -236,9 +236,15 @@ struct ReaderWindowView: View {
         let dropped = urls
             .filter { ["pdf", "epub"].contains($0.pathExtension.lowercased()) }
         guard !dropped.isEmpty else { return }
-        // Dropping a file always opens it in its original location. No
-        // import phase, book catalog or generated cover is involved.
-        for url in dropped { app.openWindow?(url.path) }
+        // Dropping onto an empty welcome window should use that window
+        // immediately. Additional documents get separate native windows.
+        // Every path is opened in place: no import/catalog/cover copies.
+        if !reader.hasDocument, let first = dropped.first {
+            Task { await reader.openPath(first.path) }
+            for url in dropped.dropFirst() { app.openWindow?(url.path) }
+        } else {
+            for url in dropped { app.openWindow?(url.path) }
+        }
     }
 
     private var backendBanner: some View {
