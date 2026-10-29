@@ -200,8 +200,8 @@ void MainWindow::LoadEpubBook(std::shared_ptr<EpubBook> book) {
         }
       }
       window->RefreshLeftPanel();
-      // Opening grows the shelf (mac importOpenedEpub parity).
-      window->ImportBook(book->path);
+      // EPUB remains at the original path; no library registration.
+
     });
   }).detach();
 }

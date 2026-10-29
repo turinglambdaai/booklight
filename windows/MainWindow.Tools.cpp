@@ -35,6 +35,43 @@ std::wstring tools_stem(std::wstring const& title) {
 
 // ---- tools menu handlers -------------------------------------------------------
 
+// Explicitly export the ACTIVE in-memory PDF, including page surgery. Never
+// reread the original path (that would silently discard pending edits).
+void MainWindow::ToolsSavePdf_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    mux::RoutedEventArgs const&) {
+  auto const tab = epub_active_ ? nullptr : active_pdf_;
+  if (!tab || !tab->doc) return;
+  auto const doc = tab->doc;
+  auto const title = tab->title;
+  auto const dispatcher = DispatcherQueue();
+  auto const weak = get_weak();
+  std::thread([weak, dispatcher, doc, title]() mutable {
+    std::string failure;
+    std::vector<std::uint8_t> data;
+    try {
+      data = doc->SaveToBytes();
+      if (data.empty()) failure = "empty PDF result";
+    } catch (std::exception const& e) {
+      failure = e.what();
+    }
+    dispatcher.TryEnqueue(
+        [weak, title, data = std::move(data),
+         failure = std::move(failure)]() mutable {
+          auto window = weak.get();
+          if (!window) return;
+          if (!failure.empty()) {
+            window->Alert(pdfgist::Trf(
+                "ui.pages.save-failed", winrt::to_hstring(failure)));
+            return;
+          }
+          window->SaveData(std::move(data),
+                           tools_stem(title) + L"-edited.pdf",
+                           L"PDF", L".pdf");
+        });
+  }).detach();
+}
+
 void MainWindow::ToolsWatermark_Click(
     winrt::Windows::Foundation::IInspectable const&,
     mux::RoutedEventArgs const&) {
@@ -312,7 +349,9 @@ void MainWindow::SaveData(std::vector<std::uint8_t> data,
       [weak, dispatcher, data = std::move(data)](
           winrt::Windows::Foundation::IAsyncOperation<
               winrt::Windows::Storage::StorageFile> const& sender,
-          winrt::Windows::Foundation::AsyncStatus) mutable {
+          winrt::Windows::Foundation::AsyncStatus status) mutable {
+        if (status == winrt::Windows::Foundation::AsyncStatus::Canceled)
+          return;  // explicit user cancellation is not a write failure
         try {
           auto const file = sender.GetResults();
           if (file == nullptr) return;  // cancelled (mac saveData parity)
@@ -332,7 +371,20 @@ void MainWindow::SaveData(std::vector<std::uint8_t> data,
                       }
                     });
                   });
+        } catch (std::exception const& e) {
+          auto const message = to_wide(e.what());
+          dispatcher.TryEnqueue([weak, message]() {
+            if (auto window = weak.get()) {
+              window->Alert(pdfgist::Trf("ui.export.failed", message));
+            }
+          });
         } catch (...) {
+          dispatcher.TryEnqueue([weak]() {
+            if (auto window = weak.get()) {
+              window->Alert(pdfgist::Trf("ui.export.failed",
+                                         L"file picker"));
+            }
+          });
         }
       });
 }
