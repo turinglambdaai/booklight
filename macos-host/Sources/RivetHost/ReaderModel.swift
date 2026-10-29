@@ -537,7 +537,7 @@ final class ReaderModel: ObservableObject {
         let handle: (NSApplication.ModalResponse) -> Void = { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             do {
-                try data.write(to: url)
+                try data.write(to: url, options: .atomic)
             } catch {
                 self?.alert(L10n.t("ui.export.failed", error.localizedDescription))
             }
@@ -636,10 +636,15 @@ final class ReaderModel: ObservableObject {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = defaultName
-        let response = await panel.beginSheetModal(for: NSApp.mainWindow!)
+        let response: NSApplication.ModalResponse
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            response = await panel.beginSheetModal(for: window)
+        } else {
+            response = panel.runModal()
+        }
         guard response == .OK, let url = panel.url else { return }
         do {
-            try data.write(to: url)
+            try data.write(to: url, options: .atomic)
         } catch {
             alert(L10n.t("ui.pages.save-failed", error.localizedDescription))
         }
