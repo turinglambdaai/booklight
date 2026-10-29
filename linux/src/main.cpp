@@ -116,6 +116,7 @@ struct Host {
   GtkSearchEntry* find_entry{nullptr};
   GtkLabel* find_count{nullptr};
   GtkWidget* main_stack{nullptr};
+  GtkBox* welcome_recents{nullptr};
   GtkLabel* status_label{nullptr};
   GtkLabel* page_label{nullptr};
   GtkLabel* zoom_label{nullptr};
@@ -3204,7 +3205,43 @@ void update_main_stack() {
 }
 
 void build_primary_menu();
-void refresh_recents_menu() { build_primary_menu(); }
+
+void rebuild_welcome_recents() {
+  if (g_host.welcome_recents == nullptr) return;
+  auto* box = GTK_WIDGET(g_host.welcome_recents);
+  while (GtkWidget* child = gtk_widget_get_first_child(box)) {
+    gtk_box_remove(g_host.welcome_recents, child);
+  }
+  gtk_widget_set_visible(box, !g_host.recents.empty());
+  if (g_host.recents.empty()) return;
+  auto* title = gtk_label_new(Tr("ui.viewer.recents").c_str());
+  gtk_widget_add_css_class(title, "heading");
+  gtk_widget_set_halign(title, GTK_ALIGN_START);
+  gtk_box_append(g_host.welcome_recents, title);
+  int count = 0;
+  for (auto const& recent : g_host.recents) {
+    if (++count > 10) break;
+    gchar* name = g_path_get_basename(recent.path.c_str());
+    auto* button = gtk_button_new_with_label(name);
+    g_free(name);
+    gtk_button_set_has_frame(GTK_BUTTON(button), FALSE);
+    gtk_widget_set_halign(button, GTK_ALIGN_FILL);
+    gtk_widget_set_tooltip_text(button, recent.path.c_str());
+    g_object_set_data_full(G_OBJECT(button), "booklight-recent-path",
+                           g_strdup(recent.path.c_str()), g_free);
+    hook(button, "clicked", +[](GtkButton* b, gpointer) {
+      auto const* path = static_cast<char const*>(
+          g_object_get_data(G_OBJECT(b), "booklight-recent-path"));
+      if (path != nullptr) open_path(path);
+    }, nullptr);
+    gtk_box_append(g_host.welcome_recents, button);
+  }
+}
+
+void refresh_recents_menu() {
+  build_primary_menu();
+  rebuild_welcome_recents();
+}
 
 void run_find_ui() {
   gtk_revealer_set_reveal_child(g_host.find_revealer, TRUE);
@@ -3912,6 +3949,11 @@ void on_activate(GtkApplication* app, gpointer) {
   auto* welcome_drop = gtk_label_new(Tr("ui.welcome.linux-hint").c_str());
   gtk_widget_add_css_class(welcome_drop, "dim-label");
   gtk_box_append(GTK_BOX(welcome), welcome_drop);
+  auto* recent_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  g_host.welcome_recents = GTK_BOX(recent_box);
+  gtk_widget_set_margin_top(recent_box, 18);
+  gtk_widget_set_visible(recent_box, FALSE);
+  gtk_box_append(GTK_BOX(welcome), recent_box);
   gtk_stack_add_named(GTK_STACK(main_stack), welcome, "shelf");
 
   // reader page: left sidebar | notebook | AI panel
