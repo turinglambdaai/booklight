@@ -53,7 +53,7 @@ jobs:
           variant: CS
           version: '9.3'
       - name: Install Rivet (pinned) and crypto (updater dependency)
-        run: raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}' crypto
+        run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}' crypto
         shell: bash
       - name: Version preflight (VERSION == rivet.rktd == updater == tag)
         run: bash scripts/check-release-version.sh "${{ github.ref_name }}"
@@ -104,7 +104,7 @@ jobs:
           version: '9.3'
       - name: Install Rivet (catalog)
         shell: bash
-        run: raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}'
+        run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
       - name: Install crypto (updater dependency)
         shell: pwsh
         run: raco pkg install --auto --no-docs crypto
@@ -174,7 +174,7 @@ jobs:
         uses: turinglambdaai/rivet/.github/actions/setup-embed-racket@v0.12.0
       - name: Install Rivet (catalog) and backend packages
         run: |
-          raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}'
+          raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
           raco pkg install --auto --no-docs crypto
       - name: Install GTK4, WebKitGTK and packaging tooling
         run: |
@@ -227,7 +227,7 @@ jobs:
           variant: CS
           version: '9.3'
       - name: Install Rivet (pinned) and crypto (updater dependency)
-        run: raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}' crypto
+        run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}' crypto
         shell: bash
       - uses: actions/download-artifact@v4
         with:

@@ -40,8 +40,8 @@ jobs:
           # re-publish is pending). Pin the fixed keel first so --auto
           # keeps it. Remove this line once the catalog serves keel >=
           # d56e38f.
-          raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/keel.git#d56e38f6ad89a5e85c455ac1b26acd2dfd312165'
-          raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}' crypto
+          raco pkg install --auto --no-docs 'https://github.com/turlamai/keel.git#d56e38f6ad89a5e85c455ac1b26acd2dfd312165'
+          raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}' crypto
       - name: Domain core tests
         run: raco test racket/
 
@@ -61,8 +61,8 @@ jobs:
         shell: bash
         run: |
           # TEMP (upstream outage): see the racket-tests keel pin above.
-          raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/keel.git#d56e38f6ad89a5e85c455ac1b26acd2dfd312165'
-          raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}'
+          raco pkg install --auto --no-docs 'https://github.com/turlamai/keel.git#d56e38f6ad89a5e85c455ac1b26acd2dfd312165'
+          raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
       # The backend's pdf FFI (pdfdoc.rkt binds zlib) is instantiated while
       # `raco rivet build` assembles the codegen contract, so zlib1.dll must
       # be on PATH first; the same cache copy rides into the packaged stage.
@@ -110,8 +110,8 @@ jobs:
       - name: Install Rivet (catalog) and backend packages
         run: |
           # TEMP (upstream outage): see the racket-tests keel pin above.
-          raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/keel.git#d56e38f6ad89a5e85c455ac1b26acd2dfd312165'
-          raco pkg install --auto --no-docs 'https://github.com/turinglambdaai/rivet.git#${{ env.RIVET_PIN }}'
+          raco pkg install --auto --no-docs 'https://github.com/turlamai/keel.git#d56e38f6ad89a5e85c455ac1b26acd2dfd312165'
+          raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
           raco pkg install --auto --no-docs crypto
       - name: Install GTK4, WebKitGTK and packaging toolchain
         run: |
