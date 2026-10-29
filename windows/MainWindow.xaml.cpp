@@ -163,6 +163,7 @@ MainWindow::MainWindow() {
   set_tip(PrintButton(), pdfgist::Winize(pdfgist::Tr("ui.toolbar.print")));
   set_tip(ToolsButton(), pdfgist::Tr("ui.menu.tools"));
   ToolsWatermarkItem().Text(pdfgist::Tr("ui.tools.watermark"));
+  ToolsSavePdfItem().Text(pdfgist::Tr("ui.dialog.save") + L" PDF…");
   ToolsExportPageItem().Text(pdfgist::Tr("ui.tools.export-page"));
   ToolsExportTextItem().Text(pdfgist::Tr("ui.tools.export-text"));
   set_tip(AiToggle(), pdfgist::Tr("ui.toolbar.ai"));
