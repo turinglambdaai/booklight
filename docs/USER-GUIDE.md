@@ -28,6 +28,15 @@ Back up original PDF/EPUB files and Booklight settings/annotation sidecars toget
 
 The Notes pane reports annotation saves that are still in progress or failed. If a save fails, Booklight keeps an app-owned recovery copy: use **Retry save** after fixing the destination, or **Export** to preserve the current notes elsewhere. On the next open, **Recovered — save pending** means the recovery copy was loaded and still needs to reach the selected central or sidecar location. A successful retry clears that state. This recovery never changes the original PDF or EPUB.
 
+## Previous installations
+
+Booklight does not clone an old PDFGist configuration directory. If only
+`site.jrtx.pdfgist` exists, it is reused directly; if the Booklight
+profile already exists, that profile takes priority. Keep both folders
+until you have inspected your settings and opened important annotations.
+Changing the annotation storage preference does not automatically move
+older notes between central and sidecar locations.
+
 ## Network, keys and privacy
 
 Reading is local. AI requests send selected text and conversation context to your chosen provider. Review the send scope and provider policy before processing confidential files; BYOK usage is billed by that provider.
