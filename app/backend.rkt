@@ -26,7 +26,6 @@
          racket/string
          rivet/backend
          (prefix-in epub: "../racket/booklight/epub.rkt")
-         (prefix-in library: "../racket/booklight/library.rkt")
          (prefix-in llm: "../racket/booklight/llm.rkt")
          (prefix-in pdfedit: "../racket/booklight/pdfedit.rkt")
          (prefix-in prompts: "../racket/booklight/prompts.rkt")
