@@ -109,6 +109,9 @@
      (check-equal? (provider-config-name (settings-provider parsed)) "deepseek")
      (check-equal? (provider-config-model (settings-provider parsed)) "kept-model")
      (check-equal? (settings-recent-files parsed) '())
+     (check-true (settings-annotation-sidecar parsed))
+     (check-false (settings-annotation-sidecar
+                   (storage->settings (hasheq 'annotation_sidecar #f))))
      (check-equal? (settings-reading-theme parsed) "system")
      (check-equal? (settings-reading-font-scale parsed) 1.0)
      (check-exn exn:fail? (lambda () (storage->settings "not-an-object")))
