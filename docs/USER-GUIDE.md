@@ -37,6 +37,18 @@ until you have inspected your settings and opened important annotations.
 Changing the annotation storage preference does not automatically move
 older notes between central and sidecar locations.
 
+## Save an edited PDF
+
+Page rotation, insertion, deletion, merge and watermark operations may first
+modify the document **in memory only**. The source PDF is not silently
+replaced. To preserve that edited document, use **File > Save PDF…**
+(Command-Shift-S) on macOS, or **Tools > Save PDF…** on Windows/Linux.
+The suggested `-edited.pdf` filename is only a suggestion; confirm the
+destination yourself. macOS writes exports atomically. Do not close an edited
+document until you have saved it and reopened the output to verify the result.
+The native unsaved-change close prompt and automated export/reopen verification
+are still release-qualification work, not a promise of shipped behavior.
+
 ## Network, keys and privacy
 
 Reading is local. AI requests send selected text and conversation context to your chosen provider. Review the send scope and provider policy before processing confidential files; BYOK usage is billed by that provider.
