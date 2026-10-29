@@ -808,8 +808,9 @@ void MainWindow::PickAndOpen() {
   }
   picker.FileTypeFilter().Append(L".pdf");
   picker.FileTypeFilter().Append(L".epub");
+  auto const pickerDispatcher = DispatcherQueue();
   picker.PickMultipleFilesAsync().Completed(
-      [weak = get_weak()](winrt::Windows::Foundation::IAsyncOperation<
+      [weak = get_weak(), pickerDispatcher](winrt::Windows::Foundation::IAsyncOperation<
                           winrt::Windows::Foundation::Collections::IVectorView<
                               winrt::Windows::Storage::StorageFile>> const&
                               sender,
@@ -821,10 +822,14 @@ void MainWindow::PickAndOpen() {
           for (std::uint32_t i = 0; i < files.Size(); ++i) {
             paths.push_back(std::wstring(files.GetAt(i).Path()));
           }
-          if (auto window = weak.get()) {
-            // File-first: open every selected source file, no catalog.
-            for (auto const& path : paths) window->OpenPath(path);
-          }
+          // The WinRT picker completion may run on a worker thread.
+          // WinUI document/tab operations are strictly UI-thread bound.
+          pickerDispatcher.TryEnqueue(
+              [weak, paths = std::move(paths)]() {
+                if (auto window = weak.get()) {
+                  for (auto const& path : paths) window->OpenPath(path);
+                }
+              });
         } catch (...) {
         }
       });
@@ -834,25 +839,30 @@ void MainWindow::OpenDroppedRaw(mux::DragEventArgs const& args) {
   try {
     auto const deferral = args.GetDeferral();
     auto const weak = get_weak();
+    auto const dropDispatcher = DispatcherQueue();
     args.DataView().GetStorageItemsAsync().Completed(
-        [weak, deferral](winrt::Windows::Foundation::IAsyncOperation<
+        [weak, deferral, dropDispatcher](winrt::Windows::Foundation::IAsyncOperation<
                          winrt::Windows::Foundation::Collections::IVectorView<
                              winrt::Windows::Storage::IStorageItem>> const& sender,
                          winrt::Windows::Foundation::AsyncStatus) mutable {
           try {
             auto const items = sender.GetResults();
-            if (auto window = weak.get()) {
-              std::vector<std::wstring> books;
-              for (std::uint32_t i = 0; i < items.Size(); ++i) {
-                std::wstring const path(items.GetAt(i).Path());
-                if (has_extension(path, L".pdf") ||
-                    has_extension(path, L".epub")) {
-                  books.push_back(path);
-                }
+            std::vector<std::wstring> paths;
+            for (std::uint32_t i = 0; i < items.Size(); ++i) {
+              std::wstring const path(items.GetAt(i).Path());
+              if (has_extension(path, L".pdf") ||
+                  has_extension(path, L".epub")) {
+                paths.push_back(path);
               }
-              // Dropped documents are opened in place, never imported.
-              for (auto const& path : books) window->OpenPath(path);
             }
+            // Resolve all storage items before ending the deferral. The
+            // dispatcher then performs every XAML change on the UI thread.
+            dropDispatcher.TryEnqueue(
+                [weak, paths = std::move(paths)]() {
+                  if (auto window = weak.get()) {
+                    for (auto const& path : paths) window->OpenPath(path);
+                  }
+                });
           } catch (...) {
           }
           if (deferral) deferral.Complete();
