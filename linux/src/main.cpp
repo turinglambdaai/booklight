@@ -766,7 +766,6 @@ void finish_pdf_open(std::string const& path, int resume_page,
   refresh_header_title();
   // Reading-first: every successful open grows the shelf (mac
   // importOpenedBook — the upsert dedupes on the path).
-  if (g_host.shelf != nullptr) g_host.shelf->import_book(path);
 }
 
 // Modal password prompt with an in-place wrong-password retry loop (the
@@ -961,7 +960,6 @@ void open_epub_path(std::string const& path, int resume_chapter = 1) {
   refresh_header_title();
   // Reading-first: the opened EPUB lands on the shelf too (mac
   // importOpenedEpub).
-  if (g_host.shelf != nullptr) g_host.shelf->import_book(path);
 }
 
 void open_path(std::string const& path, int resume_page = 1) {
@@ -3192,19 +3190,13 @@ constexpr int kLeftSidebarWidth = 232;
 constexpr int kAiSidebarWidth = 400;
 
 void update_main_stack() {
-  // the shelf is the launch surface; the reader replaces it while tabs live
+  // welcome when no documents are open; reader for active documents
   if (g_host.main_stack == nullptr) return;
   gint const pages = gtk_notebook_get_n_pages(g_host.notebook);
   bool const reading = pages > 0;
   gtk_stack_set_visible_child_name(GTK_STACK(g_host.main_stack),
                                    reading ? "reader" : "shelf");
   bool const shelf_active = !reading;
-  if (g_host.shelf != nullptr) {
-    g_host.shelf->set_active(shelf_active);
-    // Coming back to the shelf re-joins reading progress (recents moved
-    // while the notebook owned the window).
-    if (shelf_active && !g_host.shelf_visible) g_host.shelf->refresh();
-  }
   g_host.shelf_visible = shelf_active;
   gtk_widget_set_visible(GTK_WIDGET(g_host.header_edit_menu), pages > 0);
   if (g_host.header_bookmark != nullptr) {
@@ -3821,38 +3813,8 @@ void on_activate(GtkApplication* app, gpointer) {
   g_host.primary_menu = primary_button;
   build_primary_menu();
 
-  // shelf header controls (visible only while the shelf is the active
-  // surface — update_main_stack toggles them with the reader chrome).
-  // pack_end paints right-to-left: menu | search, the mac toolbar row.
-  g_host.shelf = std::make_unique<pdfgist::Shelf>(pdfgist::Shelf::Hooks{
-      [](std::string const& p) { open_path(p); },
-      [](std::string const& m) { host_alert(m); },
-      [] {
-        return (g_host.ready && g_host.api != nullptr) ? g_host.api.get()
-                                                       : nullptr;
-      },
-      [] { return g_host.recents; },
-      [] { return g_host.window; },
-      [] {
-        // a reader tab owns the window and the window shows it (mac
-        // readingActive: activeReader.hasDocument && a visible key window
-        // — the shelf idling never accrues seconds)
-        return g_host.window != nullptr &&
-               gtk_widget_get_visible(GTK_WIDGET(g_host.window)) &&
-               !g_host.shelf_visible;
-      },
-      [] { refresh_header_title(); },
-  });
-  gtk_header_bar_pack_start(GTK_HEADER_BAR(header),
-                            g_host.shelf->header_import());
-  gtk_header_bar_pack_start(GTK_HEADER_BAR(header),
-                            g_host.shelf->header_spinner());
-  // pack_end fills from the right edge inward, so the ring lands
-  // rightmost of the shelf group: ring | search, the mac toolbar row.
-  gtk_header_bar_pack_end(GTK_HEADER_BAR(header),
-                          g_host.shelf->header_ring());
-  gtk_header_bar_pack_end(GTK_HEADER_BAR(header),
-                          g_host.shelf->header_search());
+  // File-first: no catalog, cover cache, reading-time timer or bookshelf.
+  // The existing Open button and application menu handle document selection.
 
   auto* title_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   // launch state is the shelf; refresh_header_title keeps it in sync
@@ -3933,9 +3895,28 @@ void on_activate(GtkApplication* app, gpointer) {
                                 GTK_STACK_TRANSITION_TYPE_NONE);
   gtk_box_append(GTK_BOX(root), main_stack);
 
-  // shelf page: the Books surface (source-list sidebar over the home
-  // digest / cover grid; search lives in the header bar, packed above).
-  gtk_stack_add_named(GTK_STACK(main_stack), g_host.shelf->page(), "shelf");
+  // Empty-document welcome. Documents stay at their original paths;
+  // this screen never imports or copies them into an application library.
+  auto* welcome = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
+  gtk_widget_set_halign(welcome, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(welcome, GTK_ALIGN_CENTER);
+  gtk_widget_set_margin_start(welcome, 32);
+  gtk_widget_set_margin_end(welcome, 32);
+  auto* welcome_title = gtk_label_new("Booklight");
+  gtk_widget_add_css_class(welcome_title, "title-1");
+  gtk_box_append(GTK_BOX(welcome), welcome_title);
+  auto* welcome_hint = gtk_label_new(Tr("ui.welcome.open-any").c_str());
+  gtk_box_append(GTK_BOX(welcome), welcome_hint);
+  auto* welcome_open = gtk_button_new_with_label(Tr("ui.menu.open").c_str());
+  gtk_widget_add_css_class(welcome_open, "suggested-action");
+  gtk_widget_set_halign(welcome_open, GTK_ALIGN_CENTER);
+  hook(welcome_open, "clicked",
+       +[](GtkButton*, gpointer) { pick_and_open(); }, nullptr);
+  gtk_box_append(GTK_BOX(welcome), welcome_open);
+  auto* welcome_drop = gtk_label_new(Tr("ui.welcome.linux-hint").c_str());
+  gtk_widget_add_css_class(welcome_drop, "dim-label");
+  gtk_box_append(GTK_BOX(welcome), welcome_drop);
+  gtk_stack_add_named(GTK_STACK(main_stack), welcome, "shelf");
 
   // reader page: left sidebar | notebook | AI panel
   auto* reader = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
