@@ -187,7 +187,6 @@ MainWindow::MainWindow() {
   // shelf chrome must exist before ApplyTheme, which refreshes the shelf
   // so code-built colors re-resolve (nav rows, home rows).
   RebuildShelfNav();
-  LoadReadingStats();
 
   LoadHostPrefs();
   ApplyTheme();
@@ -283,7 +282,6 @@ MainWindow::MainWindow() {
     }
   });
 
-  StartReadingClock();
 
   InitializeBackendAsync();
 }
@@ -393,8 +391,6 @@ void MainWindow::Bootstrap() {
       settings = api.get_settings().get();
       presets = api.list_presets().get();
       recents = api.get_recents().get();
-      library = api.get_library().get();
-      collections = api.library_collections().get();
     } catch (std::exception const& e) {
       failure = e.what();
     }
@@ -423,25 +419,11 @@ void MainWindow::Bootstrap() {
       window->LoadSettingsIntoPane();
       window->RefreshLeftPanel();
       window->RefreshShelf();
+      window->WelcomeFileHint().Text(pdfgist::Tr("ui.welcome.open-any"));
+      window->WelcomeFileOpen().Text(pdfgist::Tr("ui.menu.open"));
+      window->WelcomeFileDrop().Text(pdfgist::Tr("ui.welcome.or-drag"));
       window->HandleInstallMarkers();
       window->StartAutoUpdateCheck();
-      // Missing statuses refresh in the background; the shelf shows whatever
-      // is known the moment it is on screen (mac rescanShelf parity).
-      std::thread([weak, dispatcher, backend]() mutable {
-        std::vector<rivet_app::LibraryEntry> scanned;
-        try {
-          rivet_app::API api(*backend);
-          scanned = api.library_scan().get();
-        } catch (...) {
-          return;  // keep the bootstrap snapshot on failure
-        }
-        dispatcher.TryEnqueue([weak, scanned = std::move(scanned)]() mutable {
-          if (auto window = weak.get()) {
-            window->library_ = std::move(scanned);
-            window->RefreshShelf();
-          }
-        });
-      }).detach();
       // Stand-in for v1's file association (mac bootstrap parity).
       wchar_t buffer[32768]{};
       DWORD length =
@@ -868,7 +850,6 @@ void MainWindow::PickAndOpen() {
           if (auto window = weak.get()) {
             // Reading-first open: everything lands on the shelf, the first
             // book opens for reading right away (mac pickAndOpen parity).
-            window->ImportBooks(paths);
             window->OpenPath(paths[0]);
           }
         } catch (...) {
@@ -899,7 +880,6 @@ void MainWindow::OpenDroppedRaw(mux::DragEventArgs const& args) {
               if (books.empty()) return;
               if (window->tabs_.empty() && window->epub_ == nullptr) {
                 // Shelf drop: import everything, open the first for reading.
-                window->ImportBooks(books);
                 window->OpenPath(books[0]);
               } else {
                 // Reader drop: a tab, whose open grows the shelf.
@@ -1120,7 +1100,6 @@ void MainWindow::OpenDocReady(
 
   // Opening grows the shelf: the catalog feeds on every successful open
   // (upsert — no duplicates, mac importOpenedBook parity).
-  ImportBook(path);
 
   if (resume_page > 1 && resume_page <= tab->page_count) {
     ScrollToPage(*tab, resume_page);
