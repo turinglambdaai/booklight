@@ -81,6 +81,7 @@ struct PdfTab {
   std::shared_ptr<pdfgist::PdfDocument> doc;
   int page_count = 0;
   int current_page = 1;
+  bool pdf_edits_pending = false;  // tab bytes differ from source on disk
   double zoom = 1.0;        // multiplier when not fit-width
   bool fit_width = true;    // v1 default: open fitted to width
   std::vector<pdfgist::OutlineItem> outline;
