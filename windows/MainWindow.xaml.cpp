@@ -2262,12 +2262,9 @@ void MainWindow::RefreshRecentsRows() {
       recents_.empty() ? mux::Visibility::Collapsed : mux::Visibility::Visible);
   WelcomeRecentTitle().Text(pdfgist::Tr("ui.viewer.recents"));
   for (auto const& entry : recents_) {
-    std::wstring label = to_wide(entry.title);
-    if (label.empty()) {
-      auto const path = to_wide(entry.path);
-      auto const last = path.find_last_of(L"/\\");
-      label = path.substr(last == std::wstring::npos ? 0 : last + 1);
-    }
+    auto const path = to_wide(entry.path);
+    auto const last = path.find_last_of(L"/\\");
+    auto label = path.substr(last == std::wstring::npos ? 0 : last + 1);
     auto button = muxc::Button();
     button.Content(winrt::box_value(label));
     button.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
