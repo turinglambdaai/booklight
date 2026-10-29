@@ -14,7 +14,7 @@ final class AppModel: ObservableObject {
     @Published var status = ""
     @Published var settings = RivetTypes.SettingsView(
         provider: "deepseek", base_url: "", model: "", target_language: .zh,
-        view_mode: "single", annotation_sidecar: false,
+        view_mode: "single", annotation_sidecar: true,
         reading_theme: .system, reading_font_scale_permille: 1000,
         has_api_key: false, recent: [])
     @Published var presets: [RivetTypes.ProviderPreset] = []
@@ -59,6 +59,15 @@ final class AppModel: ObservableObject {
 
     private var backend: EmbeddedRacketBackend?
     private(set) var api: RivetAPI?
+    private var bootstrapTask: Task<Void, Never>?
+
+    /// Document loads await settings (especially annotation storage mode)
+    /// before choosing central vs sidecar. Otherwise opening via Finder on
+    /// launch can read the wrong location and hide a recovery draft.
+    func waitForBootstrap() async {
+        if ready { return }
+        await bootstrapTask?.value
+    }
 
     init() {
         // v1 UI is Chinese-first; en.json exists, so follow the system locale
@@ -226,7 +235,7 @@ final class AppModel: ObservableObject {
             signal(SIGTERM, SIG_DFL)
             let api = RivetAPI(client: backend.client)
             self.api = api
-            Task { await bootstrap() }
+            bootstrapTask = Task { await bootstrap() }
         } catch {
             status = "Configuration error: \(error)"
         }
