@@ -4165,7 +4165,7 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_paned_set_start_child(GTK_PANED(inner), notebook);
   gtk_paned_set_shrink_start_child(GTK_PANED(inner), FALSE);
   gtk_paned_set_end_child(GTK_PANED(inner), g_host.right_sidebar);
-  gtk_widget_set_visible(g_host.right_sidebar, TRUE);
+  gtk_widget_set_visible(g_host.right_sidebar, FALSE);
   gtk_paned_set_position(GTK_PANED(inner), 880);
   auto* outer = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
   gtk_paned_set_start_child(GTK_PANED(outer), left_sidebar);
@@ -4200,7 +4200,7 @@ void on_activate(GtkApplication* app, gpointer) {
   if (host::pref_int("left-sidebar", 1) == 0) {
     gtk_widget_set_visible(left_sidebar, FALSE);
   }
-  if (host::pref_int("ai-sidebar", 1) == 0) {
+  if (host::pref_int("ai-sidebar", 0) == 0) {
     gtk_widget_set_visible(g_host.right_sidebar, FALSE);
   }
 
