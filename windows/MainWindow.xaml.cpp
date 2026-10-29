@@ -400,7 +400,6 @@ void MainWindow::Bootstrap() {
       window->SetStatus(true, L"");
       window->LoadSettingsIntoPane();
       window->RefreshLeftPanel();
-      window->RefreshRecentsRows();
       window->WelcomeFileHint().Text(pdfgist::Tr("ui.welcome.open-any"));
       window->WelcomeFileOpen().Text(pdfgist::Tr("ui.menu.open"));
       window->WelcomeFileDrop().Text(pdfgist::Tr("ui.welcome.or-drag"));
@@ -572,12 +571,10 @@ void MainWindow::Theme_Click(winrt::Windows::Foundation::IInspectable const&,
 }
 
 void MainWindow::UpdateChrome() {
-  // The shelf is the launch surface: visible whenever no reader tab is up.
-  bool const shelf = tabs_.empty() && epub_ == nullptr;
-  WelcomeView().Visibility(shelf ? Visibility::Visible : Visibility::Collapsed);
-  // Reader-only toolbar controls do nothing on the shelf; keep the chrome
-  // honest about it (open / AI / theme stay useful everywhere).
-  auto const reader_vis = shelf ? Visibility::Collapsed : Visibility::Visible;
+  // No file open: show an Open/Recent welcome instead of a catalog.
+  bool const empty = tabs_.empty() && epub_ == nullptr;
+  WelcomeView().Visibility(empty ? Visibility::Visible : Visibility::Collapsed);
+  auto const reader_vis = empty ? Visibility::Collapsed : Visibility::Visible;
   LeftToggle().Visibility(reader_vis);
   RecentsButton().Visibility(reader_vis);
   FindToggle().Visibility(reader_vis);
@@ -1067,9 +1064,6 @@ void MainWindow::OpenDocReady(
 
   // stored annotations + bookmarks ride the backend sidecar
   LoadDocData(tab);
-
-  // Opening grows the shelf: the catalog feeds on every successful open
-  // (upsert — no duplicates, mac importOpenedBook parity).
 
   if (resume_page > 1 && resume_page <= tab->page_count) {
     ScrollToPage(*tab, resume_page);
@@ -2278,9 +2272,10 @@ void MainWindow::RefreshRecentsRows() {
     button.Content(winrt::box_value(label));
     button.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
     button.HorizontalContentAlignment(mux::HorizontalAlignment::Left);
-    button.Click([weak = get_weak(), path = to_wide(entry.path)](
+    button.Click([weak = get_weak(), path = to_wide(entry.path),
+                  page = static_cast<int>(entry.page)](
                      auto const&, auto const&) {
-      if (auto window = weak.get()) window->OpenPath(path);
+      if (auto window = weak.get()) window->OpenPath(path, std::max(page, 1));
     });
     children.Append(button);
   }
