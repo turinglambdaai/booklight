@@ -44,7 +44,6 @@
 #include "panels.hpp"
 #include "pdfview.hpp"
 #include "printing.hpp"
-#include "shelf.hpp"
 #include "tts.hpp"
 
 namespace {
@@ -136,7 +135,6 @@ struct Host {
   std::unique_ptr<rivet_app::API> api;
   PanelContext panel_ctx;
   std::unique_ptr<AiPanel> ai_panel;
-  std::unique_ptr<pdfgist::Shelf> shelf;
   bool shelf_visible{true};  // launch state: the shelf IS the empty state
 
   std::vector<std::unique_ptr<PdfTab>> tabs;
@@ -381,9 +379,7 @@ void refresh_header_title() {
   // (mac navigationTitle parity).
   if (g_host.shelf_visible) {
     gtk_label_set_text(g_host.title_label,
-                       (g_host.shelf != nullptr
-                            ? g_host.shelf->current_title()
-                            : Tr("ui.library.title"))
+                       "Booklight"
                            .c_str());
     gtk_label_set_text(g_host.subtitle_label, "");
     return;
@@ -2108,7 +2104,7 @@ void bootstrap() {
       gtk_label_set_text(g_host.status_label, "");
       g_host.ai_panel->sync_settings();
       refresh_recents_menu();
-      if (g_host.shelf != nullptr) g_host.shelf->refresh();
+      // No bookshelf to refresh; recents remain file shortcuts.
 
       // Tabs opened before the backend was ready get their stored
       // annotations now (mac loadDocData needs the API too).
@@ -4168,15 +4164,8 @@ void on_activate(GtkApplication* app, gpointer) {
           if (path != nullptr) {
             std::string const p = path;
             g_free(path);
-            // Dropping on the shelf imports (reading-first landing); drops
-            // on the reader open the file (mac openDropped parity).
-            if (g_host.shelf != nullptr && !g_host.shelf_visible) {
-              open_path(p);
-            } else if (g_host.shelf != nullptr) {
-              g_host.shelf->import_paths({p});
-            } else {
-              open_path(p);
-            }
+            // File-first: the dropped path is the document identity.
+            open_path(p);
             return TRUE;
           }
         }
@@ -4282,7 +4271,7 @@ void on_shutdown(GApplication*, gpointer) {
   g_host.tabs.clear();
   g_host.forms_pane.reset();
   g_host.ai_panel.reset();
-  g_host.shelf.reset();
+  // No shelf instance to dispose.
   g_host.api.reset();
   g_host.backend.reset();
 }
