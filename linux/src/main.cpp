@@ -534,7 +534,19 @@ void update_recents_debounced(std::string const& path, int page) {
                 static_cast<double>(std::max(ctx->pages, 1)) * 100000.0 +
             0.5);
         (void)g_host.api->update_recents_async(
-            ctx->path, ctx->page, ratio, [](rivet_app::Result<void>&&) {});
+            ctx->path, ctx->page, ratio,
+            [](rivet_app::Result<void> result) {
+              if (!result.succeeded() || g_host.api == nullptr) return;
+              (void)g_host.api->get_recents_async(
+                  [](rivet_app::Result<std::vector<rivet_app::RecentEntry>> result) {
+                    if (!result.succeeded()) return;
+                    auto recents = std::move(result.value.value());
+                    host::dispatch_ui([recents = std::move(recents)]() mutable {
+                      g_host.recents = std::move(recents);
+                      refresh_recents_menu();
+                    });
+                  });
+            });
         return G_SOURCE_REMOVE;
       },
       ctx);
@@ -3232,7 +3244,16 @@ void rebuild_welcome_recents() {
     hook(button, "clicked", +[](GtkButton* b, gpointer) {
       auto const* path = static_cast<char const*>(
           g_object_get_data(G_OBJECT(b), "booklight-recent-path"));
-      if (path != nullptr) open_path(path);
+      if (path != nullptr) {
+        int page = 1;
+        for (auto const& recent : g_host.recents) {
+          if (recent.path == path) {
+            page = std::max(1, static_cast<int>(recent.page));
+            break;
+          }
+        }
+        open_path(path, page);
+      }
     }, nullptr);
     gtk_box_append(g_host.welcome_recents, button);
   }
