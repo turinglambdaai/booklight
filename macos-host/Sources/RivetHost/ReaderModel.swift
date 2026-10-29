@@ -200,6 +200,9 @@ final class ReaderModel: ObservableObject {
     /// AppModel prevents one document's save result from appearing in another
     /// native window.
     @Published var annotationPersistence: AnnotationPersistenceState = .saved
+    /// Page surgery is kept in memory until the user explicitly exports PDF.
+    @Published var pdfEditsPending = false
+    private var pdfEditRevision: UInt64 = 0
 
     private var annotationRevision: UInt64 = 0
 
@@ -271,6 +274,8 @@ final class ReaderModel: ObservableObject {
         let tab = PDFTab(path: path, title: title, document: doc, reader: self)
         annotationRevision = 0
         annotationPersistence = .saved
+        pdfEditsPending = false
+        pdfEditRevision = 0
         tab.resumePage = max(resumePage ?? app?.recentPage(path) ?? 1, 1)
         let surface = app?.readingSurface() ?? "light"
         tab.applyCanvasSurface(surface)
@@ -304,6 +309,8 @@ final class ReaderModel: ObservableObject {
         let tab = EpubTab(path: path, title: title, view: view, reader: self)
         annotationRevision = 0
         annotationPersistence = .saved
+        pdfEditsPending = false
+        pdfEditRevision = 0
         // Persisted typography: the stored scale rides in until the page
         // finishes loading (didFinish pushes it into the CSS variable).
         tab.fontScale = Double(app?.settings.reading_font_scale_permille ?? 1000) / 1000.0
@@ -624,6 +631,29 @@ final class ReaderModel: ObservableObject {
         tab.pageCount = newDoc.pageCount
         tab.goToPage(1)
         tab.refreshBookmarkFlag()
+        pdfEditRevision &+= 1
+        pdfEditsPending = true
+    }
+
+    /// Export the CURRENT in-memory PDF rather than rereading the original
+    /// path. The save panel makes the destination explicit; cancelled/failed
+    /// exports leave the edited state marked as unsaved.
+    func exportEditedPdf() {
+        guard let tab = pdf, let data = tab.document?.dataRepresentation() else {
+            alert(L10n.t("ui.pages.save-failed", "unable to serialize PDF"))
+            return
+        }
+        let baseName = URL(fileURLWithPath: tab.path)
+            .deletingPathExtension().lastPathComponent
+        let revision = pdfEditRevision
+        Task { [weak self] in
+            guard let self else { return }
+            let saved = await self.saveEditResult(
+                data, defaultName: baseName + "-edited.pdf")
+            if saved && revision == self.pdfEditRevision {
+                self.pdfEditsPending = false
+            }
+        }
     }
 
     private func extractName(_ title: String) -> String {
@@ -632,7 +662,8 @@ final class ReaderModel: ObservableObject {
         return stem + L10n.t("ui.pages.extract-suffix") + ".pdf"
     }
 
-    func saveEditResult(_ data: Data, defaultName: String) async {
+    @discardableResult
+    func saveEditResult(_ data: Data, defaultName: String) async -> Bool {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = defaultName
@@ -642,11 +673,13 @@ final class ReaderModel: ObservableObject {
         } else {
             response = panel.runModal()
         }
-        guard response == .OK, let url = panel.url else { return }
+        guard response == .OK, let url = panel.url else { return false }
         do {
             try data.write(to: url, options: .atomic)
+            return true
         } catch {
             alert(L10n.t("ui.pages.save-failed", error.localizedDescription))
+            return false
         }
     }
 
