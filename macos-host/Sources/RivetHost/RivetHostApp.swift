@@ -71,6 +71,14 @@ struct AppCommands: Commands {
 
             Divider()
 
+            Button(L10n.t("ui.dialog.save") + " PDF…") {
+                HostActions.exportPDF?()
+            }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
+            .disabled(app.activeReader?.pdf == nil)
+
+            Divider()
+
             Button(L10n.t("ui.menu.print")) {
                 HostActions.printDocument?()
             }
