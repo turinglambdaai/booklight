@@ -568,7 +568,7 @@ struct MainWindow : MainWindowT<MainWindow> {
 
   bool left_visible_ = false;
   int left_mode_ = 0;  // 0 thumbnails / 1 outline / 2 notes
-  bool ai_visible_ = true;
+  bool ai_visible_ = false;  // reading canvas first; user pref may override
   int ai_pane_ = 0;
   std::string theme_ = "system";  // system | light | dark
 
