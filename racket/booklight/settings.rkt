@@ -31,6 +31,7 @@
 (provide current-config-dir
          config-dir-path
          settings-file-path
+         resolve-config-dir
          pdfgist-settings
          pdfgist-settings?
          settings-provider
@@ -87,10 +88,26 @@
          (build-path xdg-config-home app-identifier)
          (build-path (find-system-path 'home-dir) ".config" app-identifier))]))
 
-(define current-config-dir (make-parameter (default-config-dir)))
+;; Prefer an existing Booklight profile. On the first launch after the
+;; old PDFGist rename, if ONLY the old profile exists, continue reading that
+;; same preferences/annotations folder in place. No directory clone or
+;; automatic change of storage mode occurs, so central notes remain visible.
+;; A user-created Booklight profile always wins over the old location.
+(define (resolve-config-dir preferred)
+  (define parent (path-only preferred))
+  (define legacy
+    (and parent (build-path parent "site.jrtx.pdfgist")))
+  (if (and legacy
+           (not (directory-exists? preferred))
+           (directory-exists? legacy))
+      legacy
+      preferred))
 
-;; Old pdfgist user data is never cloned or deleted automatically. The
-;; original directory remains available for explicit, user-controlled import.
+(define current-config-dir
+  (make-parameter (resolve-config-dir (default-config-dir))))
+
+;; Existing files in a historical config directory remain owned by the user.
+;; Booklight never clones or deletes that directory during startup.
 
 (define (config-dir-path)
   (current-config-dir))
