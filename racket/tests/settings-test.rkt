@@ -109,7 +109,9 @@
      (check-equal? (provider-config-name (settings-provider parsed)) "deepseek")
      (check-equal? (provider-config-model (settings-provider parsed)) "kept-model")
      (check-equal? (settings-recent-files parsed) '())
-     (check-true (settings-annotation-sidecar parsed))
+     ;; A *missing settings file* gets a sidecar default. A legacy file
+     ;; lacking this key must keep its pre-sidecar central annotation store.
+     (check-false (settings-annotation-sidecar parsed))
      (check-false (settings-annotation-sidecar
                    (storage->settings (hasheq 'annotation_sidecar #f))))
      (check-equal? (settings-reading-theme parsed) "system")
