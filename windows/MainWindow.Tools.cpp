@@ -349,7 +349,9 @@ void MainWindow::SaveData(std::vector<std::uint8_t> data,
       [weak, dispatcher, data = std::move(data)](
           winrt::Windows::Foundation::IAsyncOperation<
               winrt::Windows::Storage::StorageFile> const& sender,
-          winrt::Windows::Foundation::AsyncStatus) mutable {
+          winrt::Windows::Foundation::AsyncStatus status) mutable {
+        if (status == winrt::Windows::Foundation::AsyncStatus::Canceled)
+          return;  // explicit user cancellation is not a write failure
         try {
           auto const file = sender.GetResults();
           if (file == nullptr) return;  // cancelled (mac saveData parity)
@@ -369,7 +371,20 @@ void MainWindow::SaveData(std::vector<std::uint8_t> data,
                       }
                     });
                   });
+        } catch (std::exception const& e) {
+          auto const message = to_wide(e.what());
+          dispatcher.TryEnqueue([weak, message]() {
+            if (auto window = weak.get()) {
+              window->Alert(pdfgist::Trf("ui.export.failed", message));
+            }
+          });
         } catch (...) {
+          dispatcher.TryEnqueue([weak]() {
+            if (auto window = weak.get()) {
+              window->Alert(pdfgist::Trf("ui.export.failed",
+                                         L"file picker"));
+            }
+          });
         }
       });
 }
