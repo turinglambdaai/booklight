@@ -583,6 +583,7 @@ final class AppModel: ObservableObject {
         HostActions.showWatermark = { [weak self] in self?.activeReader?.showWatermarkDialog() }
         HostActions.exportPageImage = { [weak self] in self?.activeReader?.exportCurrentPageImage() }
         HostActions.exportText = { [weak self] in self?.activeReader?.exportDocumentText() }
+        HostActions.exportPDF = { [weak self] in self?.activeReader?.exportEditedPdf() }
     }
 
     /// Open panel shared by the menu and the welcome state. Empty reader
@@ -649,6 +650,7 @@ enum HostActions {
     nonisolated(unsafe) static var showWatermark: (() -> Void)?
     nonisolated(unsafe) static var exportPageImage: (() -> Void)?
     nonisolated(unsafe) static var exportText: (() -> Void)?
+    nonisolated(unsafe) static var exportPDF: (() -> Void)?
 }
 
 /// Fields of the watermark sheet; applied through edit-bake-text.
