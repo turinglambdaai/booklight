@@ -300,6 +300,12 @@ struct ReaderWindowView: View {
                     current: tab.currentPage, total: tab.pageCount,
                     jump: { tab.goToPage($0) })
                 zoomMenu(tab)
+                if reader.pdfEditsPending {
+                    toolbarIcon("square.and.arrow.down", active: true,
+                                help: L10n.t("ui.dialog.save") + " PDF…") {
+                        reader.exportEditedPdf()
+                    }
+                }
                 toolbarIcon("rectangle.split.2x1", active: tab.splitOn,
                             help: L10n.t("ui.toolbar.split")) {
                     reader.toggleSplit()
