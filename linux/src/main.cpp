@@ -2543,6 +2543,32 @@ void save_bytes_dialog(std::string const& title,
   gtk_native_dialog_show(GTK_NATIVE_DIALOG(chooser));
 }
 
+// Explicit user-initiated export of the active in-memory PDF. The original
+// path is not overwritten or duplicated merely by reading or editing.
+void tools_save_pdf() {
+  auto* tab = g_host.active_pdf_only();
+  if (tab == nullptr || tab->document() == nullptr) return;
+  rivet::Bytes data = tab->document()->memory_bytes();
+  if (data.empty()) {
+    // No edits yet: the original may still be exported on request.
+    gchar* raw = nullptr;
+    gsize length = 0;
+    GError* error = nullptr;
+    if (!g_file_get_contents(tab->path().c_str(), &raw, &length, &error)) {
+      std::string message = error != nullptr ? error->message : "read failed";
+      if (error != nullptr) g_error_free(error);
+      host_alert(Trf("ui.export.failed", message));
+      return;
+    }
+    auto const* first = reinterpret_cast<std::uint8_t const*>(raw);
+    data.assign(first, first + length);
+    g_free(raw);
+  }
+  save_bytes_dialog(Tr("ui.dialog.save") + " PDF",
+                    title_stem(tab->title()) + "-edited.pdf",
+                    std::move(data));
+}
+
 // Tools > Add Watermark (mac WatermarkSheet parity): watermark text, a
 // 12..144 pt size stepper, a 5..100% opacity slider with a live percent
 // label — baked in-memory through edit-bake-text (opacity in milli-percent
@@ -3525,6 +3551,10 @@ void install_actions(GtkApplication* app) {
       +[](GSimpleAction*, GVariant*, gpointer) {
         tools_export_page_image();
       }, nullptr);
+  add("tools-save-pdf",
+      +[](GSimpleAction*, GVariant*, gpointer) {
+        tools_save_pdf();
+      }, nullptr);
   add("tools-export-text",
       +[](GSimpleAction*, GVariant*, gpointer) {
         tools_export_text();
@@ -3742,6 +3772,8 @@ void build_page_edit_menu(GtkMenuButton* button) {
   // tools (mac Tools menu parity: watermark, then the two exports)
   auto* tools = g_menu_new();
   g_menu_append(tools, Tr("ui.tools.watermark").c_str(), "app.tools-watermark");
+  g_menu_append(tools, (Tr("ui.dialog.save") + " PDF…").c_str(),
+                "app.tools-save-pdf");
   g_menu_append(tools, Tr("ui.tools.export-page").c_str(),
                 "app.tools-export-page");
   g_menu_append(tools, Tr("ui.tools.export-text").c_str(),
