@@ -589,14 +589,17 @@ final class AppModel: ObservableObject {
             guard response == .OK else { return }
             let urls = panel.urls
             guard !urls.isEmpty, let self else { return }
-            // Reading-first open: everything lands on the shelf, the first
-            // book opens for reading right away.
-            self.importBooks(urls)
+            // Open the selected files at their original paths. Use the
+            // active empty window for the first; every other file gets a
+            // document window. There is no separate catalog import.
             let paths = urls.map { $0.path }
             if let reader = self.activeReader, !reader.hasDocument {
                 Task { await reader.openPath(paths[0]) }
             } else {
                 self.openWindow?(paths[0])
+            }
+            for path in paths.dropFirst() {
+                self.openWindow?(path)
             }
         }
         if let window = NSApp.keyWindow {
