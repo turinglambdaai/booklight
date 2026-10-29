@@ -162,7 +162,6 @@ MainWindow::MainWindow() {
   set_tip(TtsButton(), pdfgist::Tr("ui.toolbar.tts"));
   set_tip(PrintButton(), pdfgist::Winize(pdfgist::Tr("ui.toolbar.print")));
   set_tip(ToolsButton(), pdfgist::Tr("ui.menu.tools"));
-  set_tip(TodayRing(), pdfgist::Tr("ui.shelf.today"));
   ToolsWatermarkItem().Text(pdfgist::Tr("ui.tools.watermark"));
   ToolsExportPageItem().Text(pdfgist::Tr("ui.tools.export-page"));
   ToolsExportTextItem().Text(pdfgist::Tr("ui.tools.export-text"));
@@ -172,21 +171,11 @@ MainWindow::MainWindow() {
   ThumbsModeLabel().Text(pdfgist::Tr("ui.viewer.thumbs"));
   OutlineModeLabel().Text(pdfgist::Tr("ui.viewer.outline"));
   NotesModeLabel().Text(pdfgist::Tr("ui.sidebar.annotations"));
-  ShelfImportLabel().Text(pdfgist::Tr("ui.library.import"));
-  ShelfSearch().PlaceholderText(pdfgist::Tr("ui.library.search"));
-  ShelfEmptyTitle().Text(pdfgist::Tr("ui.library.empty"));
-  ShelfEmptyHint().Text(pdfgist::Tr("ui.library.empty-hint"));
-  ShelfEmptyImportLabel().Text(pdfgist::Tr("ui.library.import"));
-  ShelfEmptyIcon().Foreground(Brush(AccentColor()));
   FindInput().PlaceholderText(pdfgist::Tr("ui.viewer.find-placeholder"));
   FitWidthLabel().Text(pdfgist::Tr("ui.viewer.fit"));
   ChatSendLabel().Text(pdfgist::Tr("ui.chat.send"));
   ChatStopLabel().Text(pdfgist::Tr("ui.chat.stop"));
   ChatInput().PlaceholderText(pdfgist::Tr("ui.chat.placeholder"));
-
-  // shelf chrome must exist before ApplyTheme, which refreshes the shelf
-  // so code-built colors re-resolve (nav rows, home rows).
-  RebuildShelfNav();
 
   LoadHostPrefs();
   ApplyTheme();
@@ -382,8 +371,6 @@ void MainWindow::Bootstrap() {
     rivet_app::SettingsView settings{};
     std::vector<rivet_app::ProviderPreset> presets;
     std::vector<rivet_app::RecentEntry> recents;
-    std::vector<rivet_app::LibraryEntry> library;
-    std::vector<std::string> collections;
     try {
       rivet_app::API api(*backend);
       api.initialize().get();
@@ -398,8 +385,6 @@ void MainWindow::Bootstrap() {
                            settings = std::move(settings),
                            presets = std::move(presets),
                            recents = std::move(recents),
-                           library = std::move(library),
-                           collections = std::move(collections),
                            failure = std::move(failure)]() mutable {
       auto window = weak.get();
       if (!window) return;
@@ -410,18 +395,16 @@ void MainWindow::Bootstrap() {
       window->settings_ = std::move(settings);
       window->presets_ = std::move(presets);
       window->recents_ = std::move(recents);
-      window->library_ = std::move(library);
-      window->library_collections_ = std::move(collections);
-      window->library_loaded_ = true;
       window->settings_loaded_ = true;
       window->ready_ = true;
       window->SetStatus(true, L"");
       window->LoadSettingsIntoPane();
       window->RefreshLeftPanel();
-      window->RefreshShelf();
+      window->RefreshRecentsRows();
       window->WelcomeFileHint().Text(pdfgist::Tr("ui.welcome.open-any"));
       window->WelcomeFileOpen().Text(pdfgist::Tr("ui.menu.open"));
       window->WelcomeFileDrop().Text(pdfgist::Tr("ui.welcome.or-drag"));
+      window->RefreshRecentsRows();
       window->HandleInstallMarkers();
       window->StartAutoUpdateCheck();
       // Stand-in for v1's file association (mac bootstrap parity).
@@ -513,9 +496,6 @@ void MainWindow::ApplyTheme() {
   }
   if (epub_) ApplyEpubTheme(*epub_);
   RelayoutActive();
-  // code-built shelf colors (nav rows, home strip cells) resolve per
-  // scheme; rebuild so a toggle never leaves a stale scheme on the shelf.
-  RefreshShelf();
 }
 
 void MainWindow::ToggleTheme() {
@@ -594,7 +574,7 @@ void MainWindow::Theme_Click(winrt::Windows::Foundation::IInspectable const&,
 void MainWindow::UpdateChrome() {
   // The shelf is the launch surface: visible whenever no reader tab is up.
   bool const shelf = tabs_.empty() && epub_ == nullptr;
-  ShelfView().Visibility(shelf ? Visibility::Visible : Visibility::Collapsed);
+  WelcomeView().Visibility(shelf ? Visibility::Visible : Visibility::Collapsed);
   // Reader-only toolbar controls do nothing on the shelf; keep the chrome
   // honest about it (open / AI / theme stay useful everywhere).
   auto const reader_vis = shelf ? Visibility::Collapsed : Visibility::Visible;
@@ -606,9 +586,6 @@ void MainWindow::UpdateChrome() {
   TtsButton().Visibility(reader_vis);
   PrintButton().Visibility(reader_vis);
   ToolsButton().Visibility(reader_vis);
-  if (shelf && library_loaded_) {
-    RefreshShelf();  // progress bars catch up on return to the shelf
-  }
   BottomBar().Visibility(!epub_active_ && active_pdf_ != nullptr
                              ? Visibility::Visible
                              : Visibility::Collapsed);
@@ -2284,12 +2261,28 @@ void MainWindow::RefreshLeftPanel() {
 }
 
 void MainWindow::RefreshRecentsRows() {
-  // The welcome continue list is gone — the shelf is the launch surface.
-  // Recents now feed the shelf's progress bars; the toolbar flyout reads
-  // recents_ directly when it opens.
-  try {
-    if (ShelfView().Visibility() == Visibility::Visible) RefreshShelf();
-  } catch (...) {
+  // A recent document is an ordinary file path, not a catalog entry.
+  auto const children = WelcomeRecentStack().Children();
+  children.Clear();
+  WelcomeRecentSection().Visibility(
+      recents_.empty() ? mux::Visibility::Collapsed : mux::Visibility::Visible);
+  WelcomeRecentTitle().Text(pdfgist::Tr("ui.viewer.recents"));
+  for (auto const& entry : recents_) {
+    std::wstring label = to_wide(entry.title);
+    if (label.empty()) {
+      auto const path = to_wide(entry.path);
+      auto const last = path.find_last_of(L"/\\");
+      label = path.substr(last == std::wstring::npos ? 0 : last + 1);
+    }
+    auto button = muxc::Button();
+    button.Content(winrt::box_value(label));
+    button.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
+    button.HorizontalContentAlignment(mux::HorizontalAlignment::Left);
+    button.Click([weak = get_weak(), path = to_wide(entry.path)](
+                     auto const&, auto const&) {
+      if (auto window = weak.get()) window->OpenPath(path);
+    });
+    children.Append(button);
   }
 }
 
