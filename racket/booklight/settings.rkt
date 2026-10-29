@@ -254,7 +254,7 @@
    (string-or (settings-view-mode fallback)
               (hash-ref value 'view_mode #f))
    (bool-or (settings-annotation-sidecar fallback)
-            (hash-ref value 'annotation_sidecar #f))
+            (hash-ref value 'annotation_sidecar (settings-annotation-sidecar fallback)))
    (let ((theme (string-or default-reading-theme
                            (hash-ref value 'reading_theme #f))))
      (if (member theme valid-reading-themes)
