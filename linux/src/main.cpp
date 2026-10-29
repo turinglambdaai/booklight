@@ -397,7 +397,12 @@ void refresh_header_title() {
   }
   gtk_widget_set_visible(g_host.header_toc_menu, FALSE);
   if (tab != nullptr) {
-    gtk_label_set_text(g_host.title_label, tab->title().c_str());
+    std::string title = tab->title();
+    if (tab->document() != nullptr &&
+        !tab->document()->memory_bytes().empty()) {
+      title += " •";  // differs from the original PDF until explicit export
+    }
+    gtk_label_set_text(g_host.title_label, title.c_str());
     gtk_label_set_text(g_host.subtitle_label,
                        (std::to_string(tab->current_page()) + " / " +
                         std::to_string(tab->document()->page_count()))
