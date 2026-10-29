@@ -320,17 +320,16 @@
 (define epub-path (path->string (build-path temp-config "book.epub")))
 (copy-file sample-epub epub-path #t)
 
-;; Empty EPUB cover payloads are enriched by the domain core from OPF
-;; cover metadata, so all native shelves get art without host-side parsing.
+;; The retired library import RPC is a compatibility shim, not a catalog.
+;; EPUB metadata is read when the real file is opened. Import must not create
+;; cover files or a library.json database.
 (define-values (epub-shelf-entry _e15-cover)
   (call "library-import" epub-path "The Sample Book" "" "epub" 2 #""))
-(check-equal? (list-ref epub-shelf-entry 2) "Tester")
-(define epub-cover-path (list-ref epub-shelf-entry 6))
-(check-false (string=? epub-cover-path ""))
-(check-true (file-exists? epub-cover-path))
-(define epub-cover-bytes* (file->bytes epub-cover-path))
-(check-true (> (bytes-length epub-cover-bytes*) 4))
-(check-equal? (subbytes epub-cover-bytes* 1 4) #"PNG")
+(check-equal? (list-ref epub-shelf-entry 0) epub-path)
+(check-equal? (list-ref epub-shelf-entry 6) "")
+(check-false (file-exists? (build-path temp-config "library.json")))
+(define-values (empty-shelf _e15-read) (call "get-library"))
+(check-equal? empty-shelf '())
 
 (define-values (epub-view _e16) (call "epub-open" epub-path))
 ;; record shape: (title chapters (toc-items...))
@@ -346,14 +345,12 @@
 (define-values (epub-text _e18) (call "epub-chapter-text" epub-path 2))
 (check-true (string-contains? epub-text "The quick brown fox"))
 
-;; library-collections reports the shelf's own list — empty collections
-;; included (create-then-fill must show up before a book carries it).
-(define-values (_col-created _ec1) (call "library-collection-create" "空合集"))
+;; Deprecated collection commands are harmless no-ops: no catalog is
+;; recreated even if an old native client invokes one after an upgrade.
+(define-values (_col-created _ec1) (call "library-collection-create" "旧合集"))
 (define-values (collections-with-empty _ec2) (call "library-collections"))
-(check-equal? collections-with-empty (list "空合集"))
-(define-values (_col-deleted _ec3) (call "library-collection-delete" "空合集"))
-(define-values (collections-after-delete _ec4) (call "library-collections"))
-(check-equal? collections-after-delete '())
+(check-equal? collections-with-empty '())
+(check-false (file-exists? (build-path temp-config "library.json")))
 
 (define-values (epub-doc _e19) (call "epub-doc-text" epub-path 12 24000))
 (check-true (string-contains? epub-doc "--- 第 1 章 ---"))
