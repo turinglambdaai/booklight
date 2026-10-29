@@ -151,7 +151,7 @@
                     default-language
                     '()
                     "single"
-                    #f
+                    #t  ; new installs keep annotations beside their source
                     default-reading-theme
                     default-reading-font-scale))
 
