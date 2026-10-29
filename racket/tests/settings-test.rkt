@@ -15,6 +15,18 @@
 
 (define temp-root (make-temporary-file "pdfgist-settings-~a" 'directory))
 
+;; Existing PDFGist preferences and annotations stay in their original
+;; directory when no Booklight profile is present. No copy is created.
+(define preferred-root (build-path temp-root "site.jrtx.booklight"))
+(define legacy-root (build-path temp-root "site.jrtx.pdfgist"))
+(check-equal? (resolve-config-dir preferred-root) preferred-root)
+(make-directory legacy-root)
+(check-equal? (resolve-config-dir preferred-root) legacy-root)
+(check-false (directory-exists? preferred-root))
+(make-directory preferred-root)
+(check-equal? (resolve-config-dir preferred-root) preferred-root)
+
+
 (dynamic-wind
  void
  (lambda ()
