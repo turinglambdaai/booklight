@@ -38,6 +38,15 @@ forbids("racket/booklight/settings.rkt", /copy-directory\/files|migrate-legacy-c
 requires("racket/booklight/settings.rkt", /call-with-atomic-output-file/, "crash-safe settings replacement");
 forbids("app/backend.rkt", /library:(?:update-shelf!|load-shelf|covers-dir-path)/, "backend library writes");
 requires("racket/tests/backend-test.rkt", /retired-library-bytes/, "legacy catalog preservation test");
+requires("linux/src/pdfview.hpp", /memory_bytes_/, "owned PDFium in-memory backing buffer");
+requires("linux/src/pdfview.cpp", /doc->memory_bytes_ = std::move\(bytes\)/,
+         "PDFium buffer lifetime protection");
+requires("macos-host/Sources/RivetHost/ReaderModel.swift", /func exportEditedPdf\(/,
+         "explicit export of modified PDF");
+requires("windows/MainWindow.Tools.cpp", /void MainWindow::ToolsSavePdf_Click\(/,
+         "explicit WinUI PDF save/export action");
+requires("linux/src/main.cpp", /void tools_save_pdf\(/,
+         "explicit GTK PDF save/export action");
 
 if (failures.length > 0) {
   for (const failure of failures) console.error("file-first contract: " + failure);
