@@ -25,6 +25,7 @@
 #include <ctime>
 #include <exception>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -398,8 +399,7 @@ void refresh_header_title() {
   gtk_widget_set_visible(g_host.header_toc_menu, FALSE);
   if (tab != nullptr) {
     std::string title = tab->title();
-    if (tab->document() != nullptr &&
-        !tab->document()->memory_bytes().empty()) {
+    if (tab->pdf_edits_pending) {
       title += " •";  // differs from the original PDF until explicit export
     }
     gtk_label_set_text(g_host.title_label, title.c_str());
@@ -3477,7 +3477,7 @@ void install_actions(GtkApplication* app) {
       }, nullptr);
   add("quit", +[](GSimpleAction*, GVariant*, gpointer) {
         // graceful: destroy the window; shutdown stops the backend
-        if (g_host.window != nullptr) gtk_window_destroy(g_host.window);
+        if (g_host.window != nullptr) gtk_window_close(g_host.window);
       }, nullptr);
   add("zoom-in", +[](GSimpleAction*, GVariant*, gpointer) {
         zoom_in_ui();
