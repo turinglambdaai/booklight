@@ -3953,6 +3953,22 @@ void on_activate(GtkApplication* app, gpointer) {
   g_host.window = GTK_WINDOW(window);
   gtk_window_set_title(g_host.window, "Booklight");
   gtk_window_set_default_size(g_host.window, 1280, 860);
+  // Window-manager close and Quit must never bypass unsaved PDF edits.
+  // Re-request closing after each successful Save As/explicit Discard,
+  // so multiple dirty tabs each receive their own decision.
+  hook(g_host.window, "close-request",
+       +[](GtkWindow*, gpointer) -> gboolean {
+         for (auto const& tab : g_host.tabs) {
+           if (tab->pdf_edits_pending) {
+             PdfTab* const target = tab.get();
+             confirm_close_dirty_pdf(target, [] {
+               if (g_host.window != nullptr) gtk_window_close(g_host.window);
+             });
+             return TRUE;  // defer close until the user makes a safe choice
+           }
+         }
+         return FALSE;
+       }, nullptr);
   apply_theme();  // display is connected; gtk_settings are live
 
   // --- header bar ---
