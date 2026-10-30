@@ -30,6 +30,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <type_traits>
 #include <unistd.h>
@@ -2565,9 +2566,14 @@ void save_bytes_dialog(std::string const& title,
                  original = g_strcmp0(from, to) == 0;
                  g_free(from);
                  g_free(to);
+                 // Also reject symlink/hard-link aliases of the source.
+                 std::error_code ec;
+                 original = original || std::filesystem::equivalent(
+                     std::filesystem::path(path),
+                     std::filesystem::path(request->protected_source), ec);
                }
                if (original) {
-                 host_alert("Choose a different destination to preserve the original PDF.");
+                 host_alert(Tr("ui.pdf.preserve-original"));
                } else {
                  GError* error = nullptr;
                  saved = g_file_set_contents(
@@ -2648,13 +2654,12 @@ void tools_save_pdf() {
 // Quit. A canceled/failed export MUST NOT invoke the pending close action.
 void confirm_close_dirty_pdf(PdfTab* tab, std::function<void()> proceed) {
   auto* dialog = gtk_dialog_new_with_buttons(
-      "Unsaved PDF edits", g_host.window, GTK_DIALOG_MODAL,
-      "Cancel", GTK_RESPONSE_CANCEL,
-      "Discard", GTK_RESPONSE_REJECT,
-      "Save As...", GTK_RESPONSE_ACCEPT, nullptr);
+      Tr("ui.pdf.pending-title").c_str(), g_host.window, GTK_DIALOG_MODAL,
+      Tr("ui.password.cancel").c_str(), GTK_RESPONSE_CANCEL,
+      Tr("ui.pdf.discard").c_str(), GTK_RESPONSE_REJECT,
+      Tr("ui.pdf.save-as").c_str(), GTK_RESPONSE_ACCEPT, nullptr);
   auto* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
-  auto* message = gtk_label_new(
-      "This PDF has unsaved page changes. Export a separate copy before closing?");
+  auto* message = gtk_label_new(Tr("ui.pdf.pending-body").c_str());
   gtk_label_set_wrap(GTK_LABEL(message), TRUE);
   gtk_widget_set_margin_top(message, 16);
   gtk_widget_set_margin_bottom(message, 16);

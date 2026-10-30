@@ -47,6 +47,10 @@ requires("windows/MainWindow.Tools.cpp", /void MainWindow::ToolsSavePdf_Click\(/
          "explicit WinUI PDF save/export action");
 requires("linux/src/main.cpp", /void tools_save_pdf\(/,
          "explicit GTK PDF save/export action");
+requires("linux/src/pdfview.hpp", /pdf_edits_pending/, "independent PDF dirty state");
+requires("linux/src/main.cpp", /confirm_close_dirty_pdf\(/, "unsaved PDF close confirmation");
+requires("linux/src/main.cpp", /"close-request"/, "window close interception");
+requires("linux/src/main.cpp", /std::filesystem::equivalent\(/, "source-file alias safety");
 
 if (failures.length > 0) {
   for (const failure of failures) console.error("file-first contract: " + failure);
