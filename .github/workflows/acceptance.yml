@@ -13,6 +13,10 @@ env:
   RIVET_PIN: v0.12.0
   KEEL_PIN: d56e38f6ad89a5e85c455ac1b26acd2dfd312165
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     name: Windows packaged WinUI acceptance
