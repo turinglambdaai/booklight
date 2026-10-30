@@ -61,12 +61,20 @@ jobs:
           distribution: full
           variant: CS
           version: '9.3'
-      - name: Install Rivet (catalog)
-        shell: bash
+      - name: Select trusted CA bundle for Windows Racket
+        shell: pwsh
         run: |
-          # TEMP (upstream outage): see the racket-tests keel pin above.
-          raco pkg install --auto --no-docs 'https://github.com/turlamai/keel.git#d56e38f6ad89a5e85c455ac1b26acd2dfd312165'
-          raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
+          $candidates = @(
+            "$env:ProgramFiles\Git\mingw64\ssl\certs\ca-bundle.crt",
+            "$env:ProgramFiles\Git\mingw64\ssl\cert.pem",
+            "$env:ProgramFiles\Git\mingw64\etc\ssl\certs\ca-bundle.crt"
+          )
+          $bundle = $candidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $bundle) { throw "No Git for Windows trusted CA bundle found; refusing insecure TLS fallback" }
+          "BOOKLIGHT_CI_CA_BUNDLE=$bundle" >> $env:GITHUB_ENV
+      - name: Install pinned Rivet with verified TLS
+        shell: pwsh
+        run: racket scripts/ci-install-windows-deps.rkt
       # The backend's pdf FFI (pdfdoc.rkt binds zlib) is instantiated while
       # `raco rivet build` assembles the codegen contract, so zlib1.dll must
       # be on PATH first; the same cache copy rides into the packaged stage.
