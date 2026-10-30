@@ -2525,76 +2525,167 @@ std::string ascii_trim(std::string const& s) {
   return s.substr(begin, end - begin + 1);
 }
 
-// Shared typed save dialog (mac ReaderModel.saveData parity): the default
-// name is prefilled, GTK confirms overwrites, and the bytes ride the
-// closure — owned by the destroy notify, freed when the chooser dies.
+// Shared Save As dialog. This does not mutate the source PDF. A completion
+// callback allows close/quit to proceed only after a successful disk write.
+struct SaveBytesRequest {
+  rivet::Bytes data;
+  std::function<void(bool)> on_complete;
+  std::string protected_source;
+};
+
 void save_bytes_dialog(std::string const& title,
-                       std::string const& default_name, rivet::Bytes data) {
+                       std::string const& default_name, rivet::Bytes data,
+                       std::function<void(bool)> on_complete = {},
+                       std::string protected_source = {}) {
   auto* chooser = gtk_file_chooser_native_new(
       title.c_str(), g_host.window, GTK_FILE_CHOOSER_ACTION_SAVE,
       Tr("ui.dialog.save").c_str(), Tr("ui.password.cancel").c_str());
-  // No explicit overwrite toggle: the setter left the GTK headers in 4.20,
-  // and the portal chooser (every real desktop) confirms overwrites itself,
-  // which is the mac NSSavePanel behavior too.
+  // Portal file chooser confirms overwrite of existing non-source targets.
   gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(chooser),
-                                    default_name.c_str());
-  auto* payload = new rivet::Bytes(std::move(data));
-  hook(
-      chooser, "response",
-      +[](GtkNativeDialog* native, int response, gpointer user_data) {
-        auto* data = static_cast<rivet::Bytes*>(user_data);
-        if (response == GTK_RESPONSE_ACCEPT) {
-          if (GFile* file =
-                  gtk_file_chooser_get_file(GTK_FILE_CHOOSER(native));
-              file != nullptr) {
-            gchar* path = g_file_get_path(file);
-            g_object_unref(file);
-            if (path != nullptr) {
-              GError* error = nullptr;
-              g_file_set_contents(path,
-                                  reinterpret_cast<char const*>(data->data()),
-                                  static_cast<gssize>(data->size()), &error);
-              if (error != nullptr) {
-                std::string message = error->message;
-                g_error_free(error);
-                host_alert(Trf("ui.export.failed", message));
-              }
-              g_free(path);
-            }
-          }
-        }
-        g_object_unref(native);  // the destroy notify then frees the bytes
-      },
-      payload,
-      +[](gpointer p, GClosure*) { delete static_cast<rivet::Bytes*>(p); },
-      static_cast<GConnectFlags>(0));
+                                     default_name.c_str());
+  auto* request = new SaveBytesRequest{
+      std::move(data), std::move(on_complete), std::move(protected_source)};
+  hook(chooser, "response",
+       +[](GtkNativeDialog* native, int response, gpointer user_data) {
+         auto* request = static_cast<SaveBytesRequest*>(user_data);
+         bool saved = false;
+         if (response == GTK_RESPONSE_ACCEPT) {
+           if (GFile* file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(native));
+               file != nullptr) {
+             gchar* path = g_file_get_path(file);
+             g_object_unref(file);
+             if (path != nullptr) {
+               // Save As may overwrite an explicitly chosen different file;
+               // it may NEVER replace the PDF that the reader opened.
+               bool original = false;
+               if (!request->protected_source.empty()) {
+                 gchar* from = g_canonicalize_filename(
+                     request->protected_source.c_str(), nullptr);
+                 gchar* to = g_canonicalize_filename(path, nullptr);
+                 original = g_strcmp0(from, to) == 0;
+                 g_free(from);
+                 g_free(to);
+               }
+               if (original) {
+                 host_alert("Choose a different destination to preserve the original PDF.");
+               } else {
+                 GError* error = nullptr;
+                 saved = g_file_set_contents(
+                     path,
+                     reinterpret_cast<char const*>(request->data.data()),
+                     static_cast<gssize>(request->data.size()), &error);
+                 if (!saved) {
+                   std::string const message =
+                       error != nullptr ? error->message : "write failed";
+                   host_alert(Trf("ui.export.failed", message));
+                 }
+                 if (error != nullptr) g_error_free(error);
+               }
+               g_free(path);
+             }
+           }
+         }
+         auto completed = std::move(request->on_complete);
+         g_object_unref(native);  // frees request via closure destroy notify
+         if (completed) completed(saved);
+       },
+       request,
+       +[](gpointer p, GClosure*) { delete static_cast<SaveBytesRequest*>(p); },
+       static_cast<GConnectFlags>(0));
   gtk_native_dialog_show(GTK_NATIVE_DIALOG(chooser));
 }
 
-// Explicit user-initiated export of the active in-memory PDF. The original
-// path is not overwritten or duplicated merely by reading or editing.
-void tools_save_pdf() {
-  auto* tab = g_host.active_pdf_only();
-  if (tab == nullptr || tab->document() == nullptr) return;
-  rivet::Bytes data = tab->document()->memory_bytes();
+// Export the actual current in-memory document, not the original bytes.
+// Cancellation/failure leaves the edited tab open and visibly dirty.
+void save_edited_pdf_for_tab(PdfTab* tab, std::function<void(bool)> on_complete) {
+  if (tab == nullptr || !pdf_tab_still_open(tab)) {
+    if (on_complete) on_complete(false);
+    return;
+  }
+  auto const document = tab->document();
+  if (document == nullptr) {
+    if (on_complete) on_complete(false);
+    return;
+  }
+  rivet::Bytes data = document->memory_bytes();
   if (data.empty()) {
-    // No edits yet: the original may still be exported on request.
+    // An unedited PDF can still be exported on an explicit Tools request.
     gchar* raw = nullptr;
     gsize length = 0;
     GError* error = nullptr;
     if (!g_file_get_contents(tab->path().c_str(), &raw, &length, &error)) {
-      std::string message = error != nullptr ? error->message : "read failed";
+      std::string const message =
+          error != nullptr ? error->message : "read failed";
       if (error != nullptr) g_error_free(error);
       host_alert(Trf("ui.export.failed", message));
+      if (on_complete) on_complete(false);
       return;
     }
     auto const* first = reinterpret_cast<std::uint8_t const*>(raw);
     data.assign(first, first + length);
     g_free(raw);
   }
-  save_bytes_dialog(Tr("ui.dialog.save") + " PDF",
-                    title_stem(tab->title()) + "-edited.pdf",
-                    std::move(data));
+  save_bytes_dialog(
+      Tr("ui.dialog.save") + " PDF", title_stem(tab->title()) + "-edited.pdf",
+      std::move(data),
+      [tab, document, on_complete = std::move(on_complete)](bool saved) {
+        bool const unchanged = pdf_tab_still_open(tab) &&
+                               tab->document() == document;
+        if (saved && unchanged) {
+          tab->pdf_edits_pending = false;
+          refresh_header_title();
+        }
+        if (on_complete) on_complete(saved && unchanged);
+      },
+      tab->path());
+}
+
+void tools_save_pdf() {
+  save_edited_pdf_for_tab(g_host.active_pdf_only(), {});
+}
+
+// Save As / Discard / Cancel also covers tab-close, window-manager close and
+// Quit. A canceled/failed export MUST NOT invoke the pending close action.
+void confirm_close_dirty_pdf(PdfTab* tab, std::function<void()> proceed) {
+  auto* dialog = gtk_dialog_new_with_buttons(
+      "Unsaved PDF edits", g_host.window, GTK_DIALOG_MODAL,
+      "Cancel", GTK_RESPONSE_CANCEL,
+      "Discard", GTK_RESPONSE_REJECT,
+      "Save As...", GTK_RESPONSE_ACCEPT, nullptr);
+  auto* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+  auto* message = gtk_label_new(
+      "This PDF has unsaved page changes. Export a separate copy before closing?");
+  gtk_label_set_wrap(GTK_LABEL(message), TRUE);
+  gtk_widget_set_margin_top(message, 16);
+  gtk_widget_set_margin_bottom(message, 16);
+  gtk_widget_set_margin_start(message, 16);
+  gtk_widget_set_margin_end(message, 16);
+  gtk_box_append(GTK_BOX(area), message);
+  struct CloseRequest {
+    PdfTab* tab;
+    std::function<void()> proceed;
+  };
+  auto* request = new CloseRequest{tab, std::move(proceed)};
+  hook(dialog, "response",
+       +[](GtkDialog* dialog, gint response, gpointer user_data) {
+         auto* request = static_cast<CloseRequest*>(user_data);
+         PdfTab* const tab = request->tab;
+         auto proceed = request->proceed;
+         gtk_window_destroy(GTK_WINDOW(dialog));
+         if (!pdf_tab_still_open(tab)) return;
+         if (response == GTK_RESPONSE_REJECT) {
+           tab->pdf_edits_pending = false;  // explicitly discard; no writes
+           proceed();
+         } else if (response == GTK_RESPONSE_ACCEPT) {
+           save_edited_pdf_for_tab(
+               tab, [proceed = std::move(proceed)](bool saved) {
+                 if (saved) proceed();
+               });
+         }
+       }, request,
+       +[](gpointer p, GClosure*) { delete static_cast<CloseRequest*>(p); },
+       static_cast<GConnectFlags>(0));
+  gtk_window_present(GTK_WINDOW(dialog));
 }
 
 // Tools > Add Watermark (mac WatermarkSheet parity): watermark text, a
