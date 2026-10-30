@@ -11,6 +11,28 @@ final class BooklightAppDelegate: NSObject, NSApplicationDelegate {
         if terminationInFlight { return .terminateLater }
         terminationInFlight = true
         Task { @MainActor in
+            while let reader = appModel.firstPendingPDFEditReader() {
+                let alert = NSAlert()
+                alert.messageText = L10n.t("ui.pdf.pending-title")
+                alert.informativeText = L10n.t("ui.pdf.pending-body")
+                alert.addButton(withTitle: L10n.t("ui.pdf.save-as"))
+                alert.addButton(withTitle: L10n.t("ui.pdf.discard"))
+                alert.addButton(withTitle: L10n.t("ui.password.cancel"))
+                switch alert.runModal() {
+                case .alertFirstButtonReturn:
+                    guard await reader.exportEditedPdfForClose(in: nil) else {
+                        terminationInFlight = false
+                        sender.reply(toApplicationShouldTerminate: false)
+                        return
+                    }
+                case .alertSecondButtonReturn:
+                    reader.pdfEditsPending = false
+                default:
+                    terminationInFlight = false
+                    sender.reply(toApplicationShouldTerminate: false)
+                    return
+                }
+            }
             await appModel.flushAnnotationsBeforeTermination()
             sender.reply(toApplicationShouldTerminate: true)
         }

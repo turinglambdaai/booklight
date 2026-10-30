@@ -42,6 +42,59 @@ struct DocumentWindowView: View {
     }
 }
 
+/// For a SwiftUI-created NSWindow, preserve its existing delegate rather than
+/// replacing SwiftUI's lifecycle/navigation callbacks with our close guard.
+@MainActor
+private final class ReaderWindowCloseDelegate: NSObject, NSWindowDelegate {
+    weak var originalDelegate: (any NSWindowDelegate)?
+    weak var reader: ReaderModel?
+    private var allowClose = false
+
+    override func responds(to selector: Selector!) -> Bool {
+        super.responds(to: selector) || originalDelegate?.responds(to: selector) == true
+    }
+
+    override func forwardingTarget(for selector: Selector!) -> Any? {
+        if originalDelegate?.responds(to: selector) == true {
+            return originalDelegate
+        }
+        return super.forwardingTarget(for: selector)
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !allowClose, let reader, reader.pdfEditsPending else {
+            return originalDelegate?.windowShouldClose?(sender) ?? true
+        }
+        let warning = NSAlert()
+        warning.messageText = L10n.t("ui.pdf.pending-title")
+        warning.informativeText = L10n.t("ui.pdf.pending-body")
+        warning.addButton(withTitle: L10n.t("ui.pdf.save-as"))
+        warning.addButton(withTitle: L10n.t("ui.pdf.discard"))
+        warning.addButton(withTitle: L10n.t("ui.password.cancel"))
+        warning.beginSheetModal(for: sender) { [weak self, weak sender] choice in
+            MainActor.assumeIsolated {
+                guard let self, let sender, let reader = self.reader else { return }
+                switch choice {
+                case .alertFirstButtonReturn:
+                    Task { @MainActor [weak self, weak sender] in
+                        guard await reader.exportEditedPdfForClose(in: sender),
+                              let self, let sender else { return }
+                        self.allowClose = true
+                        sender.performClose(nil)
+                    }
+                case .alertSecondButtonReturn:
+                    reader.pdfEditsPending = false
+                    self.allowClose = true
+                    sender.performClose(nil)
+                default:
+                    break
+                }
+            }
+        }
+        return false
+    }
+}
+
 /// Bridges the SwiftUI window to AppKit: document title + proxy icon, native
 /// window tabbing (Preview model), key-window tracking for the menus, and
 /// close-time flush of pending persistence.
@@ -68,6 +121,7 @@ struct WindowAccessor: NSViewRepresentable {
     final class Coordinator {
         var parent: WindowAccessor
         private weak var window: NSWindow?
+        private var closeGuard: ReaderWindowCloseDelegate?
         // NotificationCenter.removeObserver is thread-safe; the tokens are
         // only touched from install (main actor) and deinit (nonisolated).
         nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
@@ -83,6 +137,11 @@ struct WindowAccessor: NSViewRepresentable {
                 ?? NSApp.windows.first(where: \.isVisible)
             guard let window = candidate else { return }
             self.window = window
+            let closeGuard = ReaderWindowCloseDelegate()
+            closeGuard.originalDelegate = window.delegate
+            closeGuard.reader = parent.reader
+            self.closeGuard = closeGuard
+            window.delegate = closeGuard
             // Native window tabs: share a tabbing identity so Window >
             // Merge All Windows works and the tab bar's + button offers the
             // welcome state, exactly like Preview's document windows.
@@ -125,6 +184,7 @@ struct WindowAccessor: NSViewRepresentable {
             // Use macOS' native titlebar edited dot. This tracks page edits,
             // which are distinct from annotation sidecar save status.
             window.isDocumentEdited = parent.reader.pdfEditsPending
+            closeGuard?.reader = parent.reader
             if let path = parent.reader.documentPath {
                 let url = URL(fileURLWithPath: path)
                 if window.representedURL != url {

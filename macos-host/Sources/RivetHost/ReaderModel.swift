@@ -639,21 +639,25 @@ final class ReaderModel: ObservableObject {
     /// path. The save panel makes the destination explicit; cancelled/failed
     /// exports leave the edited state marked as unsaved.
     func exportEditedPdf() {
+        Task { [weak self] in
+            _ = await self?.exportEditedPdfForClose(in: nil)
+        }
+    }
+
+    /// The close/quit guards await the user's destination choice. A canceled
+    /// export, disk error or a newer edit keeps the original window dirty.
+    func exportEditedPdfForClose(in window: NSWindow?) async -> Bool {
         guard let tab = pdf, let data = tab.document?.dataRepresentation() else {
             alert(L10n.t("ui.pages.save-failed", "unable to serialize PDF"))
-            return
+            return false
         }
-        let baseName = URL(fileURLWithPath: tab.path)
-            .deletingPathExtension().lastPathComponent
+        let name = URL(fileURLWithPath: tab.path)
+            .deletingPathExtension().lastPathComponent + "-edited.pdf"
         let revision = pdfEditRevision
-        Task { [weak self] in
-            guard let self else { return }
-            let saved = await self.saveEditResult(
-                data, defaultName: baseName + "-edited.pdf")
-            if saved && revision == self.pdfEditRevision {
-                self.pdfEditsPending = false
-            }
-        }
+        let saved = await saveEditResult(data, defaultName: name, in: window)
+        guard saved, revision == pdfEditRevision else { return false }
+        pdfEditsPending = false
+        return true
     }
 
     private func extractName(_ title: String) -> String {
@@ -663,17 +667,38 @@ final class ReaderModel: ObservableObject {
     }
 
     @discardableResult
-    func saveEditResult(_ data: Data, defaultName: String) async -> Bool {
+    func saveEditResult(_ data: Data, defaultName: String,
+                        in ownerWindow: NSWindow? = nil) async -> Bool {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = defaultName
         let response: NSApplication.ModalResponse
-        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+        if let window = ownerWindow ?? NSApp.keyWindow ?? NSApp.mainWindow {
             response = await panel.beginSheetModal(for: window)
         } else {
             response = panel.runModal()
         }
         guard response == .OK, let url = panel.url else { return false }
+        // Never overwrite an opened original, even via a symbolic or hard link.
+        if let sourcePath = pdf?.path {
+            let source = URL(fileURLWithPath: sourcePath)
+            if source.resolvingSymlinksInPath().standardizedFileURL
+                == url.resolvingSymlinksInPath().standardizedFileURL {
+                alert(L10n.t("ui.pdf.preserve-original"))
+                return false
+            }
+            let manager = FileManager.default
+            if let original = try? manager.attributesOfItem(atPath: source.path),
+               let destination = try? manager.attributesOfItem(atPath: url.path),
+               let aDevice = original[.systemNumber] as? NSNumber,
+               let bDevice = destination[.systemNumber] as? NSNumber,
+               let aInode = original[.systemFileNumber] as? NSNumber,
+               let bInode = destination[.systemFileNumber] as? NSNumber,
+               aDevice == bDevice && aInode == bInode {
+                alert(L10n.t("ui.pdf.preserve-original"))
+                return false
+            }
+        }
         do {
             try data.write(to: url, options: .atomic)
             return true

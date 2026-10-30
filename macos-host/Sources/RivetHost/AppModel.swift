@@ -138,6 +138,10 @@ final class AppModel: ObservableObject {
         closingAnnotationFlushes[id] = task
     }
 
+    func firstPendingPDFEditReader() -> ReaderModel? {
+        liveReaders.compactMap { $0.value }.first { $0.pdfEditsPending }
+    }
+
     func flushAnnotationsBeforeTermination() async {
         let readers = liveReaders.compactMap { $0.value }
         for reader in readers {
