@@ -1,7 +1,7 @@
 #lang racket/base
 ;; GitHub-hosted Windows Racket 9.3 sometimes fails while enumerating its
 ;; win32-store ROOT certificates (X509*->C receives #f). Use the CA bundle
-;; shipped with Git for Windows, without disabling TLS/hostname validation.
+;; bundled with the runner's Node.js Mozilla roots, without disabling TLS/hostname validation.
 ;; This must run in the SAME Racket process as the package downloads.
 (require openssl
          pkg
@@ -13,7 +13,7 @@
              (regexp-match? #rx#"-----BEGIN CERTIFICATE-----"
                             (file->bytes bundle)))
   (error 'ci-install-windows-deps
-         "trusted Git for Windows PEM CA bundle is missing or invalid"))
+         "trusted Mozilla PEM CA bundle is missing or invalid"))
 
 (ssl-default-verify-sources (list bundle))
 
