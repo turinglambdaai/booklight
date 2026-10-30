@@ -313,7 +313,8 @@ struct MainWindow : MainWindowT<MainWindow> {
                   std::wstring const& close_button,
                   std::function<void()> on_primary,
                   std::wstring const& secondary_button = std::wstring(),
-                  std::function<void()> on_secondary = nullptr);
+                  std::function<void()> on_secondary = nullptr,
+                  std::function<void()> on_close = nullptr);
 
   // ---- tabs & document (MainWindow.xaml.cpp) ----
   void PickAndOpen();
@@ -330,6 +331,9 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ActivateTab(std::shared_ptr<PdfTab> const& tab);
   std::shared_ptr<PdfTab> SharedTab(PdfTab* tab);
   void CloseTab(PdfTab const* tab);
+  void ConfirmDirtyPdfClose(std::shared_ptr<PdfTab> const& tab,
+                            std::function<void()> on_success = {},
+                            std::function<void()> on_cancel = {});
   void CloseActiveReader();
   std::uint32_t IndexOfTabItem(
       winrt::Microsoft::UI::Xaml::Controls::TabViewItem const& item);
@@ -518,7 +522,11 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ExportDocumentText();
   // One typed save panel for every export (mac saveData parity).
   void SaveData(std::vector<std::uint8_t> data, std::wstring const& default_name,
-                std::wstring const& type_label, std::wstring const& extension);
+                std::wstring const& type_label, std::wstring const& extension,
+                std::function<void(bool)> on_complete = {},
+                std::wstring const& protected_original = {});
+  void SaveEditedPdf(std::shared_ptr<PdfTab> const& tab,
+                     std::function<void(bool)> on_complete = {});
 
   // ---- AcroForm pane (MainWindow.Forms.cpp) ----
   void BuildFormsPane();
@@ -570,6 +578,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   std::vector<std::shared_ptr<EpubBook>> epubs_;
   std::shared_ptr<EpubBook> epub_;  // selected EPUB; null while a PDF is active
   bool epub_active_ = false;
+  bool window_close_prompt_active_ = false;
 
   bool left_visible_ = false;
   int left_mode_ = 0;  // 0 thumbnails / 1 outline / 2 notes
