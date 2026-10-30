@@ -760,6 +760,9 @@ std::string PdfTab::page_text(int page) {
 }
 
 void PdfTab::reload_document(std::shared_ptr<PdfDocument> doc) {
+  // Only edited in-memory documents create unsaved page changes.
+  // Resetting this flag belongs to a *successful* explicit export.
+  pdf_edits_pending = doc != nullptr && !doc->memory_bytes().empty();
   doc_ = std::move(doc);
   impl->sel = PdfSelection{};
   impl->find_hits.clear();
