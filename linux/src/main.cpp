@@ -991,7 +991,10 @@ void open_path(std::string const& path, int resume_page = 1) {
   }
 }
 
-void close_tab_index(gint index) {
+void save_edited_pdf_for_tab(PdfTab* tab, std::function<void(bool)> on_complete);
+void confirm_close_dirty_pdf(PdfTab* tab, std::function<void()> proceed);
+
+void close_tab_index_unchecked(gint index) {
   if (g_host.epub_tab_index >= 0 && index == g_host.epub_tab_index) {
     auto* dying = g_host.epub;
     gtk_notebook_remove_page(g_host.notebook, index);
@@ -1031,6 +1034,29 @@ void close_tab_index(gint index) {
   }
   refresh_status();
   refresh_header_title();
+}
+
+bool pdf_tab_still_open(PdfTab const* tab) {
+  return std::any_of(g_host.tabs.begin(), g_host.tabs.end(),
+                     [tab](auto const& entry) { return entry.get() == tab; });
+}
+
+void close_tab_index(gint index) {
+  if (index >= 0 && static_cast<std::size_t>(index) < g_host.tabs.size()) {
+    PdfTab* const tab = g_host.tabs[static_cast<std::size_t>(index)].get();
+    if (tab->pdf_edits_pending) {
+      confirm_close_dirty_pdf(tab, [tab] {
+        for (gint i = 0; i < static_cast<gint>(g_host.tabs.size()); ++i) {
+          if (g_host.tabs[static_cast<std::size_t>(i)].get() == tab) {
+            close_tab_index_unchecked(i);
+            break;
+          }
+        }
+      });
+      return;
+    }
+  }
+  close_tab_index_unchecked(index);
 }
 
 void close_active_reader() {
