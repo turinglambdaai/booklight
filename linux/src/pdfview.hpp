@@ -166,6 +166,9 @@ class PdfTab {
   // (normal render + cream tray) or anything else (normal + light tray).
   void set_surface(std::string const& surface);
   void reload_document(std::shared_ptr<PdfDocument> doc);  // page edit
+  // Page edits are separate from annotation persistence; the original PDF
+  // remains unchanged until an explicit, successful Save As.
+  bool pdf_edits_pending{false};
 
   std::string selection_text();
   void clear_selection();
