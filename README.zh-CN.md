@@ -4,7 +4,7 @@
 
 [English](README.md) · **中文**
 
-[![release](https://img.shields.io/github/v/release/turinglambdaai/booklight)](https://github.com/turlamai/booklight/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turlamai/booklight/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/booklight/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![release](https://img.shields.io/github/v/release/turlamai/booklight)](https://github.com/turlamai/booklight/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turlamai/booklight/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/booklight/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 苹果做出了最好的阅读体验，然后把它锁进了自己的设备。Booklight 把这份安静带给每个桌面：一个属于你的书架、不打扰的阅读、随叫随到的 AI——书是你的文件，模型是你的模型，花销是你的花销。任何东西都不会被复制进应用私有库，除了你主动发给自家服务商的请求，没有任何数据离开你的机器。
 

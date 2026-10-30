@@ -171,7 +171,7 @@ jobs:
       # ci.yml's copy of this step) — it ships the runtime the pinned rivet
       # expects.
       - name: Set up embeddable Racket CS
-        uses: turinglambdaai/rivet/.github/actions/setup-embed-racket@v0.12.0
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@v0.12.0
       - name: Install Rivet (catalog) and backend packages
         run: |
           raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
@@ -278,11 +278,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if gh release view "${{ github.ref_name }}" -R turinglambdaai/booklight >/dev/null 2>&1; then
-            gh release upload "${{ github.ref_name }}" dist/* --clobber -R turinglambdaai/booklight
+          if gh release view "${{ github.ref_name }}" -R turlamai/booklight >/dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" dist/* --clobber -R turlamai/booklight
           else
             gh release create "${{ github.ref_name }}" dist/* \
-              -R turinglambdaai/booklight \
+              -R turlamai/booklight \
               --title "Booklight ${VERSION}" \
               --notes-file /tmp/notes.md
           fi
@@ -313,4 +313,4 @@ jobs:
           cp "dist/booklight-${VERSION}-linux-x64.tar.gz" stable-alias/booklight-linux-x64.tar.gz
           cp "dist/booklight-${VERSION}-linux-arm64.tar.gz" stable-alias/booklight-linux-arm64.tar.gz
           cp "dist/booklight-${VERSION}-windows-x64.msi" stable-alias/booklight-windows-x64.msi
-          gh release upload "${{ github.ref_name }}" stable-alias/* --clobber -R turinglambdaai/booklight
+          gh release upload "${{ github.ref_name }}" stable-alias/* --clobber -R turlamai/booklight
