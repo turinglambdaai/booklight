@@ -10,7 +10,7 @@
 (define bundle (getenv "BOOKLIGHT_CI_CA_BUNDLE"))
 (unless (and bundle
              (file-exists? bundle)
-             (regexp-match? #rx"-----BEGIN CERTIFICATE-----"
+             (regexp-match? #rx#"-----BEGIN CERTIFICATE-----"
                             (file->bytes bundle)))
   (error 'ci-install-windows-deps
          "trusted Git for Windows PEM CA bundle is missing or invalid"))
