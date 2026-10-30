@@ -201,6 +201,30 @@ MainWindow::MainWindow() {
     if (auto window = weak.get()) window->OpenDroppedRaw(args);
   });
 
+  // Titlebar close, Alt+F4 and explicit Close share the same PDF safeguard.
+  AppWindow().Closing([weak = get_weak()](auto&&, auto const& args) {
+    auto window = weak.get();
+    if (!window) return;
+    for (auto const& tab : window->tabs_) {
+      if (!tab->pdf_edits_pending) continue;
+      args.Cancel(true);
+      if (window->window_close_prompt_active_) return;
+      window->window_close_prompt_active_ = true;
+      window->ConfirmDirtyPdfClose(
+          tab,
+          [weak] {
+            if (auto w = weak.get()) {
+              w->window_close_prompt_active_ = false;
+              w->Close();  // other pending edits get their own confirmation
+            }
+          },
+          [weak] {
+            if (auto w = weak.get()) w->window_close_prompt_active_ = false;
+          });
+      return;
+    }
+  });
+
   Closed([weak = get_weak()](auto&&, auto&&) {
     auto window = weak.get();
     if (!window || !window->ready_ || !window->api_) return;
@@ -447,7 +471,8 @@ void MainWindow::ShowDialog(std::wstring const& title, std::wstring const& body,
                             std::wstring const& close_button,
                             std::function<void()> on_primary,
                             std::wstring const& secondary_button,
-                            std::function<void()> on_secondary) {
+                            std::function<void()> on_secondary,
+                            std::function<void()> on_close) {
   muxc::ContentDialog dialog;
   dialog.Title(winrt::box_value(title));
   // Selection-enabled text so failure messages stay copyable (mac parity).
@@ -467,22 +492,33 @@ void MainWindow::ShowDialog(std::wstring const& title, std::wstring const& body,
   dialog.CloseButtonText(close_button);
   dialog.XamlRoot(Content().XamlRoot());
 
+  auto const dispatcher = DispatcherQueue();
   auto op = dialog.ShowAsync();
-  op.Completed([on_primary = std::move(on_primary),
-                on_secondary = std::move(on_secondary)](
+  op.Completed([dispatcher, on_primary = std::move(on_primary),
+                on_secondary = std::move(on_secondary),
+                on_close = std::move(on_close)](
                    winrt::Windows::Foundation::IAsyncOperation<
                        muxc::ContentDialogResult> const& sender,
-                   winrt::Windows::Foundation::AsyncStatus) {
+                   winrt::Windows::Foundation::AsyncStatus) mutable {
     muxc::ContentDialogResult result{muxc::ContentDialogResult::None};
     try {
       result = sender.GetResults();
     } catch (...) {
-      return;  // another dialog is already up; the flow can be retried
+      // A dialog collision or cancellation must not leave close pending.
     }
-    if (result == muxc::ContentDialogResult::Primary && on_primary) on_primary();
-    if (result == muxc::ContentDialogResult::Secondary && on_secondary) {
-      on_secondary();
-    }
+    dispatcher.TryEnqueue(
+        [result, on_primary = std::move(on_primary),
+         on_secondary = std::move(on_secondary),
+         on_close = std::move(on_close)]() {
+          if (result == muxc::ContentDialogResult::Primary && on_primary) {
+            on_primary();
+          } else if (result == muxc::ContentDialogResult::Secondary &&
+                     on_secondary) {
+            on_secondary();
+          } else if (result == muxc::ContentDialogResult::None && on_close) {
+            on_close();
+          }
+        });
   });
 }
 
@@ -1135,10 +1171,54 @@ void MainWindow::ActivateTab(std::shared_ptr<PdfTab> const& tab) {
   DocTabs().SelectedIndex(IndexOfTabItem(tab->tab_item));
 }
 
+void MainWindow::ConfirmDirtyPdfClose(
+    std::shared_ptr<PdfTab> const& tab,
+    std::function<void()> on_success, std::function<void()> on_cancel) {
+  if (!tab || !tab->pdf_edits_pending) {
+    if (on_success) on_success();
+    return;
+  }
+  auto const weak = get_weak();
+  ShowDialog(
+      pdfgist::Tr("ui.pdf.pending-title"),
+      pdfgist::Tr("ui.pdf.pending-body"),
+      pdfgist::Tr("ui.pdf.save-as"),
+      pdfgist::Tr("ui.password.cancel"),
+      [weak, tab, done = on_success, cancelled = on_cancel] {
+        if (auto w = weak.get()) {
+          w->SaveEditedPdf(tab, [weak, tab, done, cancelled](bool saved) {
+            if (auto w = weak.get()) {
+              if (saved) {
+                w->CloseTab(tab.get());
+                if (done) done();
+              } else if (cancelled) {
+                cancelled();
+              }
+            }
+          });
+        }
+      },
+      pdfgist::Tr("ui.pdf.discard"),
+      [weak, tab, done = on_success] {
+        if (auto w = weak.get()) {
+          tab->pdf_edits_pending = false;
+          w->CloseTab(tab.get());
+          if (done) done();
+        }
+      },
+      [cancelled = std::move(on_cancel)] {
+        if (cancelled) cancelled();
+      });
+}
+
 void MainWindow::CloseTab(PdfTab const* tab) {
   for (std::size_t i = 0; i < tabs_.size(); ++i) {
     if (tabs_[i].get() == tab) {
       auto const shared = tabs_[i];
+      if (shared->pdf_edits_pending) {
+        ConfirmDirtyPdfClose(shared);
+        return;
+      }
       auto const index = IndexOfTabItem(shared->tab_item);
       if (shared->anno_dirty) SaveDocDataNow(shared);  // flush pending save
       if (index < DocTabs().TabItems().Size()) {
