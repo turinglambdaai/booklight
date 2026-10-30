@@ -61,16 +61,18 @@ jobs:
           distribution: full
           variant: CS
           version: '9.3'
-      - name: Select trusted CA bundle for Windows Racket
+      - name: Export trusted Mozilla CA roots for Windows Racket
         shell: pwsh
         run: |
-          $candidates = @(
-            "$env:ProgramFiles\Git\mingw64\ssl\certs\ca-bundle.crt",
-            "$env:ProgramFiles\Git\mingw64\ssl\cert.pem",
-            "$env:ProgramFiles\Git\mingw64\etc\ssl\certs\ca-bundle.crt"
-          )
-          $bundle = $candidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-          if (-not $bundle) { throw "No Git for Windows trusted CA bundle found; refusing insecure TLS fallback" }
+          # Racket 9.3's Windows ROOT-store reader throws X509*->C on some
+          # hosted runners. Node bundles Mozilla CA roots independently of
+          # Windows; export the roots, without disabling TLS verification.
+          $bundle = Join-Path $env:RUNNER_TEMP 'booklight-mozilla-roots.pem'
+          $js = 'const tls=require("node:tls"),fs=require("node:fs"); if(tls.rootCertificates.length<50) process.exit(2); fs.writeFileSync(process.argv[1],tls.rootCertificates.join("\n")+"\n",{flag:"wx"});'
+          node -e $js $bundle
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $bundle -PathType Leaf)) {
+            throw "Unable to export trusted CA roots; refusing insecure TLS fallback"
+          }
           "BOOKLIGHT_CI_CA_BUNDLE=$bundle" >> $env:GITHUB_ENV
       - name: Install pinned Rivet with verified TLS
         shell: pwsh
