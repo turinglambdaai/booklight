@@ -220,13 +220,13 @@ MainWindow::MainWindow() {
       } catch (...) {
       }
     }
-    if (window->epub_ &&
-        (window->epub_->doc_data_loaded || window->epub_->anno_dirty)) {
+    for (auto const& book : window->epubs_) {
+      if (!book->doc_data_loaded && !book->anno_dirty) continue;
       try {
-        auto json = window->SerializeDocData(window->epub_->doc_data);
+        auto json = window->SerializeDocData(book->doc_data);
         rivet::Bytes bytes(json.begin(), json.end());
         (void)window->api_
-            ->set_annotations(to_utf8(window->epub_->path),
+            ->set_annotations(to_utf8(book->path),
                               window->settings_.annotation_sidecar,
                               std::move(bytes))
             .get();
@@ -573,7 +573,7 @@ void MainWindow::Theme_Click(winrt::Windows::Foundation::IInspectable const&,
 
 void MainWindow::UpdateChrome() {
   // No file open: show an Open/Recent welcome instead of a catalog.
-  bool const empty = tabs_.empty() && epub_ == nullptr;
+  bool const empty = tabs_.empty() && epubs_.empty();
   WelcomeView().Visibility(empty ? Visibility::Visible : Visibility::Collapsed);
   auto const reader_vis = empty ? Visibility::Collapsed : Visibility::Visible;
   LeftToggle().Visibility(reader_vis);
@@ -744,6 +744,7 @@ void MainWindow::DocTabs_SelectionChanged(
     muxc::SelectionChangedEventArgs const&) {
   if (!DocTabs()) return;
   active_pdf_ = nullptr;
+  epub_ = nullptr;
   epub_active_ = false;
   auto const index = DocTabs().SelectedIndex();
   if (index >= 0) {
@@ -759,7 +760,13 @@ void MainWindow::DocTabs_SelectionChanged(
       for (auto const& tab : tabs_) {
         if (tab->tab_item == item) active_pdf_ = tab;
       }
-      if (epub_ && epub_->tab_item == item) epub_active_ = true;
+      for (auto const& book : epubs_) {
+        if (book->tab_item == item) {
+          epub_ = book;
+          epub_active_ = true;
+          break;
+        }
+      }
     } catch (...) {
     }
   }
@@ -782,9 +789,13 @@ void MainWindow::DocTabs_CloseRequested(
     muxc::TabViewTabCloseRequestedEventArgs const& args) {
   try {
     auto const item = args.Tab().as<muxc::TabViewItem>();
-    if (epub_ && epub_->tab_item == item) {
-      CloseEpub();
-      return;
+    for (auto const& book : epubs_) {
+      if (book->tab_item == item) {
+        epub_ = book;
+        epub_active_ = true;
+        CloseEpub();
+        return;
+      }
     }
     for (auto const& tab : tabs_) {
       if (tab->tab_item == item) {

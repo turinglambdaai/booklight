@@ -566,7 +566,9 @@ struct MainWindow : MainWindowT<MainWindow> {
 
   std::vector<std::shared_ptr<PdfTab>> tabs_;
   std::shared_ptr<PdfTab> active_pdf_;
-  std::shared_ptr<EpubBook> epub_;
+  // One native tab and document state per EPUB, never replace an opened file.
+  std::vector<std::shared_ptr<EpubBook>> epubs_;
+  std::shared_ptr<EpubBook> epub_;  // selected EPUB; null while a PDF is active
   bool epub_active_ = false;
 
   bool left_visible_ = false;
