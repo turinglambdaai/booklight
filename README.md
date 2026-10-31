@@ -6,10 +6,7 @@
 
 [![release](https://img.shields.io/github/v/release/turlamai/booklight)](https://github.com/turlamai/booklight/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-blue) [![CI](https://github.com/turlamai/booklight/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/booklight/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
-Apple built the best reading experience and then locked it to its devices.
-Booklight is that calm, for every desktop: a shelf you own, reading that
-stays out of the way, and AI when you want it — your files, your model,
-your cost. Books are referenced in place. Reading stays local; AI requests, update checks and user-configured integrations have separate network destinations.
+Booklight focuses on local, file-first reading across desktop platforms. Open PDF and EPUB files in place, read without an intrusive interface, and use optional AI features with a provider you configure. Books are referenced in place. Reading stays local; AI requests, update checks and user-configured integrations have separate network destinations.
 
 ## Start here
 
